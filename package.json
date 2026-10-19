@@ -1,0 +1,21 @@
+{
+  "name": "antigravity-hangar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hangar — Chrome-style project-aware tab multiplexer, split-pane telemetry host, and extension marketplace for Google Antigravity Auxiliary Pane sidecars.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arthurcavallari/antigravity-hangar.git"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "setup": "node setup.mjs",
+    "uninstall": "node setup.mjs --uninstall",
+    "test": "node --test test/*.test.mjs"
+  }
+}

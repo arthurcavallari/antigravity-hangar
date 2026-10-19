@@ -1,0 +1,24 @@
+{
+  "command": "node",
+  "args": [
+    "server.mjs"
+  ],
+  "display_name": "Hangar",
+  "description": "Hangar — Project-aware Chrome-style tab multiplexer, split-pane telemetry host, and extension marketplace for Antigravity sidecars.",
+  "has_web_ui": true,
+  "restart_policy": "always",
+  "ui_config": {
+    "display_name": "Hangar",
+    "views": [
+      {
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "path": "/",
+        "title": "Hangar"
+      }
+    ]
+  },
+  "agent_permissions": {
+    "workspace_uris": [],
+    "allows_user_interactions": true
+  }
+}

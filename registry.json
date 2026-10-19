@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-10-19T00:00:00Z",
+  "featuredIds": ["context-monitor"],
+  "packages": [
+    {
+      "id": "context-monitor",
+      "name": "Context & Quota Monitor",
+      "tagline": "Real-time Claude-style context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota tracker.",
+      "author": {
+        "name": "Arthur Cavallari",
+        "github": "arthurcavallari",
+        "verified": true
+      },
+      "latestVersion": "1.0.0",
+      "pricing": "free",
+      "categories": ["telemetry", "productivity"],
+      "capabilityTier": "TIER_1_TELEMETRY",
+      "securityScan": {
+        "passed": true,
+        "hasPostInstallScripts": false,
+        "externalDependencies": 0
+      },
+      "workspaceTriggers": {
+        "files": ["*"]
+      },
+      "release": {
+        "gitRepo": "https://github.com/arthurcavallari/antigravity-context-monitor"
+      }
+    }
+  ]
+}
