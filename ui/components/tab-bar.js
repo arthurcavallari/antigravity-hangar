@@ -250,7 +250,7 @@
     const splitEnabled = Boolean(layout?.splitViewEnabled);
     if (workspaceEl) {
       workspaceEl.textContent = activeWorkspace?.workspaceName || 'Global';
-      workspaceEl.parentElement.title = `Active Workspace: ${activeWorkspace?.workspacePath || 'Global (*)'}`;
+      workspaceEl.parentElement.title = `Active Workspace: ${activeWorkspace?.workspacePath || 'Global (*)'} (click for project rules)`;
     }
     splitBtnEl?.classList.toggle('active', splitEnabled);
 
