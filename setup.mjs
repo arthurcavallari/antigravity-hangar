@@ -47,7 +47,10 @@ function resolvePermanentLinkSource(repoRoot) {
   rmSync(destDir, { recursive: true, force: true });
   cpSync(repoRoot, destDir, {
     recursive: true,
-    filter: (src) => !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(src),
+    filter: (src) => {
+      const rel = src.slice(repoRoot.length);
+      return !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(rel);
+    },
   });
   return realpathSync(destDir);
 }
@@ -75,7 +78,10 @@ async function callManageSidecar(action, sidecarId = SIDECAR_ID) {
   const lsAddress = process.env.ANTIGRAVITY_LS_ADDRESS;
   const csrfToken = process.env.ANTIGRAVITY_CSRF_TOKEN;
   if (!lsAddress || !csrfToken) {
-    return { notified: false, reason: 'ANTIGRAVITY_LS_ADDRESS not set' };
+    return {
+      notified: false,
+      reason: 'linked & enabled in config.json — select Hangar in the Antigravity Auxiliary Pane',
+    };
   }
 
   const url = `http://${lsAddress}/exa.language_server_pb.LanguageServerService/ManageSidecar`;
@@ -132,6 +138,12 @@ async function migrateLegacySidecarHub() {
 }
 
 async function main() {
+  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
+  if (nodeMajor < 20) {
+    throw new Error(
+      `Node.js >= 20.0.0 is required (current: ${process.version}). Switch Node versions (e.g. "nvm use 22") and try again.`
+    );
+  }
   console.log(`[${SIDECAR_ID}] Repository root: ${REPO_ROOT}`);
 
   if (isUninstall) {
@@ -151,7 +163,9 @@ async function main() {
   }
 
   const requiredFiles = [
+    'package.json',
     'sidecar.json',
+    'registry.json',
     'server.mjs',
     'lib/constants.mjs',
     'lib/rpc-client.mjs',

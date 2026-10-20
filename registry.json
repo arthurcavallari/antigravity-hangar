@@ -5,13 +5,13 @@
     {
       "id": "context-monitor",
       "name": "Context & Quota Monitor",
-      "tagline": "Real-time Claude-style context window breakdown, prompt & thinking effort advisor, MCP server controller, and 5h/weekly quota tracker.",
+      "tagline": "Live context telemetry, working-memory gauge, compaction risk, MCP control plane, and diagnostics sidecar for Google Antigravity.",
       "author": {
         "name": "Arthur Cavallari",
         "github": "arthurcavallari",
         "verified": true
       },
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "pricing": "free",
       "categories": ["telemetry", "productivity"],
       "capabilityTier": "TIER_1_TELEMETRY",

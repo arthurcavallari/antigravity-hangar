@@ -1,9 +1,43 @@
 {
   "name": "antigravity-hangar",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "type": "module",
   "description": "Hangar — Chrome-style project-aware tab multiplexer, split-pane telemetry host, and extension marketplace for Google Antigravity Auxiliary Pane sidecars.",
   "license": "MIT",
+  "author": {
+    "name": "Arthur Cavallari",
+    "url": "https://github.com/arthurcavallari"
+  },
+  "homepage": "https://github.com/arthurcavallari/antigravity-hangar#readme",
+  "bugs": {
+    "url": "https://github.com/arthurcavallari/antigravity-hangar/issues"
+  },
+  "files": [
+    "sidecar.json",
+    "registry.json",
+    "server.mjs",
+    "setup.mjs",
+    "lib",
+    "ui",
+    "test"
+  ],
+  "keywords": [
+    "antigravity",
+    "google-antigravity",
+    "agy",
+    "agy-plugin",
+    "antigravity-sidecar",
+    "antigravity-plugin",
+    "antigravity-extension",
+    "antigravity-ide",
+    "sidecar",
+    "multiplexer",
+    "plugin-manager",
+    "extension-manager",
+    "gemini",
+    "ai-coding",
+    "agentic-coding"
+  ],
   "bin": {
     "antigravity-hangar": "./setup.mjs",
     "agy-hangar": "./setup.mjs"
