@@ -9,7 +9,7 @@ import {
   updateSidecarRule,
   updateHangarLayout,
 } from '../lib/config-store.mjs';
-import { enrichSidecarList } from '../lib/state-orchestrator.mjs';
+import { enrichSidecarList, fetchHangarState } from '../lib/state-orchestrator.mjs';
 
 describe('config-store and child iframe URL normalization', () => {
   it('targets child raw webPort on 127.0.0.1 with Gateway token and forwards conversationId', () => {
@@ -78,6 +78,7 @@ describe('config-store and child iframe URL normalization', () => {
     const enriched = enrichSidecarList(rawSidecars, hangarConfig, {
       activeWorkspacePath: 'c:/Projects/App',
       conversationId: 'conv-1',
+      sidecarsDir: join(tmpdir(), 'nonexistent-sidecars-dir'),
     });
 
     assert.equal(enriched.length, 1);
@@ -85,6 +86,45 @@ describe('config-store and child iframe URL normalization', () => {
     assert.equal(
       enriched[0].iframeUrl,
       'http://127.0.0.1:60920/?token=ctx&conversationId=conv-1'
+    );
+  });
+
+  it('forwards dynamic conversationId from GetAllCascadeTrajectories into child iframeUrl via fetchHangarState', async () => {
+    const trajectoriesResponse = {
+      trajectorySummaries: {
+        'conv-old': {
+          annotations: { lastUserViewTime: '2026-10-17T05:00:00Z' },
+          workspaces: [{ workspaceFolderAbsoluteUri: 'file:///c:/OldProject' }],
+        },
+        'conv-latest': {
+          annotations: { lastUserViewTime: '2026-10-17T07:00:00Z' },
+          workspaces: [{ workspaceFolderAbsoluteUri: 'file:///c%3A/Projects/ActiveApp' }],
+        },
+      },
+    };
+
+    const hangarState = await fetchHangarState({
+      conversationId: 'conv-old',
+      configPath: join(tmpdir(), 'nonexistent-hangar-cfg.json'),
+      sidecarsDir: join(tmpdir(), 'nonexistent-sidecars-dir'),
+      rpcFn: async (method) =>
+        method === 'GetSidecars'
+          ? {
+              sidecars: [
+                {
+                  sidecarId: 'context-monitor',
+                  status: 'SIDECAR_STATUS_RUNNING',
+                  webPort: 51234,
+                  config: { hasWebUi: true },
+                },
+              ],
+            }
+          : trajectoriesResponse,
+    });
+    assert.equal(hangarState.activeWorkspace.conversationId, 'conv-latest');
+    assert.equal(
+      hangarState.sidecars[0].iframeUrl,
+      'http://127.0.0.1:51234/?conversationId=conv-latest'
     );
   });
 });

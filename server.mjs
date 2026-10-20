@@ -3,31 +3,25 @@
  */
 
 import { SidecarApp, Response } from 'sidecar_sdk';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAssetHandler, createAgyCssHandler } from 'antigravity-sidecar-kit/server';
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
 import { updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
-import { fetchHostStylesheet } from './lib/theme.mjs';
-import { inspectSidecarDirectory, installRemoteSidecar, linkLocalSidecar, uninstallSidecar } from './lib/package-installer.mjs';
+import {
+  inspectSidecarDirectory,
+  installRemoteSidecar,
+  linkLocalSidecar,
+  uninstallSidecar,
+} from './lib/package-installer.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
 
 const __dirname = realpathSync(dirname(fileURLToPath(import.meta.url)));
 const UI_DIR = join(__dirname, 'ui');
-const UI_TOKEN = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN || '';
-const BOOT_TS = Date.now();
-
-const serveAsset = (relPath, contentType) => () => {
-  const raw = readFileSync(join(UI_DIR, relPath), 'utf-8');
-  const body =
-    relPath.endsWith('.html') && UI_TOKEN
-      ? raw.replace(/(src|href)="(\/[^"?]+)"/g, `$1="$2?token=${encodeURIComponent(UI_TOKEN)}&v=${BOOT_TS}"`)
-      : raw;
-  return new Response(body, { contentType });
-};
-
-const serveAgyCss = async () =>
-  new Response(await fetchHostStylesheet(), { contentType: 'text/css; charset=utf-8' });
+const serveAsset = (relPath, contentType) =>
+  createAssetHandler(UI_DIR, relPath, contentType, { ResponseClass: Response });
+const serveAgyCss = createAgyCssHandler({ ResponseClass: Response });
 
 const app = new SidecarApp();
 

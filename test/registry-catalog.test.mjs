@@ -8,7 +8,9 @@ import {
   detectWorkspaceSuggestions,
   fetchRegistry,
   isNewerSemver,
+  readInstalledSidecarVersion,
 } from '../lib/registry-catalog.mjs';
+import { enrichSidecarList } from '../lib/state-orchestrator.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
 import { HANGAR_VERSION } from '../lib/constants.mjs';
 
@@ -71,6 +73,34 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       assert.equal(ctxPkg.isInstalled, true);
       assert.equal(ctxPkg.installedVersion, '1.0.0');
       assert.equal(ctxPkg.updateAvailable, true);
+
+      // When package.json on disk is upgraded via npx/CLI to 1.2.0, on-disk version takes precedence over stale hangar.json
+      writeJsonNoBom(join(sidecarsDir, 'context-monitor', 'package.json'), {
+        name: 'antigravity-context-monitor',
+        version: '1.2.0',
+      });
+      assert.equal(readInstalledSidecarVersion('context-monitor', sidecarsDir), '1.2.0');
+
+      const catalogAfterUpgrade = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        fetchFn: async () => ({
+          ok: true,
+          json: async () => ({
+            packages: [{ id: 'context-monitor', name: 'Context & Quota Monitor', latestVersion: '1.2.0' }],
+          }),
+        }),
+      });
+      const upgradedPkg = catalogAfterUpgrade.packages.find((p) => p.id === 'context-monitor');
+      assert.equal(upgradedPkg.installedVersion, '1.2.0');
+      assert.equal(upgradedPkg.updateAvailable, false);
+
+      const enriched = enrichSidecarList(
+        [{ sidecarId: 'context-monitor', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } }],
+        loadHangarConfig(cfgPath),
+        { sidecarsDir }
+      );
+      assert.equal(enriched[0].installedVersion, '1.2.0');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

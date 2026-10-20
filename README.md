@@ -17,7 +17,7 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 ## 2. Requirements
 
 - **Google Antigravity** (2.0 Desktop / IDE with `SidecarManager` support)
-- **Node.js** `>= 20.0.0` (zero external npm dependencies; uses built-in `sidecar_sdk` injected by Antigravity)
+- **Node.js** `>= 20.0.0` (zero third-party npm dependencies; powered by [`antigravity-sidecar-kit`](https://github.com/arthurcavallari/antigravity-sidecar-kit) and Antigravity's built-in `sidecar_sdk`)
 
 ---
 
@@ -115,10 +115,7 @@ antigravity-hangar/
 ├── registry.json                   # Public marketplace package catalog
 ├── lib/
 │   ├── constants.mjs               # Paths, REPO_ROOT (realpathSync), default config
-│   ├── rpc-client.mjs              # Language Server Connect RPC client
-│   ├── theme.mjs                   # Host theme seed resolver & stylesheet proxy
 │   ├── config-store.mjs            # BOM-safe hangar.json store, rules & child URLs
-│   ├── workspace-resolver.mjs      # Active workspace & trajectory resolver + glob matcher
 │   ├── hibernation-manager.mjs     # Debounced idle-TTL process hibernation manager
 │   ├── package-installer.mjs       # Local junction linker, GitHub/tarball installer & inspector
 │   ├── registry-catalog.mjs        # Marketplace registry fetcher & workspace trigger advisor
@@ -137,8 +134,6 @@ antigravity-hangar/
 │       └── marketplace-panes.js    # Discover catalog & Sideload (Local / GitHub) panes
 └── test/
     ├── config-store.test.mjs
-    ├── theme.test.mjs
-    ├── workspace-resolver.test.mjs
     ├── hibernation-manager.test.mjs
     ├── package-installer.test.mjs
     └── registry-catalog.test.mjs

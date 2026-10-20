@@ -69,6 +69,19 @@ describe('Hangar package installer, local linker, and capability inspector', () 
 
       const info3 = inspectSidecarDirectory(t3Dir);
       assert.equal(info3.capabilityTier, 'TIER_3_AGENT_CONTROL');
+
+      // 4. First-party SDK dependency (antigravity-sidecar-kit) counts toward dependenciesCount
+      // for npm install, but reports externalDependencies === 0 for security badges
+      writeJsonNoBom(join(t1Dir, 'package.json'), {
+        name: 'antigravity-telemetry-demo',
+        version: '2.1.0',
+        dependencies: {
+          'antigravity-sidecar-kit': '^1.0.0',
+        },
+      });
+      const infoSdk = inspectSidecarDirectory(t1Dir);
+      assert.equal(infoSdk.dependenciesCount, 1);
+      assert.equal(infoSdk.externalDependencies, 0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
