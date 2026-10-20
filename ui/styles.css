@@ -103,6 +103,7 @@ html, body {
 .status-dot.running { background: var(--status-ok-dot); }
 .status-dot.hibernated { background: var(--status-warn-dot); }
 .status-dot.errored { background: var(--status-err-dot); }
+.status-dot.update { background: var(--status-info-dot); }
 
 /* Native Icon Buttons (lB size="icon" variant="ghost" — shared with context-monitor .icon-btn) */
 .chrome-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }

@@ -145,17 +145,21 @@
         });
         card.querySelector('[data-role="update-btn"]').addEventListener('click', async (e) => {
           const pkg = card._regPkg;
-          if (!pkg) return;
+          const curSc = card._sc;
+          const gitRepo = pkg?.release?.gitRepo || curSc?.gitRepo || '';
+          const tarballUrl = pkg?.release?.tarballUrl || curSc?.tarballUrl || '';
+          const version = pkg?.latestVersion || curSc?.latestVersion || 'latest';
+          if (!gitRepo && !tarballUrl) return;
           const upBtn = e.currentTarget;
           upBtn.disabled = true;
           try {
             await onInstallRemote?.({
-              sidecarId: pkg.id,
-              gitRepo: pkg.release?.gitRepo,
-              tarballUrl: pkg.release?.tarballUrl,
-              version: pkg.latestVersion,
-              scope: card._sc.scope,
-              workspaces: card._sc.workspaces,
+              sidecarId: curSc.sidecarId,
+              gitRepo,
+              tarballUrl,
+              version,
+              scope: curSc.scope,
+              workspaces: curSc.workspaces,
             });
           } catch (err) {
             upBtn.title = err.message || 'Update failed';
@@ -170,10 +174,16 @@
       card._activeWorkspace = activeWorkspace;
       card._regPkg = regMap.get(sc.sidecarId) || null;
 
+      const hasUpdate = Boolean(sc.updateAvailable || card._regPkg?.updateAvailable);
+      const latestVer = card._regPkg?.latestVersion || sc.latestVersion || '';
+      const verLabel = hasUpdate && latestVer
+        ? `v${sc.installedVersion || '1.0.0'} → v${latestVer}`
+        : `v${sc.installedVersion || '1.0.0'}`;
+
       const badgeInfo = ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored);
       card.querySelector('[data-role="title"]').textContent = sc.displayName;
       card.querySelector('[data-role="meta-sub"]').textContent =
-        `${sc.sidecarId} • v${sc.installedVersion || '1.0.0'} • ${sc.source}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
+        `${sc.sidecarId} • ${verLabel} • ${sc.source}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
 
       const statusBadge = card.querySelector('[data-role="status-badge"]');
       const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;
@@ -187,8 +197,11 @@
       const canUninstall = !sc.sidecarId.includes('/');
       card.querySelector('[data-role="uninstall-btn"]').classList.toggle('hidden', !canUninstall);
 
-      const hasUpdate = Boolean(card._regPkg?.updateAvailable);
-      card.querySelector('[data-role="update-btn"]').classList.toggle('hidden', !hasUpdate);
+      const upBtn = card.querySelector('[data-role="update-btn"]');
+      upBtn.classList.toggle('hidden', !hasUpdate);
+      if (hasUpdate && latestVer) {
+        upBtn.title = `Update ${sc.displayName} to v${latestVer}`;
+      }
 
       const isGlobal = (sc.workspaces || []).includes('*');
       card.querySelector('[data-role="global-btn"]').classList.toggle('active', isGlobal);
@@ -222,13 +235,22 @@
   }
 
   ns.renderExtensionsTab = function renderExtensionsTab(opts = {}) {
-    const { storeViewEl, sidecars = [] } = opts;
+    const { storeViewEl, sidecars = [], hangar = null } = opts;
     if (!storeViewEl) return;
 
     let shell = storeViewEl.querySelector('[data-role="store-shell"]');
     if (!shell) {
       storeViewEl.innerHTML = `
         <div data-role="store-shell">
+          <div data-role="hangar-update-banner" class="hangar-update-banner hidden">
+            <div class="hangar-update-info">
+              ${ns.iconSvg('bolt', 14)}
+              <span data-role="hangar-update-text"></span>
+            </div>
+            <button type="button" data-role="hangar-self-update-btn" class="agy-btn agy-btn-primary has-icon">
+              ${ns.iconSvg('download', 13)}<span>Update Hangar</span>
+            </button>
+          </div>
           <div class="store-header">
             <div>
               <div class="store-title"><span>UI Extensions</span><span data-role="total-count" class="count-pill"></span></div>
@@ -240,6 +262,9 @@
                 <button type="button" data-subtab="discover" class="agy-toggle-item">Discover</button>
                 <button type="button" data-subtab="sideload" class="agy-toggle-item">Sideload</button>
               </div>
+              <button type="button" data-role="check-updates-btn" class="icon-btn" title="Check for updates" aria-label="Check for updates">
+                ${ns.iconSvg('refresh', 14)}
+              </button>
               <span data-role="running-count" class="badge running"></span>
             </div>
           </div>
@@ -256,8 +281,48 @@
           ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
         });
       });
+
+      const checkBtn = shell.querySelector('[data-role="check-updates-btn"]');
+      checkBtn?.addEventListener('click', async () => {
+        checkBtn.disabled = true;
+        try {
+          await (storeViewEl._lastOpts || opts)?.onCheckUpdates?.();
+        } finally {
+          checkBtn.disabled = false;
+        }
+      });
+
+      const selfUpBtn = shell.querySelector('[data-role="hangar-self-update-btn"]');
+      selfUpBtn?.addEventListener('click', async () => {
+        const curOpts = storeViewEl._lastOpts || opts;
+        const h = curOpts?.hangar;
+        if (!h || selfUpBtn.disabled) return;
+        selfUpBtn.disabled = true;
+        selfUpBtn.innerHTML = `<span>Updating Hangar…</span>`;
+        try {
+          await curOpts.onSelfUpdate?.({
+            gitRepo: h.gitRepo || '',
+            tarballUrl: h.tarballUrl || '',
+            version: h.latestVersion || 'latest',
+          });
+          selfUpBtn.innerHTML = `${ns.iconSvg('download', 13)}<span>Update Hangar</span>`;
+          selfUpBtn.disabled = false;
+        } catch (err) {
+          selfUpBtn.title = err.message || 'Self-update failed';
+          selfUpBtn.innerHTML = `${ns.iconSvg('download', 13)}<span>Retry Update</span>`;
+          selfUpBtn.disabled = false;
+        }
+      });
     }
     storeViewEl._lastOpts = opts;
+
+    const hangarBanner = shell.querySelector('[data-role="hangar-update-banner"]');
+    const hangarText = shell.querySelector('[data-role="hangar-update-text"]');
+    const hasHangarUpdate = Boolean(hangar?.updateAvailable);
+    hangarBanner?.classList.toggle('hidden', !hasHangarUpdate);
+    if (hasHangarUpdate && hangarText) {
+      hangarText.innerHTML = `<strong>Hangar v${ns.escHtml(hangar.latestVersion)}</strong> is available (installed: v${ns.escHtml(hangar.installedVersion || '1.0.0')})`;
+    }
 
     shell.querySelector('[data-role="total-count"]').textContent = String(sidecars.length);
     const runningCount = sidecars.filter((s) => s.isRunning).length;

@@ -1,10 +1,20 @@
 {
   "generatedAt": "2026-10-20T00:00:00Z",
+  "hangar": {
+    "id": "hangar",
+    "name": "Antigravity Hangar",
+    "npmPackage": "antigravity-hangar",
+    "latestVersion": "1.0.5",
+    "release": {
+      "gitRepo": "https://github.com/arthurcavallari/antigravity-hangar"
+    }
+  },
   "featuredIds": ["context-monitor"],
   "packages": [
     {
       "id": "context-monitor",
       "name": "Context & Quota Monitor",
+      "npmPackage": "antigravity-context-monitor",
       "tagline": "Live context telemetry, working-memory gauge, compaction risk, MCP control plane, and diagnostics sidecar for Google Antigravity.",
       "author": {
         "name": "Arthur Cavallari",

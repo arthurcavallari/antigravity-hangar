@@ -7,6 +7,7 @@ import {
   inspectSidecarDirectory,
   installRemoteSidecar,
   linkLocalSidecar,
+  selfUpdateHangar,
   uninstallSidecar,
 } from '../lib/package-installer.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
@@ -207,6 +208,7 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       assert.equal(res.sidecarId, 'remote-sidecar');
       assert.equal(res.rule.source, 'github');
       assert.equal(res.rule.installedVersion, '2.1.0');
+      assert.equal(res.rule.gitRepo, 'https://github.com/example-org/antigravity-remote-sidecar');
       assert.equal(execCalls.length, 2);
       assert.equal(execCalls[0].cmd, 'git');
       assert.deepEqual(execCalls[0].args.slice(0, 5), [
@@ -218,6 +220,63 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       ]);
       assert.equal(execCalls[0].args[5], 'https://github.com/example-org/antigravity-remote-sidecar.git');
       assert.ok(execCalls[1].args.includes('--ignore-scripts'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('self-updates Hangar into packages/hangar@<ver>, bundles antigravity-sidecar-kit, re-links sidecars/hangar, and triggers ManageSidecar RESTART', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-self-update-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const agyCfgPath = join(dir, 'config.json');
+      writeJsonNoBom(agyCfgPath, { sidecars: { hangar: { enabled: true } } });
+
+      const rpcCalls = [];
+      const mockExec = (cmd, args) => {
+        if (cmd === 'git' && args[0] === 'clone') {
+          const dest = args[args.length - 1];
+          mkdirSync(dest, { recursive: true });
+          writeJsonNoBom(join(dest, 'sidecar.json'), {
+            command: 'node',
+            args: ['server.mjs'],
+            display_name: 'Hangar',
+          });
+          writeJsonNoBom(join(dest, 'package.json'), {
+            name: 'antigravity-hangar',
+            version: '9.0.0',
+            dependencies: { 'antigravity-sidecar-kit': '^1.0.1' },
+          });
+        }
+      };
+
+      const res = await selfUpdateHangar({
+        version: '9.0.0',
+        packagesDir,
+        sidecarsDir,
+        agyConfigPath: agyCfgPath,
+        rpcFn: async (method, payload) => {
+          rpcCalls.push({ method, payload });
+          return { ok: true };
+        },
+        execFn: mockExec,
+        delayMs: 0,
+      });
+
+      assert.equal(res.ok, true);
+      assert.equal(res.sidecarId, 'hangar');
+      assert.equal(res.updatedVersion, '9.0.0');
+      assert.equal(existsSync(join(sidecarsDir, 'hangar', 'sidecar.json')), true);
+      assert.equal(
+        existsSync(join(sidecarsDir, 'hangar', 'node_modules', 'antigravity-sidecar-kit', 'package.json')),
+        true
+      );
+      assert.equal(rpcCalls.length, 1);
+      assert.deepEqual(rpcCalls[0], {
+        method: 'ManageSidecar',
+        payload: { action: 'SIDECAR_ACTION_RESTART', sidecarId: 'hangar' },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

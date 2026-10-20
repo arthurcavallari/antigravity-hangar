@@ -14,6 +14,8 @@
 .sideload-banner { padding: 8px 10px; border-radius: var(--radius-lg, 0.5rem); font-size: var(--text-xs, 0.75rem); margin-bottom: 10px; border: 1px solid var(--hub-border); }
 .sideload-banner.ok { background: rgba(99, 152, 79, 0.12); color: var(--status-ok); border-color: rgba(99, 152, 79, 0.3); }
 .sideload-banner.err { background: rgba(222, 85, 85, 0.12); color: var(--status-err); border-color: rgba(222, 85, 85, 0.3); }
+.hangar-update-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 12px; margin-bottom: 10px; border-radius: var(--radius-lg, 0.5rem); background: color-mix(in srgb, var(--hub-primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--hub-primary) 35%, transparent); font-size: var(--text-xs, 0.75rem); color: var(--hub-fg); }
+.hangar-update-info { display: flex; align-items: center; gap: 6px; min-width: 0; }
 
 .consent-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md, 0.375rem); background: rgba(243, 201, 73, 0.1); border: 1px solid rgba(243, 201, 73, 0.3); font-size: var(--text-xs, 0.75rem); color: var(--hub-fg); }
 .consent-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }

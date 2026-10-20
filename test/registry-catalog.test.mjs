@@ -271,4 +271,138 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       rmSync(wsDir, { recursive: true, force: true });
     }
   });
+
+  it('probes hybrid upstream sources (npm registry + raw GitHub package.json) for Hangar itself and both catalog and sideloaded sidecars', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-hybrid-update-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+
+      // 1. Install context-monitor v1.0.2 and a sideloaded GitHub sidecar custom-metrics v0.4.0
+      mkdirSync(join(sidecarsDir, 'context-monitor'), { recursive: true });
+      writeJsonNoBom(join(sidecarsDir, 'context-monitor', 'sidecar.json'), { command: 'node' });
+      writeJsonNoBom(join(sidecarsDir, 'context-monitor', 'package.json'), {
+        name: 'antigravity-context-monitor',
+        version: '1.0.2',
+      });
+
+      mkdirSync(join(sidecarsDir, 'custom-metrics'), { recursive: true });
+      writeJsonNoBom(join(sidecarsDir, 'custom-metrics', 'sidecar.json'), {
+        command: 'node',
+        version: '0.4.0',
+      });
+
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        registryUrl: 'https://registry.example.test',
+        sidecars: {
+          'context-monitor': {
+            scope: 'global',
+            workspaces: ['*'],
+            installedVersion: '1.0.2',
+          },
+          'custom-metrics': {
+            scope: 'project',
+            workspaces: ['C:/Projects/App'],
+            installedVersion: '0.4.0',
+            source: 'github',
+            gitRepo: 'https://github.com/acme/custom-metrics',
+          },
+        },
+      });
+
+      const mockFetch = async (url) => {
+        if (url === 'https://registry.example.test/registry.json') {
+          return {
+            ok: true,
+            json: async () => ({
+              hangar: { id: 'hangar', latestVersion: HANGAR_VERSION },
+              packages: [
+                {
+                  id: 'context-monitor',
+                  name: 'Context & Quota Monitor',
+                  npmPackage: 'antigravity-context-monitor',
+                  latestVersion: '1.0.2',
+                  release: { gitRepo: 'https://github.com/arthurcavallari/antigravity-context-monitor' },
+                },
+              ],
+            }),
+          };
+        }
+        // npm reports newer versions for Hangar (9.9.0) and context-monitor (1.4.0)
+        if (url === 'https://registry.npmjs.org/antigravity-hangar/latest') {
+          return {
+            ok: true,
+            json: async () => ({
+              version: '9.9.0',
+              dist: { tarball: 'https://registry.npmjs.org/antigravity-hangar/-/antigravity-hangar-9.9.0.tgz' },
+            }),
+          };
+        }
+        if (url === 'https://registry.npmjs.org/antigravity-context-monitor/latest') {
+          return {
+            ok: true,
+            json: async () => ({ version: '1.4.0' }),
+          };
+        }
+        // Sideloaded GitHub repo has no package.json (404), falls back to HEAD/sidecar.json with v0.5.0
+        if (url === 'https://raw.githubusercontent.com/acme/custom-metrics/HEAD/package.json') {
+          return { ok: false, status: 404 };
+        }
+        if (url === 'https://raw.githubusercontent.com/acme/custom-metrics/HEAD/sidecar.json') {
+          return {
+            ok: true,
+            json: async () => ({ command: 'node', version: '0.5.0' }),
+          };
+        }
+        return { ok: false, status: 404 };
+      };
+
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        fetchFn: mockFetch,
+        probeUpstream: true,
+      });
+
+      // Hangar self-update detected via npm
+      assert.equal(catalog.hangar.installedVersion, HANGAR_VERSION);
+      assert.equal(catalog.hangar.latestVersion, '9.9.0');
+      assert.equal(catalog.hangar.updateAvailable, true);
+      assert.equal(
+        catalog.hangar.tarballUrl,
+        'https://registry.npmjs.org/antigravity-hangar/-/antigravity-hangar-9.9.0.tgz'
+      );
+
+      // Catalog sidecar update detected via npm even though registry.json was still 1.0.2
+      const ctxPkg = catalog.packages.find((p) => p.id === 'context-monitor');
+      assert.equal(ctxPkg.installedVersion, '1.0.2');
+      assert.equal(ctxPkg.latestVersion, '1.4.0');
+      assert.equal(ctxPkg.updateAvailable, true);
+
+      // Sideloaded non-catalog sidecar update detected via raw GitHub sidecar.json fallback
+      assert.equal(catalog.sidecarUpdates['custom-metrics'].installedVersion, '0.4.0');
+      assert.equal(catalog.sidecarUpdates['custom-metrics'].latestVersion, '0.5.0');
+      assert.equal(catalog.sidecarUpdates['custom-metrics'].updateAvailable, true);
+
+      // enrichSidecarList propagates updateAvailable and latestVersion to both catalog and sideloaded sidecars
+      const enriched = enrichSidecarList(
+        [
+          { sidecarId: 'context-monitor', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+          { sidecarId: 'custom-metrics', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+        ],
+        loadHangarConfig(cfgPath),
+        { sidecarsDir }
+      );
+      const enrichedCtx = enriched.find((s) => s.sidecarId === 'context-monitor');
+      const enrichedCustom = enriched.find((s) => s.sidecarId === 'custom-metrics');
+      assert.equal(enrichedCtx.updateAvailable, true);
+      assert.equal(enrichedCtx.latestVersion, '1.4.0');
+      assert.equal(enrichedCustom.updateAvailable, true);
+      assert.equal(enrichedCustom.latestVersion, '0.5.0');
+      assert.equal(enrichedCustom.gitRepo, 'https://github.com/acme/custom-metrics');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

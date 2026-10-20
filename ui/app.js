@@ -18,6 +18,7 @@
     workspaceUris: [],
     activeWorkspace: { workspacePath: '', workspaceName: 'Detecting...' },
     layout: { pinnedTopSidecarId: 'context-monitor', pinnedTopHeightPx: 185, splitViewEnabled: false },
+    hangar: null,
     sidecars: [],
     suggestions: [],
     registryPackages: [],
@@ -50,6 +51,8 @@
     try {
       const reg = await ns.apiCall?.('/api/store/registry', {});
       if (Array.isArray(reg?.packages)) state.registryPackages = reg.packages;
+      if (reg?.hangar) state.hangar = reg.hangar;
+      renderAll();
     } catch { /* keep existing registryPackages */ }
   }
 
@@ -68,6 +71,8 @@
       splitBtnEl: els.splitToggleBtn,
       activeWorkspace: state.activeWorkspace,
       sidecars: state.sidecars,
+      registryPackages: state.registryPackages,
+      hangar: state.hangar,
       bottomActiveTabId: state.bottomActiveTabId,
       layout: state.layout,
       onSelectTopSplitTab: async (sidecarId) => {
@@ -179,8 +184,20 @@
         storeViewEl: els.storeView,
         sidecars: state.sidecars,
         registryPackages: state.registryPackages,
+        hangar: state.hangar,
         layout: state.layout,
         activeWorkspace: state.activeWorkspace,
+        onCheckUpdates: async () => {
+          await refreshRegistry();
+          await refreshHangarState();
+        },
+        onSelfUpdate: async (payload) => {
+          if (!apiCall) return;
+          await apiCall('/api/store/self-update', payload);
+          await new Promise((r) => setTimeout(r, 600));
+          await refreshRegistry();
+          await refreshHangarState();
+        },
         onManageSidecar: async (sidecarId, action) => {
           if (!apiCall) return;
           await apiCall('/api/sidecar/manage', { sidecarId, action });
@@ -228,6 +245,7 @@
       if (data.theme) ns.applyThemePayload?.(data.theme, false);
       state.activeWorkspace = data.activeWorkspace || state.activeWorkspace;
       if (data.layout) state.layout = data.layout;
+      if (data.hangar) state.hangar = data.hangar;
       state.sidecars = data.sidecars || [];
       state.suggestions = data.suggestions || [];
       renderAll();
@@ -271,4 +289,5 @@
   refreshRegistry();
   refreshHangarState();
   setInterval(refreshHangarState, 3000);
+  setInterval(refreshRegistry, 15 * 60 * 1000);
 })();

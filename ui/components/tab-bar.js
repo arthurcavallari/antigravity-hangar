@@ -61,26 +61,27 @@
   function updateSidecarTabButton(btn, sc, isActive, opts = {}) {
     btn._sc = sc; btn._opts = opts; btn.dataset.pane = opts.pane || 'single';
     btn.classList.toggle('active', Boolean(isActive));
-    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]');
+    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), dot = btn.querySelector('[data-role="tab-dot"]');
     if (sc.isVirtual) {
-      btn.title = sc.displayName;
+      const updCount = Number(opts.updateCount || 0);
+      btn.title = updCount > 0 ? `${sc.displayName} (${updCount} update${updCount === 1 ? '' : 's'} available)` : sc.displayName;
       if (iconSlot && iconSlot.dataset.icon !== 'extension') { iconSlot.dataset.icon = 'extension'; iconSlot.innerHTML = ns.iconSvg('extension', 16); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
+      if (dot) dot.className = updCount > 0 ? 'status-dot update' : 'status-dot hidden';
       return;
     }
     const badgeInfo = ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored), iconName = sc.scope === 'global' ? 'keep' : 'folder';
     btn.title = `${sc.displayName} (${badgeInfo.label})`;
     if (iconSlot && iconSlot.dataset.icon !== iconName) { iconSlot.dataset.icon = iconName; iconSlot.innerHTML = ns.iconSvg(iconName, 15); }
     if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
-    const dot = btn.querySelector('[data-role="tab-dot"]');
     if (dot) dot.className = `status-dot ${badgeInfo.state}`;
   }
 
   function createSidecarTabButton(sc, isActive, opts = {}) {
-    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span');
+    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), dot = document.createElement('span');
     btn.type = 'button'; btn.className = 'hub-tab'; btn.dataset.sidecarId = sc.sidecarId;
-    iconSlot.className = 'hub-tab-icon-slot'; label.dataset.role = 'tab-label'; btn.append(iconSlot, label);
-    if (!sc.isVirtual) { const dot = document.createElement('span'); dot.dataset.role = 'tab-dot'; btn.append(dot); }
+    iconSlot.className = 'hub-tab-icon-slot'; label.dataset.role = 'tab-label'; dot.dataset.role = 'tab-dot';
+    btn.append(iconSlot, label, dot);
     updateSidecarTabButton(btn, sc, isActive, opts);
     let activePointerId = null, startX = 0, startY = 0, isDragging = false;
     let ghostEl = null, targetPane = 'single', beforeTabId = null, dragMeta = null;
@@ -225,6 +226,9 @@
           if (!tab.isVirtual) {
             const badge = ns.formatStatusBadge(tab.statusBadge, tab.isRunning, tab.isErrored), dot = document.createElement('span');
             dot.className = `status-dot ${badge.state}`; item.append(dot);
+          } else if (overflowBtnEl._updateCount > 0) {
+            const dot = document.createElement('span');
+            dot.className = 'status-dot update'; item.append(dot);
           }
           item.addEventListener('click', () => {
             popoverEl.hidePopover?.(); overflowBtnEl._onSelectTab?.(tab.sidecarId);
@@ -239,7 +243,7 @@
 
   ns.renderTabBar = function renderTabBar({
     workspaceEl, tabStripEl, topOverflowBtnEl, bottomTabBarEl, bottomTabStripEl, bottomOverflowBtnEl,
-    tabOverflowPopoverEl, splitBtnEl, activeWorkspace, sidecars, bottomActiveTabId, layout,
+    tabOverflowPopoverEl, splitBtnEl, activeWorkspace, sidecars, registryPackages, hangar, bottomActiveTabId, layout,
     onSelectTopSplitTab, onSelectBottomSplitTab, onDropTab,
   }) {
     if (ns.isPointerOnTab) return;
@@ -249,6 +253,14 @@
       workspaceEl.parentElement.title = `Active Workspace: ${activeWorkspace?.workspacePath || 'Global (*)'}`;
     }
     splitBtnEl?.classList.toggle('active', splitEnabled);
+
+    const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
+    const sidecarUpdateCount = (sidecars || []).filter(
+      (s) => s.updateAvailable || regMap.get(s.sidecarId)?.updateAvailable
+    ).length;
+    const updateCount = sidecarUpdateCount + (hangar?.updateAvailable ? 1 : 0);
+    if (topOverflowBtnEl) topOverflowBtnEl._updateCount = updateCount;
+    if (bottomOverflowBtnEl) bottomOverflowBtnEl._updateCount = updateCount;
 
     const { workspaceTabs, topTabs, bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(sidecars || [], layout);
 
@@ -282,14 +294,14 @@
     if (!splitEnabled) {
       bottomTabBarEl?.classList.add('hidden'); bottomOverflowBtnEl?.classList.add('hidden');
       if (tabOverflowPopoverEl?._anchorBtn === bottomOverflowBtnEl) try { tabOverflowPopoverEl.hidePopover?.(); } catch { /* Ignore */ }
-      populateStrip(tabStripEl, workspaceTabs, activeSingleId, { pane: 'single', splitEnabled: false, onClick: onSelectTopSplitTab, onDropTab });
+      populateStrip(tabStripEl, workspaceTabs, activeSingleId, { pane: 'single', splitEnabled: false, updateCount, onClick: onSelectTopSplitTab, onDropTab });
       setupStripScroll(tabStripEl, topOverflowBtnEl, () => workspaceTabs, onSelectTopSplitTab, tabOverflowPopoverEl);
     } else {
-      populateStrip(tabStripEl, topTabs, activeTopId, { pane: 'top', splitEnabled: true, onClick: onSelectTopSplitTab, onDropTab });
+      populateStrip(tabStripEl, topTabs, activeTopId, { pane: 'top', splitEnabled: true, updateCount, onClick: onSelectTopSplitTab, onDropTab });
       setupStripScroll(tabStripEl, topOverflowBtnEl, () => topTabs, onSelectTopSplitTab, tabOverflowPopoverEl);
       if (bottomTabBarEl && bottomTabStripEl) {
         bottomTabBarEl.classList.remove('hidden');
-        populateStrip(bottomTabStripEl, bottomTabs, bottomActiveTabId, { pane: 'bottom', splitEnabled: true, onClick: onSelectBottomSplitTab, onDropTab });
+        populateStrip(bottomTabStripEl, bottomTabs, bottomActiveTabId, { pane: 'bottom', splitEnabled: true, updateCount, onClick: onSelectBottomSplitTab, onDropTab });
         setupStripScroll(bottomTabStripEl, bottomOverflowBtnEl, () => bottomTabs, onSelectBottomSplitTab, tabOverflowPopoverEl);
       }
     }

@@ -13,6 +13,7 @@ import {
   inspectSidecarDirectory,
   installRemoteSidecar,
   linkLocalSidecar,
+  selfUpdateHangar,
   uninstallSidecar,
 } from './lib/package-installer.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
@@ -67,7 +68,14 @@ app.api('/api/store/install', async (data) => installRemoteSidecar({
   workspaces: Array.isArray(data?.workspaces) ? data.workspaces : [],
 }), 'POST');
 app.api('/api/store/uninstall', async (data) => uninstallSidecar({ sidecarId: String(data?.sidecarId || '') }), 'POST');
+app.api('/api/store/self-update', async (data) => selfUpdateHangar({
+  gitRepo: data?.gitRepo ? String(data.gitRepo) : '',
+  tarballUrl: data?.tarballUrl ? String(data.tarballUrl) : '',
+  version: data?.version ? String(data.version) : 'latest',
+  sha256: data?.sha256 ? String(data.sha256) : '',
+  deferRestart: true,
+}), 'POST');
 
 fetchRegistry().catch(() => {});
-setInterval(() => { fetchRegistry().catch(() => {}); }, 24 * 60 * 60 * 1000).unref();
+setInterval(() => { fetchRegistry().catch(() => {}); }, 30 * 60 * 1000).unref();
 await app.run();
