@@ -176,8 +176,12 @@
         `${sc.sidecarId} • v${sc.installedVersion || '1.0.0'} • ${sc.source}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
 
       const statusBadge = card.querySelector('[data-role="status-badge"]');
-      statusBadge.className = `badge ${badgeInfo.state}`;
-      statusBadge.innerHTML = `<span class="badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`;
+      const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;
+      if (statusBadge.dataset.sig !== badgeSig) {
+        statusBadge.dataset.sig = badgeSig;
+        statusBadge.className = `badge ${badgeInfo.state}`;
+        statusBadge.innerHTML = `<span class="badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`;
+      }
       card.querySelector('[data-role="desc"]').textContent = sc.description || 'No description provided.';
 
       const canUninstall = !sc.sidecarId.includes('/');
@@ -191,10 +195,17 @@
 
       const addWsBtn = card.querySelector('[data-role="add-ws-btn"]');
       const currentWs = activeWorkspace?.workspacePath || '';
-      const alreadyHasCurrent = currentWs && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase());
-      addWsBtn.classList.toggle('active', Boolean(alreadyHasCurrent) && !isGlobal);
-      addWsBtn.innerHTML = `${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 13)}<span>${ns.escHtml(activeWorkspace?.workspaceName || 'Workspace')}</span>`;
-      addWsBtn.disabled = !currentWs || Boolean(alreadyHasCurrent);
+      const alreadyHasCurrent = Boolean(
+        currentWs && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase())
+      );
+      addWsBtn.classList.toggle('active', alreadyHasCurrent && !isGlobal);
+      const wsBtnLabel = activeWorkspace?.workspaceName || 'Workspace';
+      const wsBtnSig = `${alreadyHasCurrent}:${wsBtnLabel}`;
+      if (addWsBtn.dataset.sig !== wsBtnSig) {
+        addWsBtn.dataset.sig = wsBtnSig;
+        addWsBtn.innerHTML = `${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 13)}<span>${ns.escHtml(wsBtnLabel)}</span>`;
+      }
+      addWsBtn.disabled = !currentWs || alreadyHasCurrent;
 
       renderRuleList(card.querySelector('[data-role="rule-list"]'), sc, (patternToRemove) => {
         onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== patternToRemove));
@@ -250,7 +261,11 @@
 
     shell.querySelector('[data-role="total-count"]').textContent = String(sidecars.length);
     const runningCount = sidecars.filter((s) => s.isRunning).length;
-    shell.querySelector('[data-role="running-count"]').innerHTML = `<span class="badge-dot"></span><span>${runningCount} Running</span>`;
+    const runningCountEl = shell.querySelector('[data-role="running-count"]');
+    if (runningCountEl.dataset.count !== String(runningCount)) {
+      runningCountEl.dataset.count = String(runningCount);
+      runningCountEl.innerHTML = `<span class="badge-dot"></span><span>${runningCount} Running</span>`;
+    }
 
     shell.querySelectorAll('[data-subtab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.subtab === activeSubTab);

@@ -74,4 +74,6 @@ app.api('/api/store/install', async (data) => installRemoteSidecar({
 }), 'POST');
 app.api('/api/store/uninstall', async (data) => uninstallSidecar({ sidecarId: String(data?.sidecarId || '') }), 'POST');
 
+fetchRegistry().catch(() => {});
+setInterval(() => { fetchRegistry().catch(() => {}); }, 24 * 60 * 60 * 1000).unref();
 await app.run();

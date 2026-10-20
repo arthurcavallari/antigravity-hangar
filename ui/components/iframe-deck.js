@@ -228,7 +228,10 @@
         const msg = topSlotId
           ? 'Sidecar is hibernated or stopped — enable it in 🧩 Extensions'
           : 'No tab in Top Split — drag a tab here';
-        els.emptyTopState.innerHTML = `<div class="empty-split-zone"><span>${msg}</span></div>`;
+        if (els.emptyTopState.dataset.msg !== msg) {
+          els.emptyTopState.dataset.msg = msg;
+          els.emptyTopState.innerHTML = `<div class="empty-split-zone"><span>${msg}</span></div>`;
+        }
       }
     }
 
@@ -240,7 +243,10 @@
         const msg = bottomSlotId
           ? 'Sidecar is hibernated or stopped — enable it in 🧩 Extensions'
           : 'No tab in Bottom Split — drag a tab here';
-        els.emptyDeckState.innerHTML = `<div class="empty-split-zone"><span>${msg}</span></div>`;
+        if (els.emptyDeckState.dataset.msg !== msg) {
+          els.emptyDeckState.dataset.msg = msg;
+          els.emptyDeckState.innerHTML = `<div class="empty-split-zone"><span>${msg}</span></div>`;
+        }
       }
     }
   };

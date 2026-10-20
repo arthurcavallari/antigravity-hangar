@@ -15,6 +15,10 @@
 ## 2. Quick Start
 
 ```bash
+# Option A: 1-command install via npx
+npx antigravity-hangar
+
+# Option B: Clone and link locally
 git clone https://github.com/arthurcavallari/antigravity-hangar.git
 cd antigravity-hangar
 npm run setup
@@ -76,3 +80,13 @@ antigravity-hangar/
     ├── package-installer.test.mjs
     └── registry-catalog.test.mjs
 ```
+
+---
+
+## 5. Privacy & Anonymous Telemetry Opt-Out
+
+When fetching the online Marketplace catalog (`GET <registryUrl>/registry.json`), Hangar includes anonymous, non-PII headers (`X-Hangar-Install-Id`, `X-Hangar-Version`, `X-Hangar-OS`, `X-Hangar-Sidecars`) to measure active installs and OS/version compatibility. No workspace paths, repository names, or sidecar identifiers are ever sent.
+
+To opt out of telemetry headers completely, set any of the following:
+- `"telemetry": false` in `~/.gemini/config/hangar.json`
+- `DO_NOT_TRACK=1` or `HANGAR_TELEMETRY=0` in your environment

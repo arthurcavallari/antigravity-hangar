@@ -53,16 +53,16 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       assert.equal(info2.hasLifecycleScripts, true);
       assert.equal(info2.version, '1.4.0');
 
-      // 3. Tier 3 Agent Control sidecar (invokes sidecar.agent.sendMessage)
+      // 3. Tier 3 Agent Control sidecar inside nested ui/components/ (invokes sidecar.agent.sendMessage)
       const t3Dir = join(dir, 'agent-pilot');
-      mkdirSync(join(t3Dir, 'ui'), { recursive: true });
+      mkdirSync(join(t3Dir, 'ui', 'components'), { recursive: true });
       writeJsonNoBom(join(t3Dir, 'sidecar.json'), {
         command: 'node',
         args: ['server.mjs'],
         display_name: 'Agent Pilot',
       });
       writeFileSync(
-        join(t3Dir, 'ui', 'app.js'),
+        join(t3Dir, 'ui', 'components', 'panel.js'),
         'window.sidecar.agent.sendMessage({ text: "fix build" });',
         'utf8'
       );
@@ -152,7 +152,7 @@ describe('Hangar package installer, local linker, and capability inspector', () 
     }
   });
 
-  it('installs a remote GitHub sidecar into packagesDir and runs npm install --ignore-scripts when needed', async () => {
+  it('installs a remote GitHub sidecar (including owner/repo@tag) into packagesDir and runs npm install --ignore-scripts when needed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hangar-remote-test-'));
     try {
       const sidecarsDir = join(dir, 'sidecars');
@@ -180,8 +180,7 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       };
 
       const res = await installRemoteSidecar({
-        gitRepo: 'example-org/antigravity-remote-sidecar',
-        version: '2.1.0',
+        gitRepo: 'example-org/antigravity-remote-sidecar@v2.1.0',
         scope: 'global',
         packagesDir,
         sidecarsDir,
@@ -197,6 +196,14 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       assert.equal(res.rule.installedVersion, '2.1.0');
       assert.equal(execCalls.length, 2);
       assert.equal(execCalls[0].cmd, 'git');
+      assert.deepEqual(execCalls[0].args.slice(0, 5), [
+        'clone',
+        '--depth',
+        '1',
+        '--branch',
+        'v2.1.0',
+      ]);
+      assert.equal(execCalls[0].args[5], 'https://github.com/example-org/antigravity-remote-sidecar.git');
       assert.ok(execCalls[1].args.includes('--ignore-scripts'));
     } finally {
       rmSync(dir, { recursive: true, force: true });

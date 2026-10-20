@@ -20,7 +20,42 @@
 
     const wsPath = activeWorkspace?.workspacePath || '';
     const wsName = activeWorkspace?.workspaceName || 'Global';
+    const scMap = new Map((sidecars || []).map((s) => [s.sidecarId, s]));
+    const sugMap = new Map((suggestions || []).map((s) => [s.sidecarId, s]));
 
+    popoverEl._ctx = {
+      wsPath,
+      scMap,
+      sugMap,
+      onToggleWorkspaceRule,
+      onToggleGlobalPin,
+      onToggleAutoHibernate,
+      onApplySuggestion,
+    };
+
+    const sig = JSON.stringify({
+      wsPath,
+      wsName,
+      sidecars: (sidecars || []).map((sc) => ({
+        id: sc.sidecarId,
+        name: sc.displayName,
+        badge: sc.statusBadge,
+        run: Boolean(sc.isRunning),
+        err: Boolean(sc.isErrored),
+        scope: sc.scope,
+        ws: sc.workspaces,
+        hib: Boolean(sc.autoHibernate),
+      })),
+      suggestions: (suggestions || []).map((s) => ({
+        id: s.sidecarId,
+        name: s.name,
+        reason: s.reason,
+        type: s.actionType,
+      })),
+    });
+
+    if (popoverEl.dataset.sig === sig) return;
+    popoverEl.dataset.sig = sig;
     popoverEl.innerHTML = '';
 
     const header = document.createElement('div');
@@ -66,13 +101,21 @@
       wsBtn.className = `agy-toggle-item${isEnabledForCurrent ? ' active' : ''}`;
       wsBtn.innerHTML = `${ns.iconSvg('folder', 13)}<span>${ns.escHtml(wsPath ? wsName : 'Project')}</span>`;
       wsBtn.disabled = !wsPath;
-      wsBtn.addEventListener('click', () => onToggleWorkspaceRule(sc, wsPath));
+      wsBtn.addEventListener('click', () => {
+        const ctx = popoverEl._ctx;
+        const curSc = ctx?.scMap.get(sc.sidecarId) || sc;
+        ctx?.onToggleWorkspaceRule?.(curSc, ctx.wsPath);
+      });
 
       const globalBtn = document.createElement('button');
       globalBtn.type = 'button';
       globalBtn.className = `agy-toggle-item${sc.scope === 'global' ? ' active' : ''}`;
       globalBtn.innerHTML = `${ns.iconSvg('keep', 13)}<span>Global</span>`;
-      globalBtn.addEventListener('click', () => onToggleGlobalPin(sc));
+      globalBtn.addEventListener('click', () => {
+        const ctx = popoverEl._ctx;
+        const curSc = ctx?.scMap.get(sc.sidecarId) || sc;
+        ctx?.onToggleGlobalPin?.(curSc);
+      });
 
       scopeGroup.append(wsBtn, globalBtn);
 
@@ -81,7 +124,11 @@
       hibBtn.className = `agy-btn has-icon ${sc.autoHibernate ? 'agy-btn-secondary' : 'agy-btn-outline'}`;
       hibBtn.innerHTML = `${ns.iconSvg('bolt', 13)}<span>Auto-Sleep</span>`;
       hibBtn.title = 'Automatically hibernate process when workspace is inactive';
-      hibBtn.addEventListener('click', () => onToggleAutoHibernate(sc));
+      hibBtn.addEventListener('click', () => {
+        const ctx = popoverEl._ctx;
+        const curSc = ctx?.scMap.get(sc.sidecarId) || sc;
+        ctx?.onToggleAutoHibernate?.(curSc);
+      });
 
       toggles.append(scopeGroup, hibBtn);
       row.append(top, toggles);
@@ -116,7 +163,11 @@
         actBtn.className = 'agy-btn agy-btn-primary has-icon';
         const isInstall = sug.actionType === 'install';
         actBtn.innerHTML = `${ns.iconSvg(isInstall ? 'download' : 'check', 13)}<span>${isInstall ? 'Install' : 'Enable'}</span>`;
-        actBtn.addEventListener('click', () => onApplySuggestion?.(sug));
+        actBtn.addEventListener('click', () => {
+          const ctx = popoverEl._ctx;
+          const curSug = ctx?.sugMap.get(sug.sidecarId) || sug;
+          ctx?.onApplySuggestion?.(curSug);
+        });
 
         item.append(info, actBtn);
         sugSection.appendChild(item);

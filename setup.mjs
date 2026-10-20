@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * @fileoverview Cross-machine setup, legacy sidecar-hub migration, and Language Server
  * registration script for Antigravity Hangar.
@@ -21,6 +22,8 @@ import {
   GLOBAL_SIDECARS_DIR,
   HANGAR_CONFIG_PATH,
   HANGAR_DATA_DIR,
+  HANGAR_PACKAGES_DIR,
+  HANGAR_VERSION,
   LEGACY_HUB_CONFIG_PATH,
   LEGACY_HUB_DATA_DIR,
   LEGACY_SIDECAR_ID,
@@ -34,6 +37,20 @@ const LEGACY_JUNCTION_PATH = join(GLOBAL_SIDECARS_DIR, LEGACY_SIDECAR_ID);
 const args = new Set(process.argv.slice(2));
 const isUninstall = args.has('--uninstall');
 const skipTests = args.has('--skip-tests');
+
+function resolvePermanentLinkSource(repoRoot) {
+  if (!/[\\/]_npx[\\/]|[\\/]node_modules[\\/]/i.test(repoRoot)) {
+    return repoRoot;
+  }
+  const destDir = join(HANGAR_PACKAGES_DIR, `${SIDECAR_ID}@${HANGAR_VERSION}`);
+  mkdirSync(HANGAR_PACKAGES_DIR, { recursive: true });
+  rmSync(destDir, { recursive: true, force: true });
+  cpSync(repoRoot, destDir, {
+    recursive: true,
+    filter: (src) => !/[\\/]\.git([\\/]|$)|[\\/]node_modules([\\/]|$)/.test(src),
+  });
+  return realpathSync(destDir);
+}
 
 function removeLinkOrDir(targetPath) {
   let stat;
@@ -168,6 +185,7 @@ async function main() {
 
   if (!existsSync(HANGAR_CONFIG_PATH)) {
     writeJsonNoBom(HANGAR_CONFIG_PATH, DEFAULT_HANGAR_CONFIG);
+    loadHangarConfig(HANGAR_CONFIG_PATH);
     console.log(`[${SIDECAR_ID}] Initialized default ${HANGAR_CONFIG_PATH}`);
   }
 
@@ -188,18 +206,28 @@ async function main() {
     );
   }
 
+  const targetSourceDir = resolvePermanentLinkSource(REPO_ROOT);
   mkdirSync(GLOBAL_SIDECARS_DIR, { recursive: true });
   const alreadyLinked =
-    existsSync(JUNCTION_PATH) && realpathSync(JUNCTION_PATH) === REPO_ROOT;
+    existsSync(JUNCTION_PATH) && realpathSync(JUNCTION_PATH) === targetSourceDir;
   if (!alreadyLinked) {
     removeLinkOrDir(JUNCTION_PATH);
     symlinkSync(
-      REPO_ROOT,
+      targetSourceDir,
       JUNCTION_PATH,
       process.platform === 'win32' ? 'junction' : 'dir'
     );
   }
   console.log(`[${SIDECAR_ID}] Linked ${JUNCTION_PATH} -> ${realpathSync(JUNCTION_PATH)}`);
+
+  if (existsSync(CONFIG_JSON_PATH)) {
+    const cfg = readJsonSafe(CONFIG_JSON_PATH, {});
+    cfg.sidecars = cfg.sidecars && typeof cfg.sidecars === 'object' ? cfg.sidecars : {};
+    if (cfg.sidecars[SIDECAR_ID]?.enabled !== true) {
+      cfg.sidecars[SIDECAR_ID] = { ...(cfg.sidecars[SIDECAR_ID] || {}), enabled: true };
+      writeJsonNoBom(CONFIG_JSON_PATH, cfg);
+    }
+  }
 
   let rpcRes = await callManageSidecar('SIDECAR_ACTION_RESTART').catch((err) => ({
     notified: false,

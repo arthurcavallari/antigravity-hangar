@@ -29,8 +29,11 @@
   const els = {
     workspaceName: document.getElementById('workspace-name'),
     tabStrip: document.getElementById('tab-strip'),
+    topOverflowBtn: document.getElementById('top-overflow-btn'),
     bottomTabBar: document.getElementById('bottom-tab-bar'),
     bottomTabStrip: document.getElementById('bottom-tab-strip'),
+    bottomOverflowBtn: document.getElementById('bottom-overflow-btn'),
+    tabOverflowPopover: document.getElementById('tab-overflow-popover'),
     splitToggleBtn: document.getElementById('split-toggle-btn'),
     projectPopover: document.getElementById('project-popover'),
     splitDividerGroup: document.getElementById('split-divider-group'),
@@ -57,8 +60,11 @@
     ns.renderTabBar?.({
       workspaceEl: els.workspaceName,
       tabStripEl: els.tabStrip,
+      topOverflowBtnEl: els.topOverflowBtn,
       bottomTabBarEl: els.bottomTabBar,
       bottomTabStripEl: els.bottomTabStrip,
+      bottomOverflowBtnEl: els.bottomOverflowBtn,
+      tabOverflowPopoverEl: els.tabOverflowPopover,
       splitBtnEl: els.splitToggleBtn,
       activeWorkspace: state.activeWorkspace,
       sidecars: state.sidecars,
