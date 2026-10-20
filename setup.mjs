@@ -31,6 +31,7 @@ import {
   SIDECAR_ID,
 } from './lib/constants.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from './lib/config-store.mjs';
+import { getLsConfig, killSidecarProcessByPortOrPid } from './lib/rpc-client.mjs';
 
 const JUNCTION_PATH = join(GLOBAL_SIDECARS_DIR, SIDECAR_ID);
 const LEGACY_JUNCTION_PATH = join(GLOBAL_SIDECARS_DIR, LEGACY_SIDECAR_ID);
@@ -75,8 +76,7 @@ function removeLinkOrDir(targetPath) {
 }
 
 async function callManageSidecar(action, sidecarId = SIDECAR_ID) {
-  const lsAddress = process.env.ANTIGRAVITY_LS_ADDRESS;
-  const csrfToken = process.env.ANTIGRAVITY_CSRF_TOKEN;
+  const { lsAddress, csrfToken } = getLsConfig();
   if (!lsAddress || !csrfToken) {
     return {
       notified: false,
@@ -254,9 +254,15 @@ async function main() {
       reason: err.message,
     }));
   }
+  if (!rpcRes.notified) {
+    const killed = killSidecarProcessByPortOrPid(SIDECAR_ID);
+    if (killed.restarted) {
+      rpcRes = { notified: true, viaProcessRestart: killed.method };
+    }
+  }
   console.log(
     rpcRes.notified
-      ? `[${SIDECAR_ID}] Enabled and started via Language Server RPC.`
+      ? `[${SIDECAR_ID}] Enabled and restarted (${rpcRes.viaProcessRestart || 'Language Server RPC'}).`
       : `[${SIDECAR_ID}] Setup complete (${rpcRes.reason || 'ready'}).`
   );
 }

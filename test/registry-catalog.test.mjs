@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -33,8 +33,26 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
         },
       });
 
+      const sidecarsDir = join(dir, 'sidecars');
+      // Before sidecar.json exists on disk, stale hangar.json rule must not mark package as installed
+      const catalogNotOnDisk = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        fetchFn: async () => ({
+          ok: true,
+          json: async () => ({
+            packages: [{ id: 'context-monitor', name: 'Context & Quota Monitor', latestVersion: '1.2.0' }],
+          }),
+        }),
+      });
+      assert.equal(catalogNotOnDisk.packages.find((p) => p.id === 'context-monitor').isInstalled, false);
+
+      mkdirSync(join(sidecarsDir, 'context-monitor'), { recursive: true });
+      writeFileSync(join(sidecarsDir, 'context-monitor', 'sidecar.json'), '{"command":"node"}', 'utf8');
+
       const catalog = await fetchRegistry({
         configPath: cfgPath,
+        sidecarsDir,
         fetchFn: async () => ({
           ok: true,
           json: async () => ({
