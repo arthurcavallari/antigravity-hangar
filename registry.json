@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-10-20T00:00:00Z",
+  "generatedAt": "2026-10-22T00:00:00Z",
   "hangar": {
     "id": "hangar",
     "name": "Antigravity Hangar",
     "npmPackage": "antigravity-hangar",
-    "latestVersion": "1.0.5",
+    "latestVersion": "1.1.0",
     "release": {
       "gitRepo": "https://github.com/arthurcavallari/antigravity-hangar"
     }
@@ -21,7 +21,7 @@
         "github": "arthurcavallari",
         "verified": true
       },
-      "latestVersion": "1.0.2",
+      "latestVersion": "1.1.0",
       "pricing": "free",
       "categories": ["telemetry", "productivity"],
       "capabilityTier": "TIER_1_TELEMETRY",
