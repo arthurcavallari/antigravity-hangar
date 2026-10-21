@@ -264,8 +264,28 @@
   }
 
   let lastStateRefreshAt = 0;
+  let stateRefresh = null;
+  let stateRefreshAgain = false;
 
-  async function refreshHangarState() {
+  // One /api/state request at a time. A refresh asked for mid-request (after a click, a workspace or
+  // conversation change) runs once more when it ends, so whoever awaits it sees state from after their change.
+  function refreshHangarState() {
+    if (stateRefresh) {
+      stateRefreshAgain = true;
+      return stateRefresh;
+    }
+    stateRefresh = (async () => {
+      do {
+        stateRefreshAgain = false;
+        await loadHangarState();
+      } while (stateRefreshAgain);
+    })().finally(() => {
+      stateRefresh = null;
+    });
+    return stateRefresh;
+  }
+
+  async function loadHangarState() {
     if (ns.isPointerOnTab || state.isResizingSplit) return;
     lastStateRefreshAt = Date.now();
     try {
@@ -331,7 +351,8 @@
   refreshHangarState();
   setInterval(() => {
     const intervalMs = document.hidden ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
-    if (Date.now() - lastStateRefreshAt >= intervalMs) refreshHangarState();
+    // A slow Language Server must not pile up polls behind the one still waiting
+    if (!stateRefresh && Date.now() - lastStateRefreshAt >= intervalMs) refreshHangarState();
   }, VISIBLE_POLL_MS);
   setInterval(() => {
     if (!document.hidden) refreshRegistry();
