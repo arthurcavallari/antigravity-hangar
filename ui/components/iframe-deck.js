@@ -80,11 +80,35 @@
     });
   };
 
+  // Hidden deck frames stay mounted so tab switches are instant, but hiding them with CSS leaves
+  // their document.hidden false. Tell each child when it is shown or hidden so it can pause polling.
+  ns.VISIBILITY_MESSAGE_TYPE = 'sidecar-visibility';
+
+  function postFrameVisibility(frame) {
+    try {
+      frame.contentWindow?.postMessage(
+        { type: ns.VISIBILITY_MESSAGE_TYPE, payload: { visible: frame.dataset.visible === '1' } },
+        '*'
+      );
+    } catch {
+      // Ignore unmounted frame errors
+    }
+  }
+
+  function setFrameVisibility(frame, visible) {
+    const next = visible ? '1' : '0';
+    if (frame.dataset.visible === next) return;
+    frame.dataset.visible = next;
+    postFrameVisibility(frame);
+  }
+
   function attachFrameLoadRelay(frame) {
     frame.addEventListener('load', () => {
       if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');
       if (latestWorkspaceEvent) frame.contentWindow?.postMessage(latestWorkspaceEvent, '*');
       if (latestConversationEvent) frame.contentWindow?.postMessage(latestConversationEvent, '*');
+      // Anything posted before load went to the initial blank document
+      postFrameVisibility(frame);
     });
   }
 
@@ -224,6 +248,7 @@
       frame.classList.toggle('visible', isTop || isBottom);
       frame.classList.toggle('slot-top', isTop);
       frame.classList.toggle('slot-bottom', isBottom);
+      setFrameVisibility(frame, isTop || isBottom);
     }
 
     const storeInTop = topSlotId === ns.EXTENSIONS_TAB_ID;

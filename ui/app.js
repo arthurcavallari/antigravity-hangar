@@ -264,8 +264,28 @@
   }
 
   let lastStateRefreshAt = 0;
+  let stateRefresh = null;
+  let stateRefreshAgain = false;
 
-  async function refreshHangarState() {
+  // One /api/state request at a time. A refresh asked for mid-request (after a click, a workspace or
+  // conversation change) runs once more when it ends, so whoever awaits it sees state from after their change.
+  function refreshHangarState() {
+    if (stateRefresh) {
+      stateRefreshAgain = true;
+      return stateRefresh;
+    }
+    stateRefresh = (async () => {
+      do {
+        stateRefreshAgain = false;
+        await loadHangarState();
+      } while (stateRefreshAgain);
+    })().finally(() => {
+      stateRefresh = null;
+    });
+    return stateRefresh;
+  }
+
+  async function loadHangarState() {
     if (ns.isPointerOnTab || state.isResizingSplit) return;
     lastStateRefreshAt = Date.now();
     try {
@@ -323,17 +343,30 @@
   // keep working, without two Language Server calls every 3s for a window nobody is looking at.
   const VISIBLE_POLL_MS = 3000;
   const HIDDEN_POLL_MS = 60 * 1000;
+  // Antigravity can keep an old conversation view mounted and hide it with CSS, where document.hidden
+  // stays false; IntersectionObserver still sees this frame leave the viewport
+  let inViewport = true;
+  const isHidden = () => document.hidden || !inViewport;
+  if (typeof IntersectionObserver === 'function') {
+    new IntersectionObserver((entries) => {
+      const next = entries[entries.length - 1].isIntersecting;
+      if (next === inViewport) return;
+      inViewport = next;
+      if (!isHidden()) refreshHangarState();
+    }).observe(document.documentElement);
+  }
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshHangarState();
+    if (!isHidden()) refreshHangarState();
   });
 
   refreshRegistry();
   refreshHangarState();
   setInterval(() => {
-    const intervalMs = document.hidden ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
-    if (Date.now() - lastStateRefreshAt >= intervalMs) refreshHangarState();
+    const intervalMs = isHidden() ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
+    // A slow Language Server must not pile up polls behind the one still waiting
+    if (!stateRefresh && Date.now() - lastStateRefreshAt >= intervalMs) refreshHangarState();
   }, VISIBLE_POLL_MS);
   setInterval(() => {
-    if (!document.hidden) refreshRegistry();
+    if (!isHidden()) refreshRegistry();
   }, 15 * 60 * 1000);
 })();
