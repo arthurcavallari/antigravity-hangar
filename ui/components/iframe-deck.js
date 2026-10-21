@@ -48,10 +48,21 @@
     broadcastToChildFrames(latestThemeEvent);
   };
 
+  function isFromChildFrame(source) {
+    for (const frame of deckFrames.values()) {
+      if (source && frame.contentWindow === source) return true;
+    }
+    return false;
+  }
+
   ns.initPostMessageRelayBridge = function initPostMessageRelayBridge() {
     window.addEventListener('message', (event) => {
       const type = event.data?.type;
       if (!type) return;
+
+      // Only child sidecars may ask the host to toggle panes; only the host may broadcast state to them
+      const isToggle = type === 'toggle-aux-pane' || type === 'toggle-conversation';
+      if (isToggle ? !isFromChildFrame(event.source) : !ns.isHostMessage(event.source)) return;
 
       if (type === 'theme-change' && event.data?.payload) {
         ns.applyThemePayload(event.data.payload, true);

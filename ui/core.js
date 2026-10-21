@@ -96,6 +96,16 @@
     return { label: 'Tier 1 · Telemetry', state: 'running', shortLabel: 'Tier 1' };
   };
 
+  // Host events (theme, workspace, conversation) come from Hangar's own window or an ancestor frame.
+  // Child sidecar iframes are never ancestors, so they can't spoof them.
+  ns.isHostMessage = function isHostMessage(source) {
+    if (!source) return false;
+    for (let w = window; ; w = w.parent) {
+      if (source === w) return true;
+      if (w === w.parent) return false;
+    }
+  };
+
   ns.escHtml = function escHtml(str = '') {
     return String(str ?? '')
       .replace(/&/g, '&amp;')

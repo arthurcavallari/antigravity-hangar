@@ -15,6 +15,22 @@
     sideloadFeedback = null;
   };
 
+  ns.setDiscoverQuery = function setDiscoverQuery(query = '') {
+    searchQuery = String(query);
+    activeCategory = 'all';
+  };
+
+  // Shown when Hangar's scan of the downloaded code found more access than the user had agreed to
+  ns.scannedTierConsentHtml = function scannedTierConsentHtml(scannedTier, verb = 'Install') {
+    const tier = ns.formatCapabilityTier(scannedTier);
+    return `<strong>${ns.escHtml(tier.label)}:</strong> Hangar's scan of the downloaded code found it needs this access. ${verb} anyway?`;
+  };
+
+  function declaredTierConsentHtml(declaredTier) {
+    const tier = ns.formatCapabilityTier(declaredTier);
+    return `<strong>${ns.escHtml(tier.label)}:</strong> Grants local CLI or agent cascade access. Proceed?`;
+  }
+
   function reconcileDiscoverList(paneEl) {
     const { sidecars = [], registryPackages = [] } = paneEl._ctx || {};
     const listEl = paneEl.querySelector('[data-role="discover-list"]');
@@ -66,10 +82,18 @@
               <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
             </div>
           </div>
+          <div data-role="card-error" class="sideload-banner err hidden" role="alert"></div>
         `;
 
         const btn = card.querySelector('[data-role="pkg-install-btn"]');
         const consentBar = card.querySelector('[data-role="consent-bar"]');
+        const consentText = card.querySelector('[data-role="consent-text"]');
+        const errorEl = card.querySelector('[data-role="card-error"]');
+        const resetInstallBtn = (label) => {
+          btn.disabled = false;
+          btn.dataset.btnState = label === 'Install' ? 'install' : 'retry';
+          btn.innerHTML = `${ns.iconSvg('download', 13)}<span>${label}</span>`;
+        };
         const runInstall = async () => {
           if (card._isInstalling || card._isInstalled) return;
           card._isInstalling = true;
@@ -77,32 +101,44 @@
           btn.dataset.btnState = 'installing';
           btn.innerHTML = `<span>Installing…</span>`;
           consentBar.classList.add('hidden');
+          errorEl.classList.add('hidden');
           try {
             const curPkg = card._pkg;
             const ctx = paneEl._ctx || {};
             const wsPath = ctx.activeWorkspace?.workspacePath;
             const isGlobalPkg = (curPkg.workspaceTriggers?.files || []).includes('*');
-            await ctx.onInstallRemote?.({
+            const res = await ctx.onInstallRemote?.({
               sidecarId: curPkg.id,
               gitRepo: curPkg.release?.gitRepo || '',
               tarballUrl: curPkg.release?.tarballUrl || '',
               version: curPkg.latestVersion || '1.0.0',
               scope: isGlobalPkg ? 'global' : 'project',
               workspaces: isGlobalPkg ? ['*'] : wsPath ? [wsPath] : ['*'],
+              acceptedTier: card._acceptedTier || curPkg.capabilityTier || 'TIER_1_TELEMETRY',
             });
             card._isInstalling = false;
+            if (res?.needsConsent) {
+              card._pendingTier = res.scannedTier;
+              consentText.innerHTML = ns.scannedTierConsentHtml(res.scannedTier);
+              consentBar.classList.remove('hidden');
+              resetInstallBtn('Install');
+              return;
+            }
             ctx.onSwitchTab?.('installed');
           } catch (err) {
             card._isInstalling = false;
-            btn.disabled = false;
-            btn.dataset.btnState = 'retry';
-            btn.innerHTML = `${ns.iconSvg('download', 13)}<span>Retry Install</span>`;
-            btn.title = err.message || 'Install failed';
+            resetInstallBtn('Retry Install');
+            errorEl.textContent = err.message || 'Install failed';
+            errorEl.classList.remove('hidden');
           }
         };
 
         btn.addEventListener('click', () => {
           if (card._isInstalled || card._isInstalling) return;
+          // Every attempt starts from the registry's listed tier; a scanned one must be re-confirmed
+          card._pendingTier = '';
+          card._acceptedTier = '';
+          consentText.innerHTML = declaredTierConsentHtml(card._pkg.capabilityTier);
           if (card._requiresConsent) {
             consentBar.classList.remove('hidden');
           } else {
@@ -110,9 +146,13 @@
           }
         });
         card.querySelector('[data-role="consent-cancel"]').addEventListener('click', () => {
+          card._pendingTier = '';
           consentBar.classList.add('hidden');
         });
-        card.querySelector('[data-role="consent-confirm"]').addEventListener('click', runInstall);
+        card.querySelector('[data-role="consent-confirm"]').addEventListener('click', () => {
+          card._acceptedTier = card._pendingTier || card._pkg.capabilityTier || 'TIER_1_TELEMETRY';
+          runInstall();
+        });
       }
 
       card._pkg = pkg;
@@ -140,8 +180,9 @@
           <span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>
         `;
         card.querySelector('[data-role="pkg-desc"]').textContent = pkg.tagline || '';
-        card.querySelector('[data-role="consent-text"]').innerHTML =
-          `<strong>${ns.escHtml(tier.label)}:</strong> Grants local CLI or agent cascade access. Proceed?`;
+        card.querySelector('[data-role="consent-text"]').innerHTML = card._pendingTier
+          ? ns.scannedTierConsentHtml(card._pendingTier)
+          : declaredTierConsentHtml(pkg.capabilityTier);
       }
 
       if (!card._isInstalling) {
@@ -292,7 +333,7 @@
               <button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">${ns.iconSvg('download', 13)}<span>Install</span></button>
             </div>
             <div data-role="gh-consent-bar" class="consent-bar hidden">
-              <span><strong>Unverified GitHub Repo:</strong> Sidecar will run as a local Node.js process. Proceed?</span>
+              <span data-role="gh-consent-text"></span>
               <div class="consent-actions">
                 <button type="button" data-role="gh-consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
                 <button type="button" data-role="gh-consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
@@ -349,11 +390,18 @@
 
       const ghInput = shell.querySelector('[data-role="github-repo-input"]');
       const ghConsentBar = shell.querySelector('[data-role="gh-consent-bar"]');
+      const ghConsentText = shell.querySelector('[data-role="gh-consent-text"]');
+      // Set when Hangar's scan found Tier 2/3 code; confirming accepts that tier for the retry
+      let ghPendingTier = '';
       shell.querySelector('[data-role="github-install-btn"]').addEventListener('click', () => {
         if (!ghInput.value.trim()) return;
+        ghPendingTier = '';
+        ghConsentText.innerHTML =
+          '<strong>Unverified GitHub Repo:</strong> Sidecar will run as a local Node.js process. Proceed?';
         ghConsentBar.classList.remove('hidden');
       });
       shell.querySelector('[data-role="gh-consent-cancel"]').addEventListener('click', () => {
+        ghPendingTier = '';
         ghConsentBar.classList.add('hidden');
       });
       shell.querySelector('[data-role="gh-consent-confirm"]').addEventListener('click', async () => {
@@ -367,7 +415,15 @@
             gitRepo,
             scope: sideloadScope,
             workspaces: sideloadScope === 'global' ? ['*'] : wsPath ? [wsPath] : ['*'],
+            acceptedTier: ghPendingTier || 'TIER_1_TELEMETRY',
           });
+          if (res?.needsConsent) {
+            ghPendingTier = res.scannedTier;
+            ghConsentText.innerHTML = ns.scannedTierConsentHtml(res.scannedTier);
+            ghConsentBar.classList.remove('hidden');
+            return;
+          }
+          ghPendingTier = '';
           ghInput.value = '';
           sideloadFeedback = { tone: 'ok', text: `Installed ${res.sidecarId} from GitHub.` };
           curCtx.onSwitchTab?.('installed');

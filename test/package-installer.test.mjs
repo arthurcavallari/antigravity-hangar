@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -218,7 +220,8 @@ describe('Hangar package installer, local linker, and capability inspector', () 
         '--branch',
         'v2.1.0',
       ]);
-      assert.equal(execCalls[0].args[5], 'https://github.com/example-org/antigravity-remote-sidecar.git');
+      // "--" ends git's option parsing, so the repository can never be read as an option
+      assert.deepEqual(execCalls[0].args.slice(5, 7), ['--', 'https://github.com/example-org/antigravity-remote-sidecar.git']);
       assert.ok(execCalls[1].args.includes('--ignore-scripts'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -277,6 +280,232 @@ describe('Hangar package installer, local linker, and capability inspector', () 
         method: 'ManageSidecar',
         payload: { action: 'SIDECAR_ACTION_RESTART', sidecarId: 'hangar' },
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to uninstall, link, or self-update over a real sidecars/<id> folder and leaves its files intact', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-real-folder-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+
+      // Hand-placed sidecar folders (not Hangar-made links) holding uncommitted work
+      for (const id of ['my-sidecar', 'hangar']) {
+        mkdirSync(join(sidecarsDir, id), { recursive: true });
+        writeJsonNoBom(join(sidecarsDir, id, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+        writeFileSync(join(sidecarsDir, id, 'uncommitted'), 'work in progress', 'utf8');
+      }
+      writeJsonNoBom(hangarCfgPath, {
+        schemaVersion: 1,
+        sidecars: { 'my-sidecar': { scope: 'global', workspaces: ['*'], installedVersion: '1.0.0' } },
+      });
+
+      const rpcCalls = [];
+      const mockRpc = async (method, payload) => {
+        rpcCalls.push({ method, payload });
+        return { ok: true };
+      };
+
+      await assert.rejects(
+        uninstallSidecar({
+          sidecarId: 'my-sidecar', packagesDir, sidecarsDir,
+          configPath: hangarCfgPath, agyConfigPath: agyCfgPath, rpcFn: mockRpc,
+        }),
+        /is a real folder, not a link created by Hangar/
+      );
+      assert.equal(readFileSync(join(sidecarsDir, 'my-sidecar', 'uncommitted'), 'utf8'), 'work in progress');
+      assert.equal(rpcCalls.length, 0, 'sidecar must not be disabled when uninstall is refused');
+      assert.ok(loadHangarConfig(hangarCfgPath).sidecars['my-sidecar'], 'rule must survive a refused uninstall');
+
+      const otherSidecarDir = join(dir, 'other-sidecar');
+      mkdirSync(otherSidecarDir, { recursive: true });
+      writeJsonNoBom(join(otherSidecarDir, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+      await assert.rejects(
+        linkLocalSidecar({
+          folderPath: otherSidecarDir, sidecarId: 'my-sidecar', sidecarsDir,
+          configPath: hangarCfgPath, agyConfigPath: agyCfgPath, rpcFn: mockRpc, delayMs: 0,
+        }),
+        /is a real folder, not a link created by Hangar/
+      );
+      assert.equal(readFileSync(join(sidecarsDir, 'my-sidecar', 'uncommitted'), 'utf8'), 'work in progress');
+
+      // Linking a folder that already lives at sidecars/<id> is a no-op, not a deletion
+      await linkLocalSidecar({
+        folderPath: join(sidecarsDir, 'my-sidecar'), sidecarId: 'my-sidecar', sidecarsDir,
+        configPath: hangarCfgPath, agyConfigPath: agyCfgPath, rpcFn: mockRpc, delayMs: 0,
+      });
+      assert.equal(readFileSync(join(sidecarsDir, 'my-sidecar', 'uncommitted'), 'utf8'), 'work in progress');
+
+      await assert.rejects(
+        selfUpdateHangar({
+          packagesDir, sidecarsDir, agyConfigPath: agyCfgPath, rpcFn: mockRpc, delayMs: 0,
+          execFn: (cmd, args) => {
+            if (cmd === 'git' && args[0] === 'clone') {
+              const dest = args[args.length - 1];
+              mkdirSync(dest, { recursive: true });
+              writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+            }
+          },
+        }),
+        /is a real folder, not a link created by Hangar/
+      );
+      assert.equal(readFileSync(join(sidecarsDir, 'hangar', 'uncommitted'), 'utf8'), 'work in progress');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the live package when an update download or clone fails, and swaps a successful update into place', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-staged-update-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      const liveDir = join(packagesDir, 'hangar@latest');
+      mkdirSync(liveDir, { recursive: true });
+      writeJsonNoBom(join(liveDir, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+      writeJsonNoBom(join(liveDir, 'package.json'), { name: 'antigravity-hangar', version: '1.0.5' });
+
+      await assert.rejects(
+        selfUpdateHangar({
+          packagesDir, sidecarsDir, agyConfigPath: agyCfgPath, rpcFn: async () => ({}), delayMs: 0,
+          execFn: (cmd, args) => {
+            if (cmd === 'git' && args[0] === 'clone') throw new Error('fatal: unable to access repository');
+          },
+        }),
+        /unable to access repository/
+      );
+      assert.equal(readJsonSafe(join(liveDir, 'package.json'), {}).version, '1.0.5');
+      assert.deepEqual(readdirSync(packagesDir), ['hangar@latest'], 'no staging folders left behind');
+
+      // Tarball-only install whose download fails must not touch the existing same-version copy
+      const remoteLive = join(packagesDir, 'remote-x@2.0.0');
+      mkdirSync(remoteLive, { recursive: true });
+      writeJsonNoBom(join(remoteLive, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+      await assert.rejects(
+        installRemoteSidecar({
+          sidecarId: 'remote-x', tarballUrl: 'https://registry.example.test/remote-x-2.0.0.tgz', version: '2.0.0',
+          packagesDir, sidecarsDir, configPath: hangarCfgPath, agyConfigPath: agyCfgPath,
+          rpcFn: async () => ({}), fetchFn: async () => ({ ok: false, status: 503 }), delayMs: 0,
+        }),
+        /Failed to download tarball \(503\)/
+      );
+      assert.equal(existsSync(join(remoteLive, 'sidecar.json')), true);
+      assert.deepEqual(readdirSync(packagesDir).sort(), ['hangar@latest', 'remote-x@2.0.0']);
+
+      const res = await selfUpdateHangar({
+        packagesDir, sidecarsDir, agyConfigPath: agyCfgPath, rpcFn: async () => ({}), delayMs: 0,
+        execFn: (cmd, args) => {
+          if (cmd === 'git' && args[0] === 'clone') {
+            const dest = args[args.length - 1];
+            assert.notEqual(dest, liveDir, 'clone must target a staging folder, not the live copy');
+            mkdirSync(dest, { recursive: true });
+            writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+            writeJsonNoBom(join(dest, 'package.json'), { name: 'antigravity-hangar', version: '1.0.6' });
+          }
+        },
+      });
+      assert.equal(res.updatedVersion, '1.0.6');
+      assert.equal(res.linkedTo, liveDir);
+      assert.equal(readJsonSafe(join(liveDir, 'package.json'), {}).version, '1.0.6');
+      assert.equal(lstatSync(join(sidecarsDir, 'hangar')).isSymbolicLink(), true);
+      assert.equal(readJsonSafe(join(sidecarsDir, 'hangar', 'package.json'), {}).version, '1.0.6');
+      assert.deepEqual(readdirSync(packagesDir).sort(), ['hangar@latest', 'remote-x@2.0.0']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stops before linking when the scanned tier (including dist/) exceeds the accepted one, then installs once confirmed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-tier-consent-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      writeJsonNoBom(agyCfgPath, { sidecars: { 'dist-tool': { enabled: false } } });
+
+      const rpcCalls = [];
+      const opts = {
+        gitRepo: 'acme/dist-tool', scope: 'global', packagesDir, sidecarsDir,
+        configPath: hangarCfgPath, agyConfigPath: agyCfgPath, delayMs: 0,
+        rpcFn: async (method, payload) => rpcCalls.push({ method, payload }),
+        execFn: (cmd, args) => {
+          if (cmd !== 'git') return;
+          const dest = args[args.length - 1];
+          mkdirSync(join(dest, 'dist'), { recursive: true });
+          writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['dist/server.js'] });
+          writeJsonNoBom(join(dest, 'package.json'), { name: 'dist-tool', version: '1.0.0' });
+          writeFileSync(join(dest, 'dist', 'server.js'), 'require("child_process").spawn("docker");', 'utf8');
+        },
+      };
+
+      const refused = await installRemoteSidecar(opts);
+      assert.equal(refused.needsConsent, true);
+      assert.equal(refused.scannedTier, 'TIER_2_LOCAL_TOOLING');
+      assert.equal(refused.sidecarId, 'dist-tool');
+      assert.equal(existsSync(join(sidecarsDir, 'dist-tool')), false, 'nothing is linked');
+      assert.deepEqual(existsSync(packagesDir) ? readdirSync(packagesDir) : [], [], 'no package or staging folder left');
+      assert.equal(readJsonSafe(agyCfgPath, {}).sidecars['dist-tool'].enabled, false);
+      assert.equal(rpcCalls.length, 0);
+
+      const installed = await installRemoteSidecar({ ...opts, acceptedTier: refused.scannedTier });
+      assert.equal(installed.ok, true);
+      assert.equal(installed.rule.capabilityTier, 'TIER_2_LOCAL_TOOLING');
+      assert.equal(existsSync(join(sidecarsDir, 'dist-tool', 'dist', 'server.js')), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects repository specs that git would parse as options', async () => {
+    const execCalls = [];
+    for (const gitRepo of ['--upload-pack=touch /tmp/pwned', 'acme/repo@--orphan']) {
+      await assert.rejects(
+        installRemoteSidecar({
+          gitRepo, packagesDir: join(tmpdir(), 'hangar-unused-packages'), rpcFn: async () => ({}),
+          execFn: (...args) => execCalls.push(args), delayMs: 0,
+        }),
+        /Invalid repository spec/,
+        gitRepo
+      );
+    }
+    assert.equal(execCalls.length, 0);
+  });
+
+  it('refuses to uninstall while hangar.json is unparseable, before touching the link or packages', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-corrupt-uninstall-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      const sampleSidecarDir = join(packagesDir, 'my-sidecar@1.0.0');
+      mkdirSync(sampleSidecarDir, { recursive: true });
+      writeJsonNoBom(join(sampleSidecarDir, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+      await linkLocalSidecar({
+        folderPath: sampleSidecarDir, sidecarId: 'my-sidecar', sidecarsDir,
+        configPath: hangarCfgPath, agyConfigPath: agyCfgPath, rpcFn: async () => ({}), delayMs: 0,
+      });
+
+      const corrupt = readFileSync(hangarCfgPath, 'utf8').replace(/\n}\s*$/, ',\n}\n');
+      writeFileSync(hangarCfgPath, corrupt, 'utf8');
+
+      await assert.rejects(
+        uninstallSidecar({
+          sidecarId: 'my-sidecar', packagesDir, sidecarsDir,
+          configPath: hangarCfgPath, agyConfigPath: agyCfgPath, rpcFn: async () => ({}),
+        }),
+        /Refusing to save Hangar settings/
+      );
+      assert.equal(readFileSync(hangarCfgPath, 'utf8'), corrupt);
+      assert.equal(existsSync(join(sidecarsDir, 'my-sidecar', 'sidecar.json')), true);
+      assert.equal(existsSync(join(sampleSidecarDir, 'sidecar.json')), true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

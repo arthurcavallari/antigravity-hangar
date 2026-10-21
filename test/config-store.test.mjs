@@ -1,15 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  assertValidSidecarId,
   buildChildIframeUrl,
   loadHangarConfig,
+  readJsonSafe,
+  saveHangarConfig,
   updateSidecarRule,
   updateHangarLayout,
+  writeJsonNoBom,
 } from '../lib/config-store.mjs';
-import { enrichSidecarList, fetchHangarState } from '../lib/state-orchestrator.mjs';
+import { HibernationManager } from '../lib/hibernation-manager.mjs';
+import { enrichSidecarList, fetchHangarState, manageChildSidecar } from '../lib/state-orchestrator.mjs';
 
 describe('config-store and child iframe URL normalization', () => {
   it('targets child raw webPort on 127.0.0.1 with Gateway token and forwards conversationId', () => {
@@ -40,6 +45,46 @@ describe('config-store and child iframe URL normalization', () => {
       assert.equal(loaded.layout.splitViewEnabled, true);
       assert.equal(loaded.layout.pinnedTopHeightPx, 210);
       assert.deepEqual(loaded.sidecars['db-inspector'].workspaces, ['c:/Projects/App', 'c:/Test']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to overwrite an unparseable hangar.json with defaults', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-config-corrupt-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      // Hand-edited file with a trailing comma: telemetry opt-out and a sidecar rule must survive
+      const corrupt = `{
+  "schemaVersion": 1,
+  "installId": "keep-me",
+  "telemetry": false,
+  "sidecars": { "db-inspector": { "scope": "global", "workspaces": ["*"] } },
+}
+`;
+      writeFileSync(cfgPath, corrupt, 'utf8');
+
+      const loaded = loadHangarConfig(cfgPath);
+      assert.equal(loaded.telemetry, true, 'reads still fall back to defaults');
+
+      assert.throws(
+        () => updateHangarLayout({ splitViewEnabled: true }, cfgPath),
+        /Refusing to save Hangar settings: .*hangar\.json could not be parsed/
+      );
+      assert.throws(
+        () => updateSidecarRule('db-inspector', { workspaces: ['c:/Other'] }, { configPath: cfgPath, sidecarsDir: dir }),
+        /Refusing to save Hangar settings/
+      );
+      assert.throws(() => saveHangarConfig(loaded, cfgPath), /Refusing to save Hangar settings/);
+      assert.equal(readFileSync(cfgPath, 'utf8'), corrupt);
+
+      // Once the user fixes the file, saves go through and keep their settings
+      writeFileSync(cfgPath, corrupt.replace('} },\n}', '} }\n}'), 'utf8');
+      updateHangarLayout({ splitViewEnabled: true }, cfgPath);
+      const fixed = loadHangarConfig(cfgPath);
+      assert.equal(fixed.telemetry, false);
+      assert.equal(fixed.layout.splitViewEnabled, true);
+      assert.deepEqual(fixed.sidecars['db-inspector'].workspaces, ['*']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -126,5 +171,114 @@ describe('config-store and child iframe URL normalization', () => {
       hangarState.sidecars[0].iframeUrl,
       'http://127.0.0.1:51234/?conversationId=conv-latest'
     );
+  });
+
+  it("revokes workspaces removed from a rule, keeps the author's permissions, and skips no-op writes", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-permissions-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const manifestPath = join(sidecarsDir, 'child', 'sidecar.json');
+      mkdirSync(join(sidecarsDir, 'child'), { recursive: true });
+      writeJsonNoBom(manifestPath, {
+        command: 'node',
+        agent_permissions: { workspace_uris: ['file:///author/declared'], allows_user_interactions: false },
+      });
+      const opts = { configPath: cfgPath, sidecarsDir };
+      const uris = () => readJsonSafe(manifestPath, {}).agent_permissions.workspace_uris;
+      const grants = (name) => uris().some((u) => u.endsWith(`/Projects/${name}`));
+
+      const rule = updateSidecarRule('child', { scope: 'project', workspaces: ['C:/Projects/a', 'C:/Projects/b'] }, opts);
+      assert.equal(uris().length, 3);
+      assert.ok(grants('a') && grants('b'));
+      assert.equal(rule.grantedWorkspaceUris.length, 2);
+      assert.equal(readJsonSafe(manifestPath, {}).agent_permissions.allows_user_interactions, false);
+
+      updateSidecarRule('child', { workspaces: ['C:/Projects/a'] }, opts);
+      assert.ok(grants('a'));
+      assert.ok(!grants('b'), 'removed workspace is revoked');
+      assert.ok(uris().includes('file:///author/declared'), "author's own URI is kept");
+
+      // Re-saving the same rule must not rewrite the file (it may be a linked dev checkout)
+      const compact = JSON.stringify(readJsonSafe(manifestPath, {}));
+      writeFileSync(manifestPath, compact, 'utf8');
+      updateSidecarRule('child', { workspaces: ['C:/Projects/a'] }, opts);
+      assert.equal(readFileSync(manifestPath, 'utf8'), compact);
+
+      updateSidecarRule('child', { scope: 'global', workspaces: ['*'] }, opts);
+      assert.deepEqual(uris(), ['file:///author/declared']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a manually stopped sidecar off after Hangar restarts, and auto-wakes it once re-enabled', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-manual-stop-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        sidecars: { db: { scope: 'global', workspaces: ['*'], autoHibernate: true } },
+      });
+      const manageCalls = [];
+      const rpcFn = async (method, payload) => {
+        if (method === 'ManageSidecar') manageCalls.push(payload.action);
+        if (method === 'GetSidecars') {
+          return { sidecars: [{ sidecarId: 'db', status: 'SIDECAR_STATUS_STOPPED', config: { hasWebUi: true } }] };
+        }
+        return { trajectorySummaries: {} };
+      };
+      const poll = (hibernator) =>
+        fetchHangarState({ configPath: cfgPath, sidecarsDir: join(dir, 'sidecars'), hibernator, rpcFn });
+
+      await manageChildSidecar('db', 'SIDECAR_ACTION_DISABLE', {
+        hibernator: new HibernationManager(), rpcFn, configPath: cfgPath,
+      });
+      assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, ['db']);
+
+      // A fresh HibernationManager stands in for a restarted Hangar process
+      manageCalls.length = 0;
+      await poll(new HibernationManager());
+      assert.deepEqual(manageCalls, [], 'manually stopped sidecar must not be auto-woken');
+
+      await manageChildSidecar('db', 'SIDECAR_ACTION_ENABLE', {
+        hibernator: new HibernationManager(), rpcFn, configPath: cfgPath,
+      });
+      assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, []);
+      manageCalls.length = 0;
+      await poll(new HibernationManager());
+      assert.deepEqual(manageCalls, ['SIDECAR_ACTION_ENABLE']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects sidecar ids that could escape sidecars/ before touching config or the Language Server', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-id-validation-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      for (const bad of ['..\\..\\evil', '../evil', '/evil', 'evil/', 'a//b', '.hidden', 'a/..']) {
+        assert.throws(() => assertValidSidecarId(bad), /Invalid sidecarId/, bad);
+      }
+      for (const good of ['context-monitor', 'plugin/name', 'My.Sidecar_2']) {
+        assert.doesNotThrow(() => assertValidSidecarId(good), good);
+      }
+
+      assert.throws(
+        () => updateSidecarRule('..\\..\\evil', { workspaces: ['C:/x'] }, { configPath: cfgPath, sidecarsDir: dir }),
+        /Invalid sidecarId/
+      );
+      const rpcCalls = [];
+      await assert.rejects(
+        manageChildSidecar('..\\evil', 'SIDECAR_ACTION_STOP', {
+          rpcFn: async (...args) => rpcCalls.push(args), configPath: cfgPath,
+        }),
+        /Invalid sidecarId/
+      );
+      assert.equal(rpcCalls.length, 0);
+      assert.equal(readJsonSafe(cfgPath, null), null, 'hangar.json is not written');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

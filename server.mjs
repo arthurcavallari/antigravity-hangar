@@ -66,6 +66,7 @@ app.api('/api/store/install', async (data) => installRemoteSidecar({
   sha256: data?.sha256 ? String(data.sha256) : '',
   scope: data?.scope || 'project',
   workspaces: Array.isArray(data?.workspaces) ? data.workspaces : [],
+  acceptedTier: data?.acceptedTier ? String(data.acceptedTier) : '',
 }), 'POST');
 app.api('/api/store/uninstall', async (data) => uninstallSidecar({ sidecarId: String(data?.sidecarId || '') }), 'POST');
 app.api('/api/store/self-update', async (data) => selfUpdateHangar({

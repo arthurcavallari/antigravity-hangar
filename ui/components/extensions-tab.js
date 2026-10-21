@@ -8,6 +8,10 @@
 
   let activeSubTab = 'installed'; // 'installed' | 'discover' | 'sideload'
 
+  ns.setExtensionsSubTab = function setExtensionsSubTab(tab) {
+    activeSubTab = tab;
+  };
+
   function renderRuleList(ruleListEl, sc, onRemovePattern) {
     const patterns = Array.isArray(sc.workspaces) ? sc.workspaces : [];
     const sig = JSON.stringify(patterns);
@@ -41,6 +45,18 @@
 
       row.append(ns.iconEl(iconName, 14), code, rmBtn);
       ruleListEl.appendChild(row);
+    }
+  }
+
+  // Shows a failed card action (uninstall, update, rule save, ...) inline instead of dropping it
+  async function runCardAction(card, action) {
+    const errorEl = card.querySelector('[data-role="card-error"]');
+    errorEl.classList.add('hidden');
+    try {
+      await action();
+    } catch (err) {
+      errorEl.textContent = err?.message || 'Action failed';
+      errorEl.classList.remove('hidden');
     }
   }
 
@@ -86,6 +102,21 @@
               </button>
             </div>
           </div>
+          <div data-role="uninstall-confirm" class="consent-bar hidden">
+            <span data-role="uninstall-confirm-text"></span>
+            <div class="consent-actions">
+              <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+              <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
+            </div>
+          </div>
+          <div data-role="update-confirm" class="consent-bar hidden">
+            <span data-role="update-confirm-text"></span>
+            <div class="consent-actions">
+              <button type="button" data-role="update-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+              <button type="button" data-role="update-confirm-btn" class="agy-btn agy-btn-primary">Confirm Update</button>
+            </div>
+          </div>
+          <div data-role="card-error" class="sideload-banner err hidden" role="alert"></div>
           <div data-role="desc" class="manager-card-desc"></div>
           <div class="manager-section-bar">
             <span class="manager-section-label">Workspace Scope</span>
@@ -112,7 +143,7 @@
           const incoming = raw.split(',').map((s) => s.trim()).filter(Boolean);
           const existing = (card._sc.workspaces || []).filter((w) => w !== '*' || incoming.includes('*'));
           wsInput.value = '';
-          onSaveWorkspaces(card._sc, Array.from(new Set([...existing, ...incoming])));
+          runCardAction(card, () => onSaveWorkspaces(card._sc, Array.from(new Set([...existing, ...incoming]))));
         };
 
         wsInput.addEventListener('keydown', (e) => {
@@ -126,46 +157,79 @@
           const curSc = card._sc;
           const isGlobal = (curSc.workspaces || []).includes('*');
           const fallback = card._activeWorkspace?.workspacePath ? [card._activeWorkspace.workspacePath] : [];
-          onSaveWorkspaces(curSc, isGlobal ? fallback : ['*']);
+          runCardAction(card, () => onSaveWorkspaces(curSc, isGlobal ? fallback : ['*']));
         });
         card.querySelector('[data-role="add-ws-btn"]').addEventListener('click', () => {
           const currentWs = card._activeWorkspace?.workspacePath || '';
           if (!currentWs) return;
           const next = Array.from(new Set([...(card._sc.workspaces || []).filter((w) => w !== '*'), currentWs]));
-          onSaveWorkspaces(card._sc, next);
+          runCardAction(card, () => onSaveWorkspaces(card._sc, next));
         });
         card.querySelector('[data-role="proc-btn"]').addEventListener('click', () => {
-          onManageSidecar(card._sc.sidecarId, card._sc.isRunning ? 'SIDECAR_ACTION_DISABLE' : 'SIDECAR_ACTION_ENABLE');
+          const action = card._sc.isRunning ? 'SIDECAR_ACTION_DISABLE' : 'SIDECAR_ACTION_ENABLE';
+          runCardAction(card, () => onManageSidecar(card._sc.sidecarId, action));
         });
         card.querySelector('[data-role="restart-btn"]').addEventListener('click', () =>
-          onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART')
+          runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'))
         );
-        card.querySelector('[data-role="uninstall-btn"]').addEventListener('click', () => {
-          onUninstallSidecar?.(card._sc.sidecarId);
+        const uninstallBtn = card.querySelector('[data-role="uninstall-btn"]');
+        const uninstallConfirm = card.querySelector('[data-role="uninstall-confirm"]');
+        uninstallBtn.addEventListener('click', () => {
+          card.querySelector('[data-role="uninstall-confirm-text"]').textContent =
+            `Uninstall ${card._sc.displayName || card._sc.sidecarId}? This removes its link and downloaded packages.`;
+          uninstallConfirm.classList.remove('hidden');
         });
-        card.querySelector('[data-role="update-btn"]').addEventListener('click', async (e) => {
+        card.querySelector('[data-role="uninstall-cancel"]').addEventListener('click', () => {
+          uninstallConfirm.classList.add('hidden');
+        });
+        card.querySelector('[data-role="uninstall-confirm-btn"]').addEventListener('click', async () => {
+          uninstallConfirm.classList.add('hidden');
+          uninstallBtn.disabled = true;
+          await runCardAction(card, () => onUninstallSidecar?.(card._sc.sidecarId));
+          uninstallBtn.disabled = false;
+        });
+        const upBtn = card.querySelector('[data-role="update-btn"]');
+        const updateConfirm = card.querySelector('[data-role="update-confirm"]');
+        // acceptedTier is the tier recorded at install (or the registry's listing); an update that
+        // scans higher comes back as needsConsent and must be confirmed before anything is replaced
+        const runUpdate = async (acceptedTier) => {
           const pkg = card._regPkg;
           const curSc = card._sc;
           const gitRepo = pkg?.release?.gitRepo || curSc?.gitRepo || '';
           const tarballUrl = pkg?.release?.tarballUrl || curSc?.tarballUrl || '';
           const version = pkg?.latestVersion || curSc?.latestVersion || 'latest';
           if (!gitRepo && !tarballUrl) return;
-          const upBtn = e.currentTarget;
           upBtn.disabled = true;
-          try {
-            await onInstallRemote?.({
+          updateConfirm.classList.add('hidden');
+          await runCardAction(card, async () => {
+            const res = await onInstallRemote?.({
               sidecarId: curSc.sidecarId,
               gitRepo,
               tarballUrl,
               version,
               scope: curSc.scope,
               workspaces: curSc.workspaces,
+              acceptedTier,
             });
-          } catch (err) {
-            upBtn.title = err.message || 'Update failed';
-          } finally {
-            upBtn.disabled = false;
-          }
+            if (res?.needsConsent) {
+              card._pendingTier = res.scannedTier;
+              card.querySelector('[data-role="update-confirm-text"]').innerHTML =
+                ns.scannedTierConsentHtml(res.scannedTier, 'Update');
+              updateConfirm.classList.remove('hidden');
+            }
+          });
+          upBtn.disabled = false;
+        };
+        upBtn.addEventListener('click', () => {
+          card._pendingTier = '';
+          runUpdate(card._sc.capabilityTier || card._regPkg?.capabilityTier || 'TIER_1_TELEMETRY');
+        });
+        card.querySelector('[data-role="update-cancel"]').addEventListener('click', () => {
+          card._pendingTier = '';
+          updateConfirm.classList.add('hidden');
+        });
+        card.querySelector('[data-role="update-confirm-btn"]').addEventListener('click', () => {
+          runUpdate(card._pendingTier);
         });
         paneEl.appendChild(card);
       }
@@ -221,7 +285,9 @@
       addWsBtn.disabled = !currentWs || alreadyHasCurrent;
 
       renderRuleList(card.querySelector('[data-role="rule-list"]'), sc, (patternToRemove) => {
-        onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== patternToRemove));
+        runCardAction(card, () =>
+          onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== patternToRemove))
+        );
       });
 
       const procBtn = card.querySelector('[data-role="proc-btn"]');
@@ -251,6 +317,7 @@
               ${ns.iconSvg('download', 13)}<span>Update Hangar</span>
             </button>
           </div>
+          <div data-role="hangar-update-error" class="sideload-banner err hidden" role="alert"></div>
           <div class="store-header">
             <div>
               <div class="store-title"><span>UI Extensions</span><span data-role="total-count" class="count-pill"></span></div>
@@ -293,10 +360,12 @@
       });
 
       const selfUpBtn = shell.querySelector('[data-role="hangar-self-update-btn"]');
+      const selfUpError = shell.querySelector('[data-role="hangar-update-error"]');
       selfUpBtn?.addEventListener('click', async () => {
         const curOpts = storeViewEl._lastOpts || opts;
         const h = curOpts?.hangar;
         if (!h || selfUpBtn.disabled) return;
+        selfUpError.classList.add('hidden');
         selfUpBtn.disabled = true;
         selfUpBtn.innerHTML = `<span>Updating Hangar…</span>`;
         try {
@@ -308,7 +377,8 @@
           selfUpBtn.innerHTML = `${ns.iconSvg('download', 13)}<span>Update Hangar</span>`;
           selfUpBtn.disabled = false;
         } catch (err) {
-          selfUpBtn.title = err.message || 'Self-update failed';
+          selfUpError.textContent = err?.message || 'Self-update failed';
+          selfUpError.classList.remove('hidden');
           selfUpBtn.innerHTML = `${ns.iconSvg('download', 13)}<span>Retry Update</span>`;
           selfUpBtn.disabled = false;
         }
@@ -320,6 +390,7 @@
     const hangarText = shell.querySelector('[data-role="hangar-update-text"]');
     const hasHangarUpdate = Boolean(hangar?.updateAvailable);
     hangarBanner?.classList.toggle('hidden', !hasHangarUpdate);
+    if (!hasHangarUpdate) shell.querySelector('[data-role="hangar-update-error"]')?.classList.add('hidden');
     if (hasHangarUpdate && hangarText) {
       hangarText.innerHTML = `<strong>Hangar v${ns.escHtml(hangar.latestVersion)}</strong> is available (installed: v${ns.escHtml(hangar.installedVersion || '1.0.0')})`;
     }

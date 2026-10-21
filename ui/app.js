@@ -8,6 +8,7 @@
   let hangarConversationId = urlParams.get('conversationId') || '';
 
   window.addEventListener('message', (e) => {
+    if (!ns.isHostMessage?.(e.source)) return;
     if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
       hangarConversationId = e.data.payload.conversationId;
       refreshHangarState();
@@ -158,18 +159,18 @@
         if (!apiCall) return;
         const wsPath = state.activeWorkspace.workspacePath;
         if (sug.actionType === 'install') {
-          await apiCall('/api/store/install', {
-            sidecarId: sug.sidecarId, gitRepo: sug.gitRepo, tarballUrl: sug.tarballUrl,
-            version: sug.version, scope: 'project', workspaces: wsPath ? [wsPath] : ['*'],
-          });
-          await refreshRegistry();
-        } else {
-          const existingSc = state.sidecars.find((s) => s.sidecarId === sug.sidecarId);
-          const curWs = (existingSc?.workspaces || []).filter((w) => w !== '*');
-          const nextWs = wsPath ? Array.from(new Set([...curWs, wsPath])) : ['*'];
-          await apiCall('/api/rules/update', { sidecarId: sug.sidecarId, scope: 'project', workspaces: nextWs });
-          await apiCall('/api/sidecar/manage', { sidecarId: sug.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
+          // Installs go through Discover so the capability tier consent is always shown
+          els.projectPopover?.hidePopover?.();
+          ns.setExtensionsSubTab?.('discover');
+          ns.setDiscoverQuery?.(sug.sidecarId);
+          await openExtensionsTab();
+          return;
         }
+        const existingSc = state.sidecars.find((s) => s.sidecarId === sug.sidecarId);
+        const curWs = (existingSc?.workspaces || []).filter((w) => w !== '*');
+        const nextWs = wsPath ? Array.from(new Set([...curWs, wsPath])) : ['*'];
+        await apiCall('/api/rules/update', { sidecarId: sug.sidecarId, scope: 'project', workspaces: nextWs });
+        await apiCall('/api/sidecar/manage', { sidecarId: sug.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
         await refreshHangarState();
       },
     });
@@ -234,8 +235,23 @@
     }
   }
 
+  async function openExtensionsTab() {
+    const { topSet } = ns.partitionSplitTabs(state.sidecars, state.layout);
+    if (state.layout.splitViewEnabled && !topSet.has(ns.EXTENSIONS_TAB_ID)) {
+      state.bottomActiveTabId = ns.EXTENSIONS_TAB_ID;
+      renderAll();
+      return;
+    }
+    state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
+    renderAll();
+    await ns.apiCall('/api/layout/update', { pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID });
+  }
+
+  let lastStateRefreshAt = 0;
+
   async function refreshHangarState() {
     if (ns.isPointerOnTab || state.isResizingSplit) return;
+    lastStateRefreshAt = Date.now();
     try {
       const data = await ns.apiCall('/api/state', {
         workspaceUris: state.workspaceUris,
@@ -286,8 +302,21 @@
     });
   }
 
+  // Poll every 3s while visible. While hidden, poll once a minute: often enough for idle hibernation to
+  // keep working, without two Language Server calls every 3s for a window nobody is looking at.
+  const VISIBLE_POLL_MS = 3000;
+  const HIDDEN_POLL_MS = 60 * 1000;
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshHangarState();
+  });
+
   refreshRegistry();
   refreshHangarState();
-  setInterval(refreshHangarState, 3000);
-  setInterval(refreshRegistry, 15 * 60 * 1000);
+  setInterval(() => {
+    const intervalMs = document.hidden ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;
+    if (Date.now() - lastStateRefreshAt >= intervalMs) refreshHangarState();
+  }, VISIBLE_POLL_MS);
+  setInterval(() => {
+    if (!document.hidden) refreshRegistry();
+  }, 15 * 60 * 1000);
 })();

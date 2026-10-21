@@ -162,7 +162,8 @@
         actBtn.type = 'button';
         actBtn.className = 'agy-btn agy-btn-primary has-icon';
         const isInstall = sug.actionType === 'install';
-        actBtn.innerHTML = `${ns.iconSvg(isInstall ? 'download' : 'check', 13)}<span>${isInstall ? 'Install' : 'Enable'}</span>`;
+        actBtn.innerHTML = `${ns.iconSvg(isInstall ? 'download' : 'check', 13)}<span>${isInstall ? 'Install…' : 'Enable'}</span>`;
+        if (isInstall) actBtn.title = 'Opens this sidecar in Discover to review its capability tier before installing';
         actBtn.addEventListener('click', () => {
           const ctx = popoverEl._ctx;
           const curSug = ctx?.sugMap.get(sug.sidecarId) || sug;

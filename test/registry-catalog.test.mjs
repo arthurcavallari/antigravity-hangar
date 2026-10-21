@@ -8,11 +8,21 @@ import {
   detectWorkspaceSuggestions,
   fetchRegistry,
   isNewerSemver,
+  probeUpstreamVersion,
   readInstalledSidecarVersion,
 } from '../lib/registry-catalog.mjs';
 import { enrichSidecarList } from '../lib/state-orchestrator.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
 import { HANGAR_VERSION } from '../lib/constants.mjs';
+import { createSidecarLink } from 'antigravity-sidecar-kit/setup';
+
+// Installs the way Hangar and npx do: a copy under packagesDir, linked from sidecars/<id>
+function installManagedCopy(sidecarsDir, packagesDir, id) {
+  const copyDir = join(packagesDir, `${id}@test`);
+  mkdirSync(copyDir, { recursive: true });
+  createSidecarLink(copyDir, join(sidecarsDir, id));
+  return copyDir;
+}
 
 describe('marketplace registry catalog and workspace trigger advisor', () => {
   it('compares semver versions and merges remote registry packages with local install rules', async () => {
@@ -36,10 +46,12 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       });
 
       const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
       // Before sidecar.json exists on disk, stale hangar.json rule must not mark package as installed
       const catalogNotOnDisk = await fetchRegistry({
         configPath: cfgPath,
         sidecarsDir,
+        packagesDir,
         fetchFn: async () => ({
           ok: true,
           json: async () => ({
@@ -49,12 +61,13 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       });
       assert.equal(catalogNotOnDisk.packages.find((p) => p.id === 'context-monitor').isInstalled, false);
 
-      mkdirSync(join(sidecarsDir, 'context-monitor'), { recursive: true });
+      installManagedCopy(sidecarsDir, packagesDir, 'context-monitor');
       writeFileSync(join(sidecarsDir, 'context-monitor', 'sidecar.json'), '{"command":"node"}', 'utf8');
 
       const catalog = await fetchRegistry({
         configPath: cfgPath,
         sidecarsDir,
+        packagesDir,
         fetchFn: async () => ({
           ok: true,
           json: async () => ({
@@ -84,6 +97,7 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       const catalogAfterUpgrade = await fetchRegistry({
         configPath: cfgPath,
         sidecarsDir,
+        packagesDir,
         fetchFn: async () => ({
           ok: true,
           json: async () => ({
@@ -98,7 +112,7 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       const enriched = enrichSidecarList(
         [{ sidecarId: 'context-monitor', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } }],
         loadHangarConfig(cfgPath),
-        { sidecarsDir }
+        { sidecarsDir, packagesDir }
       );
       assert.equal(enriched[0].installedVersion, '1.2.0');
     } finally {
@@ -277,16 +291,17 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
     try {
       const cfgPath = join(dir, 'hangar.json');
       const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
 
       // 1. Install context-monitor v1.0.2 and a sideloaded GitHub sidecar custom-metrics v0.4.0
-      mkdirSync(join(sidecarsDir, 'context-monitor'), { recursive: true });
+      installManagedCopy(sidecarsDir, packagesDir, 'context-monitor');
       writeJsonNoBom(join(sidecarsDir, 'context-monitor', 'sidecar.json'), { command: 'node' });
       writeJsonNoBom(join(sidecarsDir, 'context-monitor', 'package.json'), {
         name: 'antigravity-context-monitor',
         version: '1.0.2',
       });
 
-      mkdirSync(join(sidecarsDir, 'custom-metrics'), { recursive: true });
+      installManagedCopy(sidecarsDir, packagesDir, 'custom-metrics');
       writeJsonNoBom(join(sidecarsDir, 'custom-metrics', 'sidecar.json'), {
         command: 'node',
         version: '0.4.0',
@@ -361,6 +376,7 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       const catalog = await fetchRegistry({
         configPath: cfgPath,
         sidecarsDir,
+        packagesDir,
         fetchFn: mockFetch,
         probeUpstream: true,
       });
@@ -392,7 +408,7 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
           { sidecarId: 'custom-metrics', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
         ],
         loadHangarConfig(cfgPath),
-        { sidecarsDir }
+        { sidecarsDir, packagesDir }
       );
       const enrichedCtx = enriched.find((s) => s.sidecarId === 'context-monitor');
       const enrichedCustom = enriched.find((s) => s.sidecarId === 'custom-metrics');
@@ -401,6 +417,232 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       assert.equal(enrichedCustom.updateAvailable, true);
       assert.equal(enrichedCustom.latestVersion, '0.5.0');
       assert.equal(enrichedCustom.gitRepo, 'https://github.com/acme/custom-metrics');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never pairs a newer latestVersion with an older tarball when GitHub HEAD is ahead of npm', async () => {
+    const npmTarball = (name, ver) => `https://registry.npmjs.org/${name}/-/${name}-${ver}.tgz`;
+    const makeFetch = (routes) => async (url) => {
+      const body = routes[url];
+      return body ? { ok: true, json: async () => body } : { ok: false, status: 404 };
+    };
+
+    // npm 1.0.2 (with tarball) is resolved first, then GitHub HEAD reports 1.0.3 (no tarball)
+    const probed = await probeUpstreamVersion({
+      npmPackage: 'acme-widget',
+      gitRepo: 'https://github.com/acme/widget',
+      currentVersion: '1.0.0',
+      fetchFn: makeFetch({
+        'https://registry.npmjs.org/acme-widget/latest': {
+          version: '1.0.2',
+          dist: { tarball: npmTarball('acme-widget', '1.0.2') },
+        },
+        'https://raw.githubusercontent.com/acme/widget/HEAD/package.json': { version: '1.0.3' },
+      }),
+    });
+    assert.equal(probed.latestVersion, '1.0.3');
+    assert.equal(probed.tarballUrl, '');
+
+    // When npm has caught up, its tarball for the same version is kept
+    const caughtUp = await probeUpstreamVersion({
+      npmPackage: 'acme-widget',
+      gitRepo: 'https://github.com/acme/widget',
+      currentVersion: '1.0.0',
+      fetchFn: makeFetch({
+        'https://registry.npmjs.org/acme-widget/latest': {
+          version: '1.0.3',
+          dist: { tarball: npmTarball('acme-widget', '1.0.3') },
+        },
+        'https://raw.githubusercontent.com/acme/widget/HEAD/package.json': { version: '1.0.3' },
+      }),
+    });
+    assert.equal(caughtUp.latestVersion, '1.0.3');
+    assert.equal(caughtUp.tarballUrl, npmTarball('acme-widget', '1.0.3'));
+
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-tarball-pairing-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      installManagedCopy(sidecarsDir, packagesDir, 'ctx-pkg');
+      writeJsonNoBom(join(sidecarsDir, 'ctx-pkg', 'sidecar.json'), { command: 'node', version: '1.0.0' });
+      installManagedCopy(sidecarsDir, packagesDir, 'side-pkg');
+      writeJsonNoBom(join(sidecarsDir, 'side-pkg', 'sidecar.json'), { command: 'node', version: '0.4.0' });
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        registryUrl: 'https://registry.example.test',
+        sidecars: {
+          // Tarballs recorded at install time belong to the installed versions
+          'ctx-pkg': { scope: 'global', workspaces: ['*'], tarballUrl: 'https://cdn.example.test/ctx-pkg-1.0.0.tgz' },
+          'side-pkg': {
+            scope: 'global',
+            workspaces: ['*'],
+            source: 'github',
+            gitRepo: 'https://github.com/acme/side-pkg',
+            tarballUrl: 'https://cdn.example.test/side-pkg-0.4.0.tgz',
+          },
+        },
+      });
+
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        packagesDir,
+        probeUpstream: true,
+        fetchFn: makeFetch({
+          'https://registry.example.test/registry.json': {
+            hangar: {
+              id: 'hangar',
+              npmPackage: 'acme-hangar',
+              latestVersion: '50.0.0',
+              release: {
+                gitRepo: 'https://github.com/acme/hangar',
+                tarballUrl: npmTarball('acme-hangar', '50.0.0'),
+              },
+            },
+            packages: [
+              {
+                id: 'ctx-pkg',
+                name: 'Ctx Pkg',
+                npmPackage: 'acme-ctx-pkg',
+                latestVersion: '1.0.2',
+                release: {
+                  gitRepo: 'https://github.com/acme/ctx-pkg',
+                  tarballUrl: npmTarball('acme-ctx-pkg', '1.0.2'),
+                },
+              },
+            ],
+          },
+          'https://registry.npmjs.org/acme-hangar/latest': {
+            version: '50.0.0',
+            dist: { tarball: npmTarball('acme-hangar', '50.0.0') },
+          },
+          'https://raw.githubusercontent.com/acme/hangar/HEAD/package.json': { version: '50.0.1' },
+          'https://registry.npmjs.org/acme-ctx-pkg/latest': {
+            version: '1.0.2',
+            dist: { tarball: npmTarball('acme-ctx-pkg', '1.0.2') },
+          },
+          'https://raw.githubusercontent.com/acme/ctx-pkg/HEAD/package.json': { version: '1.0.3' },
+          'https://raw.githubusercontent.com/acme/side-pkg/HEAD/package.json': { version: '0.5.0' },
+        }),
+      });
+
+      // Hangar self-update: GitHub 50.0.1 must not reuse the registry/npm 50.0.0 tarball
+      assert.equal(catalog.hangar.latestVersion, '50.0.1');
+      assert.equal(catalog.hangar.tarballUrl, '');
+
+      // Catalog merge: GitHub 1.0.3 must not reuse the 1.0.2 release tarball or the installed 1.0.0 one
+      const ctxPkg = catalog.packages.find((p) => p.id === 'ctx-pkg');
+      assert.equal(ctxPkg.latestVersion, '1.0.3');
+      assert.equal(ctxPkg.release.tarballUrl, undefined);
+      assert.equal(catalog.sidecarUpdates['ctx-pkg'].tarballUrl, '');
+
+      // Sideloaded sidecar: GitHub 0.5.0 must not reuse the installed 0.4.0 tarball
+      assert.equal(catalog.sidecarUpdates['side-pkg'].latestVersion, '0.5.0');
+      assert.equal(catalog.sidecarUpdates['side-pkg'].tarballUrl, '');
+
+      // The Installed pane's Update button reads sc.tarballUrl, which must not fall back to the installed tarball
+      const enriched = enrichSidecarList(
+        [
+          { sidecarId: 'ctx-pkg', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+          { sidecarId: 'side-pkg', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+        ],
+        loadHangarConfig(cfgPath),
+        { sidecarsDir, packagesDir }
+      );
+      for (const sc of enriched) {
+        assert.equal(sc.updateAvailable, true, sc.sidecarId);
+        assert.equal(sc.tarballUrl, '', sc.sidecarId);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("never offers updates for a user's own folder, and never takes npm tarballs for GitHub clones", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-update-scope-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const writeSidecar = (folder, pkgJson) => {
+        mkdirSync(folder, { recursive: true });
+        writeJsonNoBom(join(folder, 'sidecar.json'), { command: 'node' });
+        writeJsonNoBom(join(folder, 'package.json'), pkgJson);
+      };
+
+      // Dev checkout linked from sidecars/ whose package.json name collides with an unrelated npm package
+      const devCheckout = join(dir, 'projects', 'dev-tool');
+      writeSidecar(devCheckout, { name: 'left-pad', version: '1.0.0' });
+      createSidecarLink(devCheckout, join(sidecarsDir, 'dev-tool'));
+      // Hand-placed real folder in sidecars/
+      writeSidecar(join(sidecarsDir, 'hand-placed'), {
+        name: 'hand-placed-pkg',
+        version: '1.0.0',
+        repository: 'github:acme/hand-placed',
+      });
+      // Dev checkout of a catalog sidecar, linked under the catalog's id
+      const ctxCheckout = join(dir, 'projects', 'antigravity-context-monitor');
+      writeSidecar(ctxCheckout, { name: 'antigravity-context-monitor', version: '1.0.0' });
+      createSidecarLink(ctxCheckout, join(sidecarsDir, 'context-monitor'));
+      // Hangar-managed GitHub clone whose package.json name also collides with left-pad on npm
+      installManagedCopy(sidecarsDir, packagesDir, 'gh-clone');
+      writeJsonNoBom(join(sidecarsDir, 'gh-clone', 'sidecar.json'), { command: 'node' });
+      writeJsonNoBom(join(sidecarsDir, 'gh-clone', 'package.json'), { name: 'left-pad', version: '0.1.0' });
+
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        registryUrl: 'https://registry.example.test',
+        sidecars: {
+          'dev-tool': { scope: 'global', workspaces: ['*'], source: 'local' },
+          'gh-clone': { scope: 'global', workspaces: ['*'], source: 'github', gitRepo: 'https://github.com/acme/gh-clone' },
+        },
+      });
+
+      const requested = [];
+      const routes = {
+        'https://registry.example.test/registry.json': {
+          packages: [{ id: 'context-monitor', name: 'Context Monitor', npmPackage: 'antigravity-context-monitor', latestVersion: '1.2.0' }],
+        },
+        'https://registry.npmjs.org/left-pad/latest': {
+          version: '9.9.9',
+          dist: { tarball: 'https://registry.npmjs.org/left-pad/-/left-pad-9.9.9.tgz' },
+        },
+        'https://raw.githubusercontent.com/acme/gh-clone/HEAD/package.json': { version: '0.2.0' },
+      };
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        packagesDir,
+        probeUpstream: true,
+        fetchFn: async (url) => {
+          requested.push(url);
+          return routes[url] ? { ok: true, json: async () => routes[url] } : { ok: false, status: 404 };
+        },
+      });
+
+      assert.ok(!requested.includes('https://registry.npmjs.org/left-pad/latest'), 'no npm lookup by a colliding name');
+      assert.ok(!requested.some((u) => u.includes('acme/hand-placed')), "user's own folders are never probed");
+      assert.equal(catalog.sidecarUpdates['dev-tool'], undefined);
+      assert.equal(catalog.sidecarUpdates['hand-placed'], undefined);
+      assert.equal(catalog.sidecarUpdates['gh-clone'].latestVersion, '0.2.0');
+      assert.equal(catalog.sidecarUpdates['gh-clone'].tarballUrl, '');
+
+      const ctxPkg = catalog.packages.find((p) => p.id === 'context-monitor');
+      assert.equal(ctxPkg.isInstalled, true);
+      assert.equal(ctxPkg.updateAvailable, false, 'a dev checkout under a catalog id is not replaced');
+
+      const enriched = enrichSidecarList(
+        ['dev-tool', 'hand-placed', 'context-monitor', 'gh-clone'].map((sidecarId) => ({
+          sidecarId, status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true },
+        })),
+        loadHangarConfig(cfgPath),
+        { sidecarsDir, packagesDir }
+      );
+      const updatable = Object.fromEntries(enriched.map((s) => [s.sidecarId, s.updateAvailable]));
+      assert.deepEqual(updatable, { 'dev-tool': false, 'hand-placed': false, 'context-monitor': false, 'gh-clone': true });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
