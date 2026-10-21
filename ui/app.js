@@ -18,7 +18,8 @@
   const state = {
     workspaceUris: [],
     activeWorkspace: { workspacePath: '', workspaceName: 'Detecting...' },
-    layout: { pinnedTopSidecarId: 'context-monitor', pinnedTopHeightPx: 185, splitViewEnabled: false },
+    // Empty until the first /api/state, so a render before then doesn't claim a tab for this window
+    layout: { pinnedTopSidecarId: '', pinnedTopHeightPx: 185, splitViewEnabled: false },
     hangar: null,
     sidecars: [],
     suggestions: [],
@@ -57,8 +58,23 @@
     } catch { /* keep existing registryPackages */ }
   }
 
+  // The active tab belongs to this window: hangar.json is shared by every Antigravity window, so its
+  // pinnedTopSidecarId only seeds a window that hasn't picked a tab yet. sessionStorage is per window.
+  const ACTIVE_TAB_KEY = 'hangar.activeTabId';
+  function readWindowActiveTab() {
+    try { return sessionStorage.getItem(ACTIVE_TAB_KEY) || ''; } catch { return ''; }
+  }
+  function rememberWindowActiveTab(sidecarId) {
+    try { if (sidecarId) sessionStorage.setItem(ACTIVE_TAB_KEY, sidecarId); } catch { /* storage unavailable */ }
+  }
+  function withWindowActiveTab(layout) {
+    const windowTabId = readWindowActiveTab();
+    return windowTabId ? { ...layout, pinnedTopSidecarId: windowTabId } : layout;
+  }
+
   function renderAll() {
     const { apiCall } = ns;
+    rememberWindowActiveTab(state.layout.pinnedTopSidecarId);
     ns.reconcileIframeDeck?.({ state, els });
 
     ns.renderTabBar?.({
@@ -260,7 +276,7 @@
       if (ns.isPointerOnTab || state.isResizingSplit) return;
       if (data.theme) ns.applyThemePayload?.(data.theme, false);
       state.activeWorkspace = data.activeWorkspace || state.activeWorkspace;
-      if (data.layout) state.layout = data.layout;
+      if (data.layout) state.layout = withWindowActiveTab(data.layout);
       if (data.hangar) state.hangar = data.hangar;
       state.sidecars = data.sidecars || [];
       state.suggestions = data.suggestions || [];
@@ -291,6 +307,7 @@
     } else if (!nextSplit && activeTopId) {
       patch.pinnedTopSidecarId = activeTopId;
     }
+    rememberWindowActiveTab(patch.pinnedTopSidecarId);
     await ns.apiCall('/api/layout/update', patch);
     await refreshHangarState();
   });

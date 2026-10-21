@@ -94,12 +94,6 @@ runSidecarSetup({
     'ui/components/extensions-tab.js',
     'ui/components/iframe-deck.js',
   ],
-  testFiles: [
-    'test/config-store.test.mjs',
-    'test/hibernation-manager.test.mjs',
-    'test/package-installer.test.mjs',
-    'test/registry-catalog.test.mjs',
-  ],
   onBeforeSetup: async () => {
     await migrateLegacySidecarHub();
     if (!existsSync(HANGAR_CONFIG_PATH)) {

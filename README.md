@@ -39,10 +39,9 @@ What `setup` does:
 1. Validates all required sidecar manifest, backend, and UI assets.
 2. Migrates any legacy `sidecar-hub` configuration or junctions automatically.
 3. Initializes `~/.gemini/config/hangar.json` with default split-pane and workspace rules if not present.
-4. Runs the automated unit test suite (`npm test`).
-5. Links `~/.gemini/config/sidecars/hangar` to your package checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux, copying out of ephemeral `_npx` caches into `~/.gemini/hangar/packages/` automatically).
-6. Enables `sidecars["hangar"]` in `~/.gemini/config/config.json` (writing UTF-8 without BOM).
-7. Hot-reloads the sidecar via the Language Server `ManageSidecar` RPC when invoked inside an active Antigravity session.
+4. Links `~/.gemini/config/sidecars/hangar` to your package checkout (using an NTFS directory junction on Windows or directory symlink on macOS/Linux, copying out of ephemeral `_npx` caches into `~/.gemini/hangar/packages/` automatically).
+5. Enables `sidecars["hangar"]` in `~/.gemini/config/config.json` (writing UTF-8 without BOM).
+6. Hot-reloads the sidecar via the Language Server `ManageSidecar` RPC when invoked inside an active Antigravity session.
 
 ### Uninstallation
 
