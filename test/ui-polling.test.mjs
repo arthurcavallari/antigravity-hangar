@@ -165,4 +165,69 @@ describe('Hangar UI polling load', () => {
     await flush();
     assert.equal(requests.length, 3);
   });
+
+  it('Hangar polls at the hidden cadence while Antigravity hides its view with CSS', async () => {
+    let now = 0;
+    let intervalTick = null;
+    let observer = null;
+    let stateCalls = 0;
+    const window = {
+      location: { search: '' },
+      addEventListener() {},
+      Hangar: {
+        partitionSplitTabs: () => ({ workspaceTabs: [], topTabs: [], bottomTabs: [], topSet: new Set() }),
+        apiCall: async (path) => {
+          if (path === '/api/state') stateCalls++;
+          return { sidecars: [], layout: {} };
+        },
+      },
+    };
+    const document = { hidden: false, documentElement: {}, getElementById: () => null, addEventListener() {} };
+    const ctx = vm.createContext({
+      window,
+      document,
+      URLSearchParams,
+      sessionStorage: { getItem: () => '', setItem() {} },
+      console,
+      Date: { now: () => now },
+      setTimeout,
+      setInterval: (fn) => {
+        intervalTick ??= fn;
+        return 0;
+      },
+      IntersectionObserver: class {
+        constructor(cb) {
+          observer = { cb };
+        }
+        observe(target) {
+          observer.target = target;
+        }
+      },
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+    assert.equal(stateCalls, 1);
+    assert.equal(observer.target, document.documentElement);
+
+    observer.cb([{ isIntersecting: false }]);
+    for (let i = 0; i < 19; i++) {
+      now += 3000;
+      intervalTick();
+      await flush();
+    }
+    assert.equal(stateCalls, 1, 'no 3s polls while hidden');
+    now += 3000;
+    intervalTick();
+    await flush();
+    assert.equal(stateCalls, 2, 'one poll per minute keeps hibernation working');
+
+    // Shown again: refresh at once, then back to the 3s cadence
+    observer.cb([{ isIntersecting: true }]);
+    await flush();
+    assert.equal(stateCalls, 3);
+    now += 3000;
+    intervalTick();
+    await flush();
+    assert.equal(stateCalls, 4);
+  });
 });
