@@ -13,7 +13,7 @@ import {
 } from '../lib/registry-catalog.mjs';
 import { enrichSidecarList } from '../lib/state-orchestrator.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
-import { HANGAR_VERSION } from '../lib/constants.mjs';
+import { GITHUB_REGISTRY_URL, HANGAR_REGISTRY_URL, HANGAR_VERSION } from '../lib/constants.mjs';
 import { createSidecarLink } from 'antigravity-sidecar-kit/setup';
 
 // Installs the way Hangar and npx do: a copy under packagesDir, linked from sidecars/<id>
@@ -643,6 +643,39 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       );
       const updatable = Object.fromEntries(enriched.map((s) => [s.sidecarId, s.updateAvailable]));
       assert.deepEqual(updatable, { 'dev-tool': false, 'hand-placed': false, 'context-monitor': false, 'gh-clone': true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('migrates the old GitHub registryUrl to the Worker, keeps custom URLs, and falls back to GitHub without telemetry', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-registry-url-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      for (const old of [GITHUB_REGISTRY_URL, `${GITHUB_REGISTRY_URL}/`, `${GITHUB_REGISTRY_URL}/registry.json`]) {
+        writeJsonNoBom(cfgPath, { schemaVersion: 1, installId: 'keep', registryUrl: old });
+        assert.equal(loadHangarConfig(cfgPath).registryUrl, HANGAR_REGISTRY_URL, old);
+      }
+      writeJsonNoBom(cfgPath, { schemaVersion: 1, installId: 'keep', registryUrl: 'https://my-mirror.example.test' });
+      assert.equal(loadHangarConfig(cfgPath).registryUrl, 'https://my-mirror.example.test');
+
+      // Worker unreachable: the catalog still comes from GitHub, and GitHub never sees the telemetry headers
+      writeJsonNoBom(cfgPath, { schemaVersion: 1, installId: '11111111-2222-4333-8444-555555555555' });
+      const calls = [];
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir: join(dir, 'sidecars'),
+        env: {},
+        fetchFn: async (url, opts) => {
+          calls.push({ url, headers: opts?.headers });
+          if (url.startsWith(HANGAR_REGISTRY_URL)) throw new Error('getaddrinfo ENOTFOUND');
+          return { ok: true, json: async () => ({ packages: [{ id: 'from-github', name: 'From GitHub' }] }) };
+        },
+      });
+      assert.deepEqual(calls.map((c) => c.url), [`${HANGAR_REGISTRY_URL}/registry.json`, `${GITHUB_REGISTRY_URL}/registry.json`]);
+      assert.equal(calls[0].headers['X-Hangar-Install-Id'], '11111111-2222-4333-8444-555555555555');
+      assert.equal(calls[1].headers, undefined);
+      assert.ok(catalog.packages.some((p) => p.id === 'from-github'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -142,11 +142,13 @@ antigravity-hangar/
 
 ## 7. Privacy & Anonymous Telemetry Opt-Out
 
-When fetching the online Marketplace catalog (`GET <registryUrl>/registry.json`), Hangar includes anonymous, non-PII headers (`X-Hangar-Install-Id`, `X-Hangar-Version`, `X-Hangar-OS`, `X-Hangar-Sidecars`) to measure active installs and OS/version compatibility. No workspace paths, repository names, or sidecar identifiers are ever sent.
+When fetching the online Marketplace catalog from `https://hangar.arthurcavallari.dev/registry.json`, Hangar includes anonymous, non-PII headers (`X-Hangar-Install-Id`, a random ID generated on your machine, plus `X-Hangar-Version`, `X-Hangar-OS`, and `X-Hangar-Sidecars`, the number of configured sidecars) to measure active installs and OS/version compatibility. No workspace paths, repository names, or sidecar identifiers are sent in telemetry.
 
-To opt out of telemetry headers completely, set any of the following:
+To opt out completely, set any of the following. Hangar then sends no telemetry headers, and nothing about your install is recorded:
 - `"telemetry": false` in `~/.gemini/config/hangar.json`
 - `DO_NOT_TRACK=1` or `HANGAR_TELEMETRY=0` in your environment
+
+Separately, update checks look up Hangar and the sidecars it installed on npm and GitHub by package name, like any update check. These aren't affected by the opt-out.
 
 ---
 
