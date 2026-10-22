@@ -32,4 +32,28 @@ describe('hangarRpc shared state reads', () => {
     await poll();
     assert.deepEqual(calls, { GetSidecars: 3, GetAllCascadeTrajectories: 2, ManageSidecar: 2 });
   });
+
+  it('keeps GetAllPlugins across polls and drops it after a plugin write', async () => {
+    const calls = {};
+    const options = {
+      lsAddress: '127.0.0.1:59991',
+      csrfToken: 'tok',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        calls[method] = (calls[method] || 0) + 1;
+        return { ok: true, status: 200, text: async () => '{"plugins":[]}' };
+      },
+    };
+    invalidateStateReads();
+    const listPlugins = () => hangarRpc('GetAllPlugins', { workspaceUris: [] }, options);
+    await Promise.all([listPlugins(), listPlugins()]);
+    await listPlugins();
+    assert.deepEqual(calls, { GetAllPlugins: 1 });
+
+    await hangarRpc('JetboxWriteState', { userConfig: { plugins: { demo: { enabled: true } } } }, options);
+    await listPlugins();
+    await hangarRpc('DeletePlugin', { pluginId: 'demo' }, options);
+    await listPlugins();
+    assert.deepEqual(calls, { GetAllPlugins: 3, JetboxWriteState: 1, DeletePlugin: 1 });
+  });
 });

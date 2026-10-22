@@ -10,12 +10,9 @@ import { createAssetHandler, createAgyCssHandler } from 'antigravity-sidecar-kit
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
 import { updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
 import {
-  inspectSidecarDirectory,
-  installRemoteSidecar,
-  linkLocalSidecar,
-  selfUpdateHangar,
-  uninstallSidecar,
+  inspectSidecarDirectory, installRemoteSidecar, linkLocalSidecar, selfUpdateHangar, uninstallSidecar,
 } from './lib/package-installer.mjs';
+import { installRemotePlugin, pluginRequest, previewPluginPort, uninstallPlugin } from './lib/plugin-installer.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
 
 const __dirname = realpathSync(dirname(fileURLToPath(import.meta.url)));
@@ -32,13 +29,9 @@ app.page('/index.html', serveAsset('index.html', 'text/html; charset=utf-8'));
 app.page('/compiled_tailwind.css', serveAgyCss);
 app.page('/styles.css', serveAsset('styles.css', 'text/css; charset=utf-8'));
 app.page('/components.css', serveAsset('components.css', 'text/css; charset=utf-8'));
-app.page('/core.js', serveAsset('core.js', 'text/javascript; charset=utf-8'));
-app.page('/app.js', serveAsset('app.js', 'text/javascript; charset=utf-8'));
-app.page('/components/tab-bar.js', serveAsset('components/tab-bar.js', 'text/javascript; charset=utf-8'));
-app.page('/components/project-popover.js', serveAsset('components/project-popover.js', 'text/javascript; charset=utf-8'));
-app.page('/components/marketplace-panes.js', serveAsset('components/marketplace-panes.js', 'text/javascript; charset=utf-8'));
-app.page('/components/extensions-tab.js', serveAsset('components/extensions-tab.js', 'text/javascript; charset=utf-8'));
-app.page('/components/iframe-deck.js', serveAsset('components/iframe-deck.js', 'text/javascript; charset=utf-8'));
+const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/project-popover.js', 'components/marketplace-panes.js',
+  'components/plugin-panes.js', 'components/extensions-tab.js', 'components/iframe-deck.js'];
+for (const script of SCRIPTS) app.page(`/${script}`, serveAsset(script, 'text/javascript; charset=utf-8'));
 
 // Authenticated JSON API routes
 app.api('/api/state', async (data) => fetchHangarState({
@@ -69,6 +62,9 @@ app.api('/api/store/install', async (data) => installRemoteSidecar({
   acceptedTier: data?.acceptedTier ? String(data.acceptedTier) : '',
 }), 'POST');
 app.api('/api/store/uninstall', async (data) => uninstallSidecar({ sidecarId: String(data?.sidecarId || '') }), 'POST');
+app.api('/api/store/port-preview', async (data) => previewPluginPort(pluginRequest(data)), 'POST');
+app.api('/api/store/install-plugin', async (data) => installRemotePlugin(pluginRequest(data)), 'POST');
+app.api('/api/store/uninstall-plugin', async (data) => uninstallPlugin({ pluginId: String(data?.pluginId || '') }), 'POST');
 app.api('/api/store/self-update', async (data) => selfUpdateHangar({
   gitRepo: data?.gitRepo ? String(data.gitRepo) : '',
   tarballUrl: data?.tarballUrl ? String(data.tarballUrl) : '',

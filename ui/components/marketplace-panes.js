@@ -32,11 +32,11 @@
   }
 
   function reconcileDiscoverList(paneEl) {
-    const { sidecars = [], registryPackages = [] } = paneEl._ctx || {};
+    const { sidecars = [], plugins = [], registryPackages = [] } = paneEl._ctx || {};
     const listEl = paneEl.querySelector('[data-role="discover-list"]');
     if (!listEl) return;
 
-    const installedIds = new Set(sidecars.map((s) => s.sidecarId));
+    const installedIds = new Set([...sidecars.map((s) => s.sidecarId), ...plugins.map((p) => p.pluginId).filter(Boolean)]);
     const q = searchQuery.toLowerCase().trim();
     const filtered = registryPackages.filter((pkg) => {
       const matchesCat = activeCategory === 'all' || (pkg.categories || []).includes(activeCategory);
@@ -67,6 +67,7 @@
               <div class="manager-card-title-row">
                 <span data-role="pkg-title" class="manager-card-title"></span>
                 <span data-role="pkg-tier" class="badge" title="Capability Tier"></span>
+                <span data-role="pkg-kind" class="badge-group"></span>
               </div>
               <div data-role="pkg-meta" class="manager-card-meta"></div>
             </div>
@@ -76,7 +77,7 @@
           </div>
           <div data-role="pkg-desc" class="manager-card-desc"></div>
           <div data-role="consent-bar" class="consent-bar hidden">
-            <span data-role="consent-text"></span>
+            <span data-role="consent-text" class="consent-text"></span>
             <div class="consent-actions">
               <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
               <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
@@ -94,6 +95,8 @@
           btn.dataset.btnState = label === 'Install' ? 'install' : 'retry';
           btn.innerHTML = `${ns.iconSvg('download', 13)}<span>${label}</span>`;
         };
+        // Plugins install through plugin-panes.js: a dry-run port fills this card's consent bar first
+        const pluginEls = { btn, consentBar, consentText, errorEl, reset: resetInstallBtn };
         const runInstall = async () => {
           if (card._isInstalling || card._isInstalled) return;
           card._isInstalling = true;
@@ -135,6 +138,7 @@
 
         btn.addEventListener('click', () => {
           if (card._isInstalled || card._isInstalling) return;
+          if (card._pkg.kind === 'plugin') return ns.previewPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
           // Every attempt starts from the registry's listed tier; a scanned one must be re-confirmed
           card._pendingTier = '';
           card._acceptedTier = '';
@@ -150,6 +154,7 @@
           consentBar.classList.add('hidden');
         });
         card.querySelector('[data-role="consent-confirm"]').addEventListener('click', () => {
+          if (card._pkg.kind === 'plugin') return ns.confirmPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
           card._acceptedTier = card._pendingTier || card._pkg.capabilityTier || 'TIER_1_TELEMETRY';
           runInstall();
         });
@@ -159,8 +164,10 @@
       card._isInstalled = isInstalled;
       card._requiresConsent = requiresConsent;
 
+      const isPlugin = pkg.kind === 'plugin';
       const metaSig = JSON.stringify({
         name: pkg.name,
+        kind: [pkg.kind || 'sidecar', pkg.port?.from || ''],
         tierState: tier.state,
         tierLabel: tier.label,
         verified: Boolean(pkg.author?.verified),
@@ -175,14 +182,18 @@
         const tierEl = card.querySelector('[data-role="pkg-tier"]');
         tierEl.className = `badge ${tier.state}`;
         tierEl.innerHTML = `${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.label)}</span>`;
+        card.querySelector('[data-role="pkg-kind"]').innerHTML = isPlugin ? ns.pluginBadgesHtml?.(pkg) || '' : '';
         card.querySelector('[data-role="pkg-meta"]').innerHTML = `
           ${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}
           <span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>
         `;
         card.querySelector('[data-role="pkg-desc"]').textContent = pkg.tagline || '';
-        card.querySelector('[data-role="consent-text"]').innerHTML = card._pendingTier
-          ? ns.scannedTierConsentHtml(card._pendingTier)
-          : declaredTierConsentHtml(pkg.capabilityTier);
+        // A plugin's consent text is its port report, which only a fresh preview may replace
+        if (!isPlugin) {
+          card.querySelector('[data-role="consent-text"]').innerHTML = card._pendingTier
+            ? ns.scannedTierConsentHtml(card._pendingTier)
+            : declaredTierConsentHtml(pkg.capabilityTier);
+        }
       }
 
       if (!card._isInstalling) {
@@ -222,7 +233,7 @@
           <div class="discover-toolbar">
             <div class="search-box">
               ${ns.iconSvg('search', 14)}
-              <input type="search" data-role="discover-search" class="search-input" placeholder="Search marketplace sidecars…" />
+              <input type="search" data-role="discover-search" class="search-input" placeholder="Search sidecars and plugins…" />
             </div>
             <div class="agy-toggle-group">
               ${categories.map((c) => `<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`).join('')}

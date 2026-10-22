@@ -321,7 +321,7 @@
           <div class="store-header">
             <div>
               <div class="store-title"><span>UI Extensions</span><span data-role="total-count" class="count-pill"></span></div>
-              <div class="store-subtitle">Manage workspace scopes, discover sidecars, or link local folders</div>
+              <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
             <div class="store-header-right">
               <div data-role="subtab-group" class="agy-toggle-group" role="tablist">
@@ -335,7 +335,10 @@
               <span data-role="running-count" class="badge running"></span>
             </div>
           </div>
-          <div data-role="pane-installed"></div>
+          <div data-role="pane-installed">
+            <div data-role="installed-sidecars"></div>
+            <div data-role="installed-plugins" class="hidden"></div>
+          </div>
           <div data-role="pane-discover" class="hidden"></div>
           <div data-role="pane-sideload" class="hidden"></div>
         </div>
@@ -421,7 +424,8 @@
     };
 
     if (activeSubTab === 'installed') {
-      reconcileInstalledPane(installedPane, { ...opts, onSwitchTab: switchTab });
+      reconcileInstalledPane(installedPane.querySelector('[data-role="installed-sidecars"]'), { ...opts, onSwitchTab: switchTab });
+      ns.renderInstalledPlugins?.(installedPane.querySelector('[data-role="installed-plugins"]'), { ...opts, onSwitchTab: switchTab });
     } else if (activeSubTab === 'discover') {
       ns.renderDiscoverPane?.(discoverPane, { ...opts, onSwitchTab: switchTab });
     } else if (activeSubTab === 'sideload') {

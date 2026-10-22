@@ -49,6 +49,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "agy-plugin-porter": "github:arthurcavallari/agy-plugin-porter#936ee2e",
     "antigravity-sidecar-kit": "^1.1.0"
   },
   "scripts": {

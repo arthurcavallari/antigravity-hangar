@@ -18,9 +18,16 @@ const NPM_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const SHA256 = /^[0-9a-f]{64}$/i;
 const TIERS = new Set(['TIER_1_TELEMETRY', 'TIER_2_LOCAL_TOOLING', 'TIER_3_AGENT_CONTROL']);
 const RESERVED_IDS = new Set(['hangar', 'sidecar-hub']);
+const KINDS = new Set(['sidecar', 'plugin']);
+const PORT_SOURCES = new Set(['claude', 'gemini', 'cursor', 'roo', 'codex', 'auto']);
+// A tag, branch or full commit SHA. git can't fetch an abbreviated SHA, and a leading "-" would be an option.
+const GIT_REF = /^[A-Za-z0-9_][A-Za-z0-9_./-]*$/;
+const SHORT_SHA = /^[0-9a-f]{7,39}$/i;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
+// Joined onto a folder (the user's workspace, or the downloaded package), so it must stay relative and inside it
+const isRelativeInside = (p) => isNonEmptyString(p) && !/^[\\/]|^[a-z]:/i.test(p) && !p.split(/[\\/]/).includes('..');
 
 function isHttpsUrl(value) {
   try {
@@ -30,18 +37,26 @@ function isHttpsUrl(value) {
   }
 }
 
-function checkRelease(release, where, errors) {
+function checkRelease(release, where, errors, kind = 'sidecar') {
   if (!isObject(release)) {
     errors.push(`${where}.release must be an object`);
     return;
   }
-  const { gitRepo, tarballUrl, sha256 } = release;
+  const { gitRepo, tarballUrl, sha256, path, ref } = release;
   if (!gitRepo && !tarballUrl) errors.push(`${where}.release needs gitRepo or tarballUrl`);
   if (gitRepo !== undefined && !isHttpsUrl(gitRepo)) errors.push(`${where}.release.gitRepo must be an https URL`);
   if (tarballUrl !== undefined) {
     if (!isHttpsUrl(tarballUrl)) errors.push(`${where}.release.tarballUrl must be an https URL`);
     // Without a hash, a registry tarball is installed unverified
     if (!SHA256.test(String(sha256 || ''))) errors.push(`${where}.release.tarballUrl requires a 64-hex sha256`);
+  }
+  if (path !== undefined && !isRelativeInside(path)) errors.push(`${where}.release.path must be a relative path inside the package`);
+  if (ref !== undefined && (typeof ref !== 'string' || !GIT_REF.test(ref) || ref.includes('..') || SHORT_SHA.test(ref))) {
+    errors.push(`${where}.release.ref must be a tag or a full 40-character commit SHA`);
+  }
+  // The sidecar installer doesn't read path or ref yet, so such an entry would install the wrong folder
+  if (kind !== 'plugin' && (path !== undefined || ref !== undefined)) {
+    errors.push(`${where}.release.path and release.ref are only supported with kind "plugin"`);
   }
 }
 
@@ -84,13 +99,21 @@ export function validateRegistry(registry, { packageVersion } = {}) {
     }
     const files = pkg.workspaceTriggers?.files;
     if (files !== undefined) {
-      // Trigger files are joined onto the user's workspace path, so they must stay relative and inside it
-      const bad = Array.isArray(files)
-        ? files.filter((f) => !isNonEmptyString(f) || /^[\\/]|^[a-z]:/i.test(f) || f.split(/[\\/]/).includes('..'))
-        : [files];
+      const bad = Array.isArray(files) ? files.filter((f) => !isRelativeInside(f)) : [files];
       if (bad.length) errors.push(`${where}.workspaceTriggers.files must be relative paths inside the workspace: ${JSON.stringify(bad)}`);
     }
-    checkRelease(pkg.release, where, errors);
+    const kind = pkg.kind ?? 'sidecar';
+    if (!KINDS.has(kind)) errors.push(`${where}.kind must be "sidecar" or "plugin"`);
+    if (pkg.port !== undefined) {
+      if (kind !== 'plugin') errors.push(`${where}.port needs kind "plugin"`);
+      if (!isObject(pkg.port) || !PORT_SOURCES.has(pkg.port.from)) {
+        errors.push(`${where}.port.from must be one of ${[...PORT_SOURCES].join(', ')}`);
+      }
+      // Ports are built on the user's machine from the upstream repo, so the pin is what makes them reproducible
+      if (!pkg.release?.gitRepo) errors.push(`${where}.release.gitRepo is required when port is set`);
+      if (!pkg.release?.ref) errors.push(`${where}.release.ref is required when port is set`);
+    }
+    checkRelease(pkg.release, where, errors, kind);
   });
 
   if (featuredIds !== undefined) {
