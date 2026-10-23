@@ -7,6 +7,7 @@ import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAssetHandler, createAgyCssHandler } from 'antigravity-sidecar-kit/server';
+import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
 import { updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
 import {
@@ -76,3 +77,4 @@ app.api('/api/store/self-update', async (data) => selfUpdateHangar({
 fetchRegistry().catch(() => {});
 setInterval(() => { fetchRegistry().catch(() => {}); }, 30 * 60 * 1000).unref();
 await app.run();
+exitWithLanguageServer({ app }); // Antigravity on Windows doesn't stop sidecars when it quits
