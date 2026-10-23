@@ -165,9 +165,19 @@
           const next = Array.from(new Set([...(card._sc.workspaces || []).filter((w) => w !== '*'), currentWs]));
           runCardAction(card, () => onSaveWorkspaces(card._sc, next));
         });
-        card.querySelector('[data-role="proc-btn"]').addEventListener('click', () => {
-          const action = card._sc.isRunning ? 'SIDECAR_ACTION_DISABLE' : 'SIDECAR_ACTION_ENABLE';
-          runCardAction(card, () => onManageSidecar(card._sc.sidecarId, action));
+        const procBtn = card.querySelector('[data-role="proc-btn"]');
+        procBtn.addEventListener('click', async () => {
+          if (procBtn.disabled) return;
+          const nextOn = !card._sc.isRunning;
+          procBtn.disabled = true;
+          procBtn.classList.toggle('on', nextOn);
+          procBtn.setAttribute('aria-checked', String(nextOn));
+          await runCardAction(card, () =>
+            onManageSidecar(card._sc.sidecarId, nextOn ? 'SIDECAR_ACTION_ENABLE' : 'SIDECAR_ACTION_DISABLE')
+          );
+          procBtn.disabled = false;
+          procBtn.classList.toggle('on', Boolean(card._sc.isRunning));
+          procBtn.setAttribute('aria-checked', String(Boolean(card._sc.isRunning)));
         });
         card.querySelector('[data-role="restart-btn"]').addEventListener('click', () =>
           runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'))
@@ -291,8 +301,10 @@
       });
 
       const procBtn = card.querySelector('[data-role="proc-btn"]');
-      procBtn.classList.toggle('on', Boolean(sc.isRunning));
-      procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+      if (!procBtn.disabled) {
+        procBtn.classList.toggle('on', Boolean(sc.isRunning));
+        procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+      }
     }
 
     for (const child of Array.from(paneEl.querySelectorAll('.manager-card'))) {
