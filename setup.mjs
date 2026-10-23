@@ -5,7 +5,8 @@
  */
 
 import { cpSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { readJsonSafe, writeJsonNoBom } from 'antigravity-sidecar-kit/config';
 import { manageSidecar } from 'antigravity-sidecar-kit/rpc';
 import { removeLinkOrDir, runSidecarSetup } from 'antigravity-sidecar-kit/setup';
@@ -68,6 +69,19 @@ async function migrateLegacySidecarHub() {
   }
 }
 
+// An npx install's permanent copy only bundles antigravity-sidecar-kit. agy-plugin-porter has no dependencies
+// of its own and is loaded on the first plugin install, so copying it in afterwards is enough.
+function bundlePluginPorter(linkedTo) {
+  const target = join(linkedTo || '', 'node_modules', 'agy-plugin-porter');
+  if (!linkedTo || linkedTo === REPO_ROOT || existsSync(join(target, 'package.json'))) return;
+  try {
+    cpSync(dirname(createRequire(import.meta.url).resolve('agy-plugin-porter/package.json')), target, { recursive: true });
+    console.log(`[${SIDECAR_ID}] Bundled agy-plugin-porter into ${target}`);
+  } catch (err) {
+    console.warn(`[${SIDECAR_ID}] Couldn't bundle agy-plugin-porter, so plugin installs won't work: ${err.message}`);
+  }
+}
+
 runSidecarSetup({
   sidecarId: SIDECAR_ID,
   repoRoot: REPO_ROOT,
@@ -80,8 +94,11 @@ runSidecarSetup({
     'lib/constants.mjs',
     'lib/config-store.mjs',
     'lib/hibernation-manager.mjs',
+    'lib/ls-rpc.mjs',
     'lib/package-installer.mjs',
+    'lib/plugin-installer.mjs',
     'lib/registry-catalog.mjs',
+    'lib/remote-source.mjs',
     'lib/state-orchestrator.mjs',
     'ui/index.html',
     'ui/styles.css',
@@ -91,6 +108,7 @@ runSidecarSetup({
     'ui/components/tab-bar.js',
     'ui/components/project-popover.js',
     'ui/components/marketplace-panes.js',
+    'ui/components/plugin-panes.js',
     'ui/components/extensions-tab.js',
     'ui/components/iframe-deck.js',
   ],
@@ -112,7 +130,7 @@ runSidecarSetup({
       }
     }
   },
-}).catch((err) => {
+}).then((res) => bundlePluginPorter(res?.linkedTo)).catch((err) => {
   console.error(`[${SIDECAR_ID}] Setup failed: ${err.message}`);
   process.exit(1);
 });

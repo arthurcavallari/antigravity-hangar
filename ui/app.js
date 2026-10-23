@@ -22,6 +22,7 @@
     layout: { pinnedTopSidecarId: '', pinnedTopHeightPx: 185, splitViewEnabled: false },
     hangar: null,
     sidecars: [],
+    plugins: [],
     suggestions: [],
     registryPackages: [],
     activeTabId: '',
@@ -200,6 +201,7 @@
       ns.renderExtensionsTab?.({
         storeViewEl: els.storeView,
         sidecars: state.sidecars,
+        plugins: state.plugins,
         registryPackages: state.registryPackages,
         hangar: state.hangar,
         layout: state.layout,
@@ -244,6 +246,18 @@
         },
         onUninstallSidecar: async (sidecarId) => {
           await apiCall('/api/store/uninstall', { sidecarId });
+          await refreshRegistry();
+          await refreshHangarState();
+        },
+        onPreviewPlugin: async (payload) => apiCall('/api/store/port-preview', payload),
+        onInstallPlugin: async (payload) => {
+          const res = await apiCall('/api/store/install-plugin', payload);
+          await refreshRegistry();
+          await refreshHangarState();
+          return res;
+        },
+        onUninstallPlugin: async (pluginId) => {
+          await apiCall('/api/store/uninstall-plugin', { pluginId });
           await refreshRegistry();
           await refreshHangarState();
         },
@@ -299,6 +313,7 @@
       if (data.layout) state.layout = withWindowActiveTab(data.layout);
       if (data.hangar) state.hangar = data.hangar;
       state.sidecars = data.sidecars || [];
+      state.plugins = data.plugins || [];
       state.suggestions = data.suggestions || [];
       renderAll();
     } catch (err) {

@@ -120,6 +120,66 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
     }
   });
 
+  it('lists plugin entries without probing upstream, and offers updates only for plugins Hangar installed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-registry-plugin-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const pluginsDir = join(dir, 'plugins');
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        telemetry: false,
+        registryUrl: 'https://example.invalid',
+        plugins: {
+          'review-port': { dir: 'review-port', installedVersion: '1.0.0', ref: 'v1.0.0' },
+          repinned: { dir: 'repinned', installedVersion: '2.0.0', ref: 'a'.repeat(40) },
+        },
+      });
+      for (const id of ['review-port', 'repinned', 'theirs']) {
+        mkdirSync(join(pluginsDir, id), { recursive: true });
+        writeJsonNoBom(join(pluginsDir, id, 'plugin.json'), { name: id, version: '0.0.1' });
+      }
+      const repo = 'https://github.com/acme/plugins';
+      const fetched = [];
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir: join(dir, 'sidecars'),
+        packagesDir: join(dir, 'packages'),
+        pluginsDir,
+        probeUpstream: true,
+        fetchFn: async (url) => {
+          fetched.push(url);
+          if (!url.endsWith('/registry.json')) return { ok: false };
+          return {
+            ok: true,
+            json: async () => ({
+              packages: [
+                { id: 'review-port', kind: 'plugin', npmPackage: 'review-port', port: { from: 'claude' }, latestVersion: '1.1.0', release: { gitRepo: repo, ref: 'v1.1.0', path: 'plugins/review' } },
+                { id: 'repinned', kind: 'plugin', latestVersion: '2.0.0', release: { gitRepo: repo, ref: 'b'.repeat(40) } },
+                { id: 'theirs', kind: 'plugin', latestVersion: '9.0.0', release: { gitRepo: repo } },
+                { id: 'not-installed', kind: 'plugin', latestVersion: '1.0.0', release: { gitRepo: repo } },
+              ],
+            }),
+          };
+        },
+      });
+      const byId = Object.fromEntries(catalog.packages.map((p) => [p.id, p]));
+
+      assert.equal(byId['review-port'].isInstalled, true);
+      assert.equal(byId['review-port'].installedVersion, '1.0.0');
+      assert.equal(byId['review-port'].updateAvailable, true);
+      assert.deepEqual(byId['review-port'].port, { from: 'claude' });
+      assert.equal(byId['review-port'].release.path, 'plugins/review');
+      assert.equal(byId.repinned.updateAvailable, true, 'a new pin at the same version is still an update');
+      assert.equal(byId.theirs.isInstalled, true);
+      assert.equal(byId.theirs.updateAvailable, false, "a plugin Hangar didn't install is never updated by it");
+      assert.equal(byId['not-installed'].isInstalled, false);
+      assert.equal(fetched.some((u) => u.includes('acme') || u.includes('review-port')), false, 'plugins are never probed');
+      assert.deepEqual(Object.keys(catalog.sidecarUpdates).filter((id) => byId[id]?.kind === 'plugin'), []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('generates and persists a stable anonymous installId and injects or omits X-Hangar-* headers based on opt-out', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hangar-telemetry-test-'));
     try {

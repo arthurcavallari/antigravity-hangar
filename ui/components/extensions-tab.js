@@ -165,9 +165,19 @@
           const next = Array.from(new Set([...(card._sc.workspaces || []).filter((w) => w !== '*'), currentWs]));
           runCardAction(card, () => onSaveWorkspaces(card._sc, next));
         });
-        card.querySelector('[data-role="proc-btn"]').addEventListener('click', () => {
-          const action = card._sc.isRunning ? 'SIDECAR_ACTION_DISABLE' : 'SIDECAR_ACTION_ENABLE';
-          runCardAction(card, () => onManageSidecar(card._sc.sidecarId, action));
+        const procBtn = card.querySelector('[data-role="proc-btn"]');
+        procBtn.addEventListener('click', async () => {
+          if (procBtn.disabled) return;
+          const nextOn = !card._sc.isRunning;
+          procBtn.disabled = true;
+          procBtn.classList.toggle('on', nextOn);
+          procBtn.setAttribute('aria-checked', String(nextOn));
+          await runCardAction(card, () =>
+            onManageSidecar(card._sc.sidecarId, nextOn ? 'SIDECAR_ACTION_ENABLE' : 'SIDECAR_ACTION_DISABLE')
+          );
+          procBtn.disabled = false;
+          procBtn.classList.toggle('on', Boolean(card._sc.isRunning));
+          procBtn.setAttribute('aria-checked', String(Boolean(card._sc.isRunning)));
         });
         card.querySelector('[data-role="restart-btn"]').addEventListener('click', () =>
           runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'))
@@ -291,8 +301,10 @@
       });
 
       const procBtn = card.querySelector('[data-role="proc-btn"]');
-      procBtn.classList.toggle('on', Boolean(sc.isRunning));
-      procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+      if (!procBtn.disabled) {
+        procBtn.classList.toggle('on', Boolean(sc.isRunning));
+        procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+      }
     }
 
     for (const child of Array.from(paneEl.querySelectorAll('.manager-card'))) {
@@ -321,7 +333,7 @@
           <div class="store-header">
             <div>
               <div class="store-title"><span>UI Extensions</span><span data-role="total-count" class="count-pill"></span></div>
-              <div class="store-subtitle">Manage workspace scopes, discover sidecars, or link local folders</div>
+              <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
             <div class="store-header-right">
               <div data-role="subtab-group" class="agy-toggle-group" role="tablist">
@@ -335,7 +347,10 @@
               <span data-role="running-count" class="badge running"></span>
             </div>
           </div>
-          <div data-role="pane-installed"></div>
+          <div data-role="pane-installed">
+            <div data-role="installed-sidecars"></div>
+            <div data-role="installed-plugins" class="hidden"></div>
+          </div>
           <div data-role="pane-discover" class="hidden"></div>
           <div data-role="pane-sideload" class="hidden"></div>
         </div>
@@ -421,7 +436,8 @@
     };
 
     if (activeSubTab === 'installed') {
-      reconcileInstalledPane(installedPane, { ...opts, onSwitchTab: switchTab });
+      reconcileInstalledPane(installedPane.querySelector('[data-role="installed-sidecars"]'), { ...opts, onSwitchTab: switchTab });
+      ns.renderInstalledPlugins?.(installedPane.querySelector('[data-role="installed-plugins"]'), { ...opts, onSwitchTab: switchTab });
     } else if (activeSubTab === 'discover') {
       ns.renderDiscoverPane?.(discoverPane, { ...opts, onSwitchTab: switchTab });
     } else if (activeSubTab === 'sideload') {

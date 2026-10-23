@@ -62,8 +62,8 @@ Removes the `~/.gemini/config/sidecars/hangar` link, sets `sidecars["hangar"].en
    - **Automatic Workspace Resolution**: Detects the active workspace (`window.sidecar.onWorkspaceChange` + `GetAllCascadeTrajectories` `lastUserViewTime` resolution) and displays only the tabs mapped to that project (or pinned globally with `*`).
    - **Idle Process Hibernation**: Automatically hibernates (`SIDECAR_ACTION_DISABLE`) background Node.js processes after a configurable idle TTL (`hibernateAfterIdleMinutes`) when a project is inactive.
 2. **Built-In Extension Manager & 1-Click Store (`🧩 Extensions` Tab)**:
-   - **Installed**: Enable/disable processes, configure workspace path/glob rules, restart, update, or uninstall sidecars.
-   - **Discover**: Browse the online registry with capability tier badges (`Tier 1 Telemetry`, `Tier 2 Local CLI`, `Tier 3 Agent Control`), workspace file trigger suggestions, and 1-click installation.
+   - **Installed**: Enable/disable processes, configure workspace path/glob rules, restart, update, or uninstall sidecars. A **Plugins** section lists Antigravity plugins (skills, agents, rules, hooks, MCP servers) and updates or uninstalls the ones Hangar installed.
+   - **Discover**: Browse the online registry with capability tier badges (`Tier 1 Telemetry`, `Tier 2 Local CLI`, `Tier 3 Agent Control`), workspace file trigger suggestions, and 1-click installation. Plugins ported from Claude Code, Gemini CLI, Cursor, Roo/Kilo or Codex are ported on your machine by [`agy-plugin-porter`](https://github.com/arthurcavallari/agy-plugin-porter), and the port report (what will and won't port, plus audit findings) is shown before you confirm. Restart Antigravity to load a new plugin.
    - **Sideload**: Link any local development directory (`source: "local"`) via NTFS junction / symlink or install directly from a GitHub repository URL (`owner/repo` or `https://github.com/...`).
 
 ---
@@ -93,6 +93,26 @@ Any Antigravity sidecar repository (`sidecar.json`) works with Hangar out of the
 }
 ```
 
+### Listing a plugin in the registry
+
+A `registry.json` entry without `kind` is a sidecar. A plugin entry sets `"kind": "plugin"`. A plugin from another tool also sets `port.from` (`claude`, `gemini`, `cursor`, `roo`, `codex` or `auto`) and pins the upstream repository with `release.ref`, a tag or a full commit SHA. Hangar never redistributes the upstream code: it clones the pinned commit, ports and audits it locally, then installs it with `agy plugin install`. `release.path` picks a subfolder, for monorepos.
+
+```json
+{
+  "id": "core-workflows",
+  "kind": "plugin",
+  "name": "Core Workflows",
+  "latestVersion": "1.0.0",
+  "capabilityTier": "TIER_2_LOCAL_TOOLING",
+  "port": { "from": "claude" },
+  "release": {
+    "gitRepo": "https://github.com/owner/repo",
+    "ref": "0123456789abcdef0123456789abcdef01234567",
+    "path": "plugins/core-workflows"
+  }
+}
+```
+
 ---
 
 ## 6. Development & Testing
@@ -116,9 +136,12 @@ antigravity-hangar/
 │   ├── constants.mjs               # Paths, REPO_ROOT (realpathSync), default config
 │   ├── config-store.mjs            # BOM-safe hangar.json store, rules & child URLs
 │   ├── hibernation-manager.mjs     # Debounced idle-TTL process hibernation manager
+│   ├── ls-rpc.mjs                  # Shared, briefly cached Language Server state reads
 │   ├── package-installer.mjs       # Local junction linker, GitHub/tarball installer & inspector
+│   ├── plugin-installer.mjs        # Plugin port, audit, install, list & uninstall
 │   ├── registry-catalog.mjs        # Marketplace registry fetcher & workspace trigger advisor
-│   └── state-orchestrator.mjs      # GetSidecars + trajectory state coordinator
+│   ├── remote-source.mjs           # Tarball / git download & atomic folder swap
+│   └── state-orchestrator.mjs      # GetSidecars + GetAllPlugins + trajectory state coordinator
 ├── ui/
 │   ├── index.html                  # Semantic markup shell
 │   ├── styles.css                  # Theme variables, chrome bar, tabs, popover & split sash
@@ -130,7 +153,8 @@ antigravity-hangar/
 │       ├── iframe-deck.js          # Persistent child iframe deck & postMessage relay bridge
 │       ├── project-popover.js      # [+] Quick workspace rule popover
 │       ├── extensions-tab.js       # Extensions shell & Installed sidecars manager
-│       └── marketplace-panes.js    # Discover catalog & Sideload (Local / GitHub) panes
+│       ├── marketplace-panes.js    # Discover catalog & Sideload (Local / GitHub) panes
+│       └── plugin-panes.js         # Plugin badges, port report consent & Installed plugins
 └── test/
     ├── config-store.test.mjs
     ├── hibernation-manager.test.mjs
