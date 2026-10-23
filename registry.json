@@ -1,15 +1,17 @@
 {
-  "generatedAt": "2026-10-22T00:00:00Z",
+  "generatedAt": "2026-10-23T00:00:00Z",
   "hangar": {
     "id": "hangar",
     "name": "Antigravity Hangar",
     "npmPackage": "antigravity-hangar",
-    "latestVersion": "1.1.0",
+    "latestVersion": "1.1.1",
     "release": {
       "gitRepo": "https://github.com/arthurcavallari/antigravity-hangar"
     }
   },
-  "featuredIds": ["context-monitor"],
+  "featuredIds": [
+    "context-monitor"
+  ],
   "packages": [
     {
       "id": "context-monitor",
@@ -23,7 +25,10 @@
       },
       "latestVersion": "1.1.0",
       "pricing": "free",
-      "categories": ["telemetry", "productivity"],
+      "categories": [
+        "telemetry",
+        "productivity"
+      ],
       "capabilityTier": "TIER_1_TELEMETRY",
       "securityScan": {
         "passed": true,
@@ -31,7 +36,9 @@
         "externalDependencies": 0
       },
       "workspaceTriggers": {
-        "files": ["*"]
+        "files": [
+          "*"
+        ]
       },
       "release": {
         "gitRepo": "https://github.com/arthurcavallari/antigravity-context-monitor"
