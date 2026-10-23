@@ -37,7 +37,7 @@ function isHttpsUrl(value) {
   }
 }
 
-function checkRelease(release, where, errors, kind = 'sidecar') {
+function checkRelease(release, where, errors) {
   if (!isObject(release)) {
     errors.push(`${where}.release must be an object`);
     return;
@@ -53,10 +53,6 @@ function checkRelease(release, where, errors, kind = 'sidecar') {
   if (path !== undefined && !isRelativeInside(path)) errors.push(`${where}.release.path must be a relative path inside the package`);
   if (ref !== undefined && (typeof ref !== 'string' || !GIT_REF.test(ref) || ref.includes('..') || SHORT_SHA.test(ref))) {
     errors.push(`${where}.release.ref must be a tag or a full 40-character commit SHA`);
-  }
-  // The sidecar installer doesn't read path or ref yet, so such an entry would install the wrong folder
-  if (kind !== 'plugin' && (path !== undefined || ref !== undefined)) {
-    errors.push(`${where}.release.path and release.ref are only supported with kind "plugin"`);
   }
 }
 
@@ -76,6 +72,10 @@ export function validateRegistry(registry, { packageVersion } = {}) {
     }
     if (hangar.npmPackage !== undefined && !NPM_NAME.test(hangar.npmPackage)) errors.push('hangar.npmPackage is not a valid npm name');
     checkRelease(hangar.release, 'hangar', errors);
+    // Hangar's self-update doesn't read path or ref, so it would install the wrong folder or version
+    if (hangar.release?.path !== undefined || hangar.release?.ref !== undefined) {
+      errors.push('hangar.release.path and release.ref are not supported');
+    }
   }
 
   if (!Array.isArray(packages)) return [...errors, 'packages must be an array'];
@@ -113,7 +113,7 @@ export function validateRegistry(registry, { packageVersion } = {}) {
       if (!pkg.release?.gitRepo) errors.push(`${where}.release.gitRepo is required when port is set`);
       if (!pkg.release?.ref) errors.push(`${where}.release.ref is required when port is set`);
     }
-    checkRelease(pkg.release, where, errors, kind);
+    checkRelease(pkg.release, where, errors);
   });
 
   if (featuredIds !== undefined) {

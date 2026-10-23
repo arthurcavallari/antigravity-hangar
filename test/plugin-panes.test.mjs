@@ -125,3 +125,30 @@ describe('Hangar plugin panes', () => {
     assert.equal(installed, false);
   });
 });
+
+describe('Hangar sidecar install payloads', () => {
+  const plain = (v) => JSON.parse(JSON.stringify(v));
+
+  it('sends a registry release\'s sha256, ref and path with the install and update', () => {
+    const ns = loadPluginPanes();
+    const release = {
+      gitRepo: 'https://github.com/acme/porter', tarballUrl: 'https://x.test/cockpit-0.2.0.tgz', sha256: 'a'.repeat(64),
+      ref: 'v0.2.0', path: 'cockpit',
+    };
+    assert.deepEqual(plain(ns.sidecarReleaseFields(release)), release);
+    // An update keeps the registry's release when there is one, whatever the installed copy came from
+    assert.deepEqual(plain(ns.sidecarReleaseFields(release, { gitRepo: 'https://github.com/old/repo', tarballUrl: 'https://x.test/old.tgz' })), release);
+    assert.deepEqual(plain(ns.sidecarReleaseFields(undefined)), { gitRepo: '', tarballUrl: '', sha256: '', ref: '', path: '' });
+  });
+
+  it("never pairs the registry's sha256 with the installed copy's tarball", () => {
+    const ns = loadPluginPanes();
+    const fields = ns.sidecarReleaseFields(
+      { gitRepo: 'https://github.com/acme/tool', sha256: 'a'.repeat(64) },
+      { gitRepo: 'https://github.com/acme/tool', tarballUrl: 'https://registry.npmjs.org/tool/-/tool-1.1.0.tgz' }
+    );
+    assert.deepEqual(plain(fields), {
+      gitRepo: 'https://github.com/acme/tool', tarballUrl: 'https://registry.npmjs.org/tool/-/tool-1.1.0.tgz', sha256: '', ref: '', path: '',
+    });
+  });
+});

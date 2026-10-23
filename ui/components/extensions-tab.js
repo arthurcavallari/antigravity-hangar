@@ -195,17 +195,15 @@
         const runUpdate = async (acceptedTier) => {
           const pkg = card._regPkg;
           const curSc = card._sc;
-          const gitRepo = pkg?.release?.gitRepo || curSc?.gitRepo || '';
-          const tarballUrl = pkg?.release?.tarballUrl || curSc?.tarballUrl || '';
+          const source = ns.sidecarReleaseFields(pkg?.release, curSc);
           const version = pkg?.latestVersion || curSc?.latestVersion || 'latest';
-          if (!gitRepo && !tarballUrl) return;
+          if (!source.gitRepo && !source.tarballUrl) return;
           upBtn.disabled = true;
           updateConfirm.classList.add('hidden');
           await runCardAction(card, async () => {
             const res = await onInstallRemote?.({
               sidecarId: curSc.sidecarId,
-              gitRepo,
-              tarballUrl,
+              ...source,
               version,
               scope: curSc.scope,
               workspaces: curSc.workspaces,

@@ -112,8 +112,7 @@
             const isGlobalPkg = (curPkg.workspaceTriggers?.files || []).includes('*');
             const res = await ctx.onInstallRemote?.({
               sidecarId: curPkg.id,
-              gitRepo: curPkg.release?.gitRepo || '',
-              tarballUrl: curPkg.release?.tarballUrl || '',
+              ...ns.sidecarReleaseFields(curPkg.release),
               version: curPkg.latestVersion || '1.0.0',
               scope: isGlobalPkg ? 'global' : 'project',
               workspaces: isGlobalPkg ? ['*'] : wsPath ? [wsPath] : ['*'],

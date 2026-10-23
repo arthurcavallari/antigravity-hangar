@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   inspectSidecarDirectory,
   installRemoteSidecar,
@@ -13,6 +14,7 @@ import {
   uninstallSidecar,
 } from '../lib/package-installer.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
+import { isManagedInstall } from '../lib/registry-catalog.mjs';
 
 describe('Hangar package installer, local linker, and capability inspector', () => {
   it('classifies capability tiers and detects lifecycle scripts accurately', () => {
@@ -506,6 +508,147 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       assert.equal(readFileSync(hangarCfgPath, 'utf8'), corrupt);
       assert.equal(existsSync(join(sidecarsDir, 'my-sidecar', 'sidecar.json')), true);
       assert.equal(existsSync(join(sampleSidecarDir, 'sidecar.json')), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('installs a sidecar from release.path at a pinned release.ref, links the subfolder, and records both', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-path-ref-test-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      const sha = 'c'.repeat(40);
+      const execCalls = [];
+      // A monorepo like agy-plugin-porter: the sidecar lives in cockpit/, beside code it imports
+      const writeMonorepo = (dest, version) => {
+        mkdirSync(join(dest, 'cockpit'), { recursive: true });
+        mkdirSync(join(dest, 'lib'), { recursive: true });
+        writeJsonNoBom(join(dest, 'package.json'), { name: 'agy-plugin-porter', version: '9.0.0' });
+        writeFileSync(join(dest, 'lib', 'install.mjs'), "import { execFileSync } from 'node:child_process';", 'utf8');
+        writeJsonNoBom(join(dest, 'cockpit', 'sidecar.json'), { command: 'node', args: ['server.mjs'], display_name: 'Porter Cockpit' });
+        writeJsonNoBom(join(dest, 'cockpit', 'package.json'), {
+          name: 'porter-cockpit', version, dependencies: { 'antigravity-sidecar-kit': '^1.1.0' },
+        });
+        writeFileSync(join(dest, 'cockpit', 'server.mjs'), "import '../lib/install.mjs';", 'utf8');
+      };
+      const opts = {
+        sidecarId: 'porter-cockpit', gitRepo: 'https://github.com/acme/agy-plugin-porter', ref: sha, path: 'cockpit',
+        version: '0.1.0', scope: 'global', packagesDir, sidecarsDir, configPath: hangarCfgPath,
+        agyConfigPath: agyCfgPath, rpcFn: async () => ({}), delayMs: 0,
+        execFn: (cmd, args, execOpts) => {
+          execCalls.push({ cmd, args, cwd: execOpts?.cwd });
+          if (cmd === 'git' && args[0] === 'init') mkdirSync(args[2], { recursive: true });
+          if (cmd === 'git' && args[2] === 'checkout') writeMonorepo(args[1], '0.1.0');
+          if (cmd === 'git' && args[0] === 'clone') writeMonorepo(args[args.length - 1], '0.2.0');
+        },
+      };
+
+      // The scan covers the whole download, so lib/'s child_process counts though only cockpit/ is linked
+      const refused = await installRemoteSidecar(opts);
+      assert.equal(refused.needsConsent, true);
+      assert.equal(refused.scannedTier, 'TIER_2_LOCAL_TOOLING');
+      assert.deepEqual(readdirSync(packagesDir), [], 'no package or staging folder left');
+
+      execCalls.length = 0;
+      const res = await installRemoteSidecar({ ...opts, acceptedTier: 'TIER_2_LOCAL_TOOLING' });
+      assert.equal(res.ok, true);
+      assert.deepEqual(execCalls[1].args.slice(2), ['fetch', '-q', '--depth', '1', '--', 'https://github.com/acme/agy-plugin-porter', sha]);
+      const npmCall = execCalls.find((c) => c.cmd !== 'git');
+      assert.ok(npmCall.args.includes('--ignore-scripts'));
+      assert.equal(basename(npmCall.cwd), 'cockpit', 'npm install runs in the subfolder');
+
+      const linkPath = join(sidecarsDir, 'porter-cockpit');
+      assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
+      assert.equal(readJsonSafe(join(linkPath, 'package.json'), {}).name, 'porter-cockpit');
+      assert.equal(existsSync(join(packagesDir, 'porter-cockpit@0.1.0', 'lib', 'install.mjs')), true, 'the rest of the download is kept');
+      assert.equal(isManagedInstall('porter-cockpit', sidecarsDir, packagesDir), true);
+      assert.equal(res.rule.path, 'cockpit');
+      assert.equal(res.rule.ref, sha);
+      assert.equal(res.rule.installedVersion, '0.1.0');
+      assert.equal(res.rule.capabilityTier, 'TIER_2_LOCAL_TOOLING');
+      assert.equal(loadHangarConfig(hangarCfgPath).sidecars['porter-cockpit'].path, 'cockpit');
+
+      // A tag ref is cloned as a branch, and wins over a gitRepo@ref suffix
+      execCalls.length = 0;
+      const tagged = await installRemoteSidecar({
+        ...opts, gitRepo: 'acme/agy-plugin-porter@main', ref: 'v0.2.0', version: '0.2.0', acceptedTier: 'TIER_2_LOCAL_TOOLING',
+      });
+      assert.deepEqual(execCalls[0].args.slice(0, 5), ['clone', '--depth', '1', '--branch', 'v0.2.0']);
+      assert.equal(tagged.rule.ref, 'v0.2.0');
+      assert.equal(readJsonSafe(join(linkPath, 'package.json'), {}).version, '0.2.0');
+
+      await uninstallSidecar({
+        sidecarId: 'porter-cockpit', packagesDir, sidecarsDir, configPath: hangarCfgPath, agyConfigPath: agyCfgPath,
+        rpcFn: async () => ({}),
+      });
+      assert.equal(existsSync(linkPath), false);
+      assert.deepEqual(readdirSync(packagesDir), []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a release.path outside or missing from the download, leaving nothing behind', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-bad-path-test-'));
+    try {
+      const packagesDir = join(dir, 'packages');
+      for (const path of ['../outside', 'missing']) {
+        await assert.rejects(
+          installRemoteSidecar({
+            sidecarId: 'bad-path', gitRepo: 'acme/repo', path, packagesDir,
+            sidecarsDir: join(dir, 'sidecars'), configPath: join(dir, 'hangar.json'), agyConfigPath: join(dir, 'config.json'),
+            rpcFn: async () => ({}), delayMs: 0,
+            execFn: (cmd, args) => {
+              const dest = args[args.length - 1];
+              mkdirSync(join(dest, '..', 'outside'), { recursive: true });
+              writeJsonNoBom(join(dest, '..', 'outside', 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+            },
+          }),
+          (err) => err.message.includes(`There's no folder "${path}" in bad-path's download`)
+        );
+        rmSync(join(packagesDir, 'outside'), { recursive: true, force: true });
+      }
+      assert.deepEqual(readdirSync(packagesDir), []);
+      assert.equal(existsSync(join(dir, 'sidecars', 'bad-path')), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('checks a registry tarball against sha256 before unpacking it, with no fallback to git', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sha256-test-'));
+    try {
+      const packagesDir = join(dir, 'packages');
+      const sidecarsDir = join(dir, 'sidecars');
+      const tgz = Buffer.from('pretend tarball');
+      const sha256 = createHash('sha256').update(tgz).digest('hex');
+      const execCalls = [];
+      const opts = {
+        sidecarId: 'hashed', gitRepo: 'acme/hashed', tarballUrl: 'https://registry.example.test/hashed-1.0.0.tgz',
+        version: '1.0.0', path: 'sidecar', packagesDir, sidecarsDir, configPath: join(dir, 'hangar.json'),
+        agyConfigPath: join(dir, 'config.json'), rpcFn: async () => ({}), delayMs: 0,
+        fetchFn: async () => ({ ok: true, arrayBuffer: async () => tgz }),
+        execFn: (cmd, args) => {
+          execCalls.push(cmd);
+          if (cmd !== 'tar') return;
+          mkdirSync(join(args[3], 'sidecar'), { recursive: true });
+          writeJsonNoBom(join(args[3], 'sidecar', 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+        },
+      };
+
+      await assert.rejects(installRemoteSidecar({ ...opts, sha256: 'f'.repeat(64) }), /SHA-256 mismatch/);
+      assert.deepEqual(execCalls, [], 'a mismatched tarball is neither unpacked nor replaced by a git clone');
+      assert.deepEqual(readdirSync(packagesDir), []);
+
+      const res = await installRemoteSidecar({ ...opts, sha256 });
+      assert.equal(res.ok, true);
+      assert.deepEqual(execCalls, ['tar']);
+      assert.equal(res.rule.source, 'registry');
+      assert.equal(res.rule.path, 'sidecar');
+      assert.equal(existsSync(join(sidecarsDir, 'hashed', 'sidecar.json')), true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

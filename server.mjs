@@ -57,6 +57,8 @@ app.api('/api/store/install', async (data) => installRemoteSidecar({
   tarballUrl: data?.tarballUrl ? String(data.tarballUrl) : '',
   version: data?.version ? String(data.version) : 'latest',
   sha256: data?.sha256 ? String(data.sha256) : '',
+  ref: data?.ref ? String(data.ref) : '',
+  path: data?.path ? String(data.path) : '',
   scope: data?.scope || 'project',
   workspaces: Array.isArray(data?.workspaces) ? data.workspaces : [],
   acceptedTier: data?.acceptedTier ? String(data.acceptedTier) : '',

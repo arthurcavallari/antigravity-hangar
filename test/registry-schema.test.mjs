@@ -69,9 +69,20 @@ describe('registry.json validation', () => {
     assert.match(releaseErrors({ ref: 'v1/../../x' }), /full 40-character commit SHA/);
     assert.match(releaseErrors({ path: '../outside' }), /relative path inside the package/);
     assert.match(releaseErrors({ path: 'C:/Windows' }), /relative path inside the package/);
+  });
+
+  it('accepts release.path and release.ref on sidecar entries, but not on Hangar itself', () => {
+    const base = read('registry.json');
+    const pkg = base.packages[0];
+    const cockpit = { ...pkg, id: 'porter-cockpit', release: { ...pkg.release, ref: 'v0.1.0', path: 'cockpit' } };
+    assert.deepEqual(validateRegistry({ ...base, packages: [pkg, cockpit] }), []);
+    const sidecarErrors = (release) =>
+      validateRegistry({ ...base, packages: [{ ...cockpit, release: { ...cockpit.release, ...release } }] }).join('\n');
+    assert.match(sidecarErrors({ ref: 'abc1234' }), /full 40-character commit SHA/);
+    assert.match(sidecarErrors({ path: '../outside' }), /relative path inside the package/);
     assert.match(
-      validateRegistry({ ...base, packages: [{ ...pkg, release: { ...pkg.release, path: 'cockpit' } }] }).join('\n'),
-      /only supported with kind "plugin"/
+      validateRegistry({ ...base, hangar: { ...base.hangar, release: { ...base.hangar.release, path: 'sub' } } }).join('\n'),
+      /hangar\.release\.path and release\.ref are not supported/
     );
   });
 });

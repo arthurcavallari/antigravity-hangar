@@ -180,6 +180,73 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
     }
   });
 
+  it('pins sidecars with release.ref or release.path to their registry version, and keeps sha256 only with its own tarball', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-registry-pinned-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        telemetry: false,
+        registryUrl: 'https://example.invalid',
+        sidecars: {
+          cockpit: { installedVersion: '0.1.0', source: 'github', gitRepo: 'https://github.com/acme/porter', ref: 'v0.1.0', path: 'cockpit' },
+          dropped: { installedVersion: '1.0.0', source: 'github', gitRepo: 'https://github.com/acme/dropped', ref: 'v1.0.0' },
+        },
+      });
+      for (const [id, version] of [['cockpit', '0.1.0'], ['dropped', '1.0.0']]) {
+        const copyDir = installManagedCopy(sidecarsDir, packagesDir, id);
+        writeJsonNoBom(join(copyDir, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+        writeJsonNoBom(join(copyDir, 'package.json'), { name: id, version });
+      }
+      const fetched = [];
+      const npmLatest = {
+        hashed: { version: '1.0.0', dist: { tarball: 'https://registry.npmjs.org/hashed/-/hashed-1.0.0.tgz' } },
+        stale: { version: '1.1.0', dist: { tarball: 'https://registry.npmjs.org/stale/-/stale-1.1.0.tgz' } },
+      };
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        packagesDir,
+        probeUpstream: true,
+        fetchFn: async (url) => {
+          fetched.push(url);
+          if (url.endsWith('/registry.json')) {
+            return {
+              ok: true,
+              json: async () => ({
+                packages: [
+                  { id: 'cockpit', npmPackage: 'porter-cockpit', latestVersion: '0.2.0', release: { gitRepo: 'https://github.com/acme/porter', ref: 'v0.2.0', path: 'cockpit' } },
+                  { id: 'hashed', npmPackage: 'hashed', latestVersion: '1.0.0', release: { tarballUrl: 'https://registry.example.test/hashed-1.0.0.tgz', sha256: 'a'.repeat(64) } },
+                  { id: 'stale', npmPackage: 'stale', latestVersion: '1.0.0', release: { tarballUrl: 'https://registry.example.test/stale-1.0.0.tgz', sha256: 'b'.repeat(64) } },
+                ],
+              }),
+            };
+          }
+          const npmPkg = Object.keys(npmLatest).find((name) => url === `https://registry.npmjs.org/${name}/latest`);
+          return npmPkg ? { ok: true, json: async () => npmLatest[npmPkg] } : { ok: false };
+        },
+      });
+      const byId = Object.fromEntries(catalog.packages.map((p) => [p.id, p]));
+
+      assert.equal(fetched.some((u) => /acme\/porter|porter-cockpit|acme\/dropped/.test(u)), false, 'pinned sidecars are never probed');
+      assert.equal(byId.cockpit.latestVersion, '0.2.0');
+      assert.equal(byId.cockpit.updateAvailable, true);
+      assert.deepEqual(byId.cockpit.release, { gitRepo: 'https://github.com/acme/porter', ref: 'v0.2.0', path: 'cockpit' });
+      assert.equal(catalog.sidecarUpdates.dropped, undefined, 'nor is a pinned install the registry no longer lists');
+
+      assert.equal(byId.hashed.release.tarballUrl, 'https://registry.example.test/hashed-1.0.0.tgz');
+      assert.equal(byId.hashed.release.sha256, 'a'.repeat(64));
+      // A newer npm tarball replaces the registry's, so the registry's hash must not travel with it
+      assert.equal(byId.stale.latestVersion, '1.1.0');
+      assert.equal(byId.stale.release.tarballUrl, 'https://registry.npmjs.org/stale/-/stale-1.1.0.tgz');
+      assert.equal('sha256' in byId.stale.release, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('generates and persists a stable anonymous installId and injects or omits X-Hangar-* headers based on opt-out', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hangar-telemetry-test-'));
     try {

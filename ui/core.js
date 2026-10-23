@@ -96,6 +96,20 @@
     return { label: 'Tier 1 · Telemetry', state: 'running', shortLabel: 'Tier 1' };
   };
 
+  // The /api/store/install source fields for a registry release, falling back to the installed copy's
+  // gitRepo or tarballUrl. sha256 only vouches for release.tarballUrl, so it's dropped for any other tarball.
+  ns.sidecarReleaseFields = function sidecarReleaseFields(release, fallback) {
+    const rel = release || {};
+    const tarballUrl = rel.tarballUrl || fallback?.tarballUrl || '';
+    return {
+      gitRepo: rel.gitRepo || fallback?.gitRepo || '',
+      tarballUrl,
+      sha256: tarballUrl && tarballUrl === rel.tarballUrl ? rel.sha256 || '' : '',
+      ref: rel.ref || '',
+      path: rel.path || '',
+    };
+  };
+
   // Host events (theme, workspace, conversation) come from Hangar's own window or an ancestor frame.
   // Child sidecar iframes are never ancestors, so they can't spoof them.
   ns.isHostMessage = function isHostMessage(source) {

@@ -113,6 +113,8 @@ A `registry.json` entry without `kind` is a sidecar. A plugin entry sets `"kind"
 }
 ```
 
+A sidecar entry can set `release.ref` and `release.path` too. Hangar checks out the pinned ref, runs `npm install` in the subfolder, and links `sidecars/<id>` to it; the capability scan still covers the whole download. Hangar doesn't check upstream for newer versions of a pinned entry, so bump `latestVersion` whenever you change `ref`.
+
 ---
 
 ## 6. Development & Testing
