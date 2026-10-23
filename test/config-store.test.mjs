@@ -253,6 +253,77 @@ describe('config-store and child iframe URL normalization', () => {
     }
   });
 
+  it('disables and re-enables plugin-bundled sidecars via JetboxWriteState and waits for GetSidecars to settle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-plugin-sidecar-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const id = 'science/biomolecular_structure_viewer';
+      let getCount = 0;
+      let currentStatus = 'SIDECAR_STATUS_RUNNING';
+      let currentEnabled = true;
+      const calls = [];
+
+      const rpcFn = async (method, payload) => {
+        if (method === 'GetSidecars') {
+          getCount++;
+          // Simulate Language Server's asynchronous scanAndReload settling on the second poll after write
+          if (getCount >= 3 && calls.some((c) => c[0] === 'JetboxWriteState')) {
+            const target = calls.findLast((c) => c[0] === 'JetboxWriteState')[1].userConfig.plugins['-1870732469773246571'].enabled;
+            currentEnabled = target;
+            currentStatus = target ? 'SIDECAR_STATUS_RUNNING' : 'SIDECAR_STATUS_STOPPED';
+          }
+          return {
+            sidecars: [
+              {
+                sidecarId: id,
+                pluginPath: 'file:///C:/Users/test/.gemini/config/plugins/-1870732469773246571',
+                status: currentStatus,
+                userConfig: { enabled: currentEnabled },
+                config: { hasWebUi: true },
+              },
+            ],
+          };
+        }
+        calls.push([method, payload]);
+        return {};
+      };
+
+      await manageChildSidecar(id, 'SIDECAR_ACTION_DISABLE', {
+        hibernator: new HibernationManager(),
+        rpcFn,
+        configPath: cfgPath,
+        pollMs: 1,
+        maxWaitMs: 200,
+      });
+
+      assert.deepEqual(calls, [
+        ['JetboxWriteState', { userConfig: { plugins: { '-1870732469773246571': { enabled: false } } } }],
+        ['ManageSidecar', { action: 'SIDECAR_ACTION_DISABLE', sidecarId: id }],
+      ]);
+      assert.equal(currentStatus, 'SIDECAR_STATUS_STOPPED');
+      assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, [id]);
+
+      calls.length = 0;
+      getCount = 0;
+      await manageChildSidecar(id, 'SIDECAR_ACTION_ENABLE', {
+        hibernator: new HibernationManager(),
+        rpcFn,
+        configPath: cfgPath,
+        pollMs: 1,
+        maxWaitMs: 200,
+      });
+
+      assert.deepEqual(calls, [
+        ['JetboxWriteState', { userConfig: { plugins: { '-1870732469773246571': { enabled: true } } } }],
+        ['ManageSidecar', { action: 'SIDECAR_ACTION_ENABLE', sidecarId: id }],
+      ]);
+      assert.equal(currentStatus, 'SIDECAR_STATUS_RUNNING');
+      assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, []);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects sidecar ids that could escape sidecars/ before touching config or the Language Server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hangar-id-validation-test-'));
     try {
