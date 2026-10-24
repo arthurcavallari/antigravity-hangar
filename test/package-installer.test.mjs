@@ -285,6 +285,42 @@ describe('Hangar package installer, local linker, and capability inspector', () 
     }
   });
 
+  it('self-update keeps the antigravity-sidecar-kit that npm installed instead of copying the running one over it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-self-update-kit-test-'));
+    try {
+      const agyCfgPath = join(dir, 'config.json');
+      writeJsonNoBom(agyCfgPath, { sidecars: { hangar: { enabled: true } } });
+      const mockExec = (cmd, args) => {
+        if (cmd === 'git' && args[0] === 'clone') {
+          const dest = args[args.length - 1];
+          mkdirSync(dest, { recursive: true });
+          writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['server.mjs'], display_name: 'Hangar' });
+          writeJsonNoBom(join(dest, 'package.json'), {
+            name: 'antigravity-hangar', version: '9.0.0', dependencies: { 'antigravity-sidecar-kit': '^1.2.0' },
+          });
+        }
+      };
+      // The npm call is the one with a cwd; have it "install" a newer kit into the staging dir
+      const execFn = (cmd, args, opts) => {
+        mockExec(cmd, args);
+        if (opts?.cwd) {
+          const kitDir = join(opts.cwd, 'node_modules', 'antigravity-sidecar-kit');
+          mkdirSync(kitDir, { recursive: true });
+          writeJsonNoBom(join(kitDir, 'package.json'), { name: 'antigravity-sidecar-kit', version: '9.9.9' });
+        }
+      };
+      const res = await selfUpdateHangar({
+        version: '9.0.0', packagesDir: join(dir, 'packages'), sidecarsDir: join(dir, 'sidecars'),
+        agyConfigPath: agyCfgPath, rpcFn: async () => ({ ok: true }), execFn, delayMs: 0,
+      });
+      const kitPkg = JSON.parse(readFileSync(
+        join(res.linkedTo, 'node_modules', 'antigravity-sidecar-kit', 'package.json'), 'utf8'));
+      assert.equal(kitPkg.version, '9.9.9');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses to uninstall, link, or self-update over a real sidecars/<id> folder and leaves its files intact', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hangar-real-folder-test-'));
     try {
