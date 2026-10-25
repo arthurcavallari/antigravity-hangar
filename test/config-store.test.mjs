@@ -167,7 +167,7 @@ describe('config-store and child iframe URL normalization', () => {
     assert.deepEqual(calls, ['SIDECAR_ACTION_DISABLE db-inspector']);
   });
 
-  it('forwards dynamic conversationId from GetAllCascadeTrajectories into child iframeUrl via fetchHangarState', async () => {
+  it("passes the frame's own conversation to child iframes, and guesses only when it has none", async () => {
     const trajectoriesResponse = {
       trajectorySummaries: {
         'conv-old': {
@@ -180,30 +180,43 @@ describe('config-store and child iframe URL normalization', () => {
         },
       },
     };
+    const stateFor = (conversationId, clientWorkspaceUris = []) =>
+      fetchHangarState({
+        conversationId,
+        clientWorkspaceUris,
+        configPath: join(tmpdir(), 'nonexistent-hangar-cfg.json'),
+        sidecarsDir: join(tmpdir(), 'nonexistent-sidecars-dir'),
+        rpcFn: async (method) =>
+          method === 'GetSidecars'
+            ? {
+                sidecars: [
+                  {
+                    sidecarId: 'context-monitor',
+                    status: 'SIDECAR_STATUS_RUNNING',
+                    webPort: 51234,
+                    config: { hasWebUi: true },
+                  },
+                ],
+              }
+            : trajectoriesResponse,
+      });
 
-    const hangarState = await fetchHangarState({
-      conversationId: 'conv-old',
-      configPath: join(tmpdir(), 'nonexistent-hangar-cfg.json'),
-      sidecarsDir: join(tmpdir(), 'nonexistent-sidecars-dir'),
-      rpcFn: async (method) =>
-        method === 'GetSidecars'
-          ? {
-              sidecars: [
-                {
-                  sidecarId: 'context-monitor',
-                  status: 'SIDECAR_STATUS_RUNNING',
-                  webPort: 51234,
-                  config: { hasWebUi: true },
-                },
-              ],
-            }
-          : trajectoriesResponse,
-    });
-    assert.equal(hangarState.activeWorkspace.conversationId, 'conv-latest');
-    assert.equal(
-      hangarState.sidecars[0].iframeUrl,
-      'http://127.0.0.1:51234/?conversationId=conv-latest'
-    );
+    // Antigravity gives each conversation its own Hangar frame, so its id wins over a newer view time
+    const own = await stateFor('conv-old');
+    assert.equal(own.activeWorkspace.conversationId, 'conv-old');
+    assert.equal(own.activeWorkspace.workspacePath, 'c:/OldProject');
+    assert.equal(own.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/?conversationId=conv-old');
+
+    // A new-conversation pane: children see _new too, and the workspace is the one the host pushed
+    const fresh = await stateFor('_new', ['file:///c:/Projects/Next']);
+    assert.equal(fresh.activeWorkspace.conversationId, '');
+    assert.equal(fresh.activeWorkspace.workspacePath, 'c:/Projects/Next');
+    assert.equal(fresh.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/?conversationId=_new');
+
+    // Opened without an id (outside any conversation): the most recently viewed one is the best guess
+    const guess = await stateFor('');
+    assert.equal(guess.activeWorkspace.conversationId, 'conv-latest');
+    assert.equal(guess.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/?conversationId=conv-latest');
   });
 
   it("revokes workspaces removed from a rule, keeps the author's permissions, and skips no-op writes", () => {
