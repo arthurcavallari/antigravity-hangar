@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-10-24T00:00:00Z",
+  "generatedAt": "2026-10-25T00:00:00Z",
   "hangar": {
     "id": "hangar",
     "name": "Antigravity Hangar",
     "npmPackage": "antigravity-hangar",
-    "latestVersion": "1.2.0",
+    "latestVersion": "1.2.1",
     "release": {
       "gitRepo": "https://github.com/arthurcavallari/antigravity-hangar"
     }
