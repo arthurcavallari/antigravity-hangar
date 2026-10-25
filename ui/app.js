@@ -6,8 +6,9 @@
   const ns = (window.Hangar = window.Hangar || {});
   const urlParams = new URLSearchParams(window.location.search);
   // Antigravity opens a separate Hangar frame per conversation, so this frame's conversation never
-  // changes. It's '_new' on a new-conversation pane, and missing outside any conversation.
-  const hangarConversationId = urlParams.get('conversationId') || '';
+  // changes. Its new-conversation screen opens frames with no id at all, so inside a host no id means
+  // no conversation yet ('_new'); only a standalone browser tab guesses.
+  const hangarConversationId = urlParams.get('conversationId') || (window.parent !== window ? '_new' : '');
 
   const state = {
     workspaceUris: [],
