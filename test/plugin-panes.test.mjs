@@ -62,7 +62,8 @@ describe('Hangar plugin panes', () => {
     assert.equal(html.includes('<img'), false);
     assert.equal(html.includes('<b>review'), false);
     assert.match(html, /hooks\/&lt;x&gt;\.sh:3/);
-    assert.match(html, /restart it after installing/);
+    assert.match(html, /lists a new plugin as soon as it is installed/);
+    assert.equal(html.includes('loads new plugins when it starts'), false);
   });
 
   it('labels plugins, and ports with where they came from', () => {

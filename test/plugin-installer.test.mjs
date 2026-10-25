@@ -83,6 +83,9 @@ function portRequest(box, overrides = {}) {
     packagesDir: box.packagesDir,
     pluginsDir: box.pluginsDir,
     configPath: box.configPath,
+    // The wait for Antigravity to list the plugin is real time, so keep it short here
+    pollMs: 1,
+    maxWaitMs: 1,
     ...overrides,
   };
 }
@@ -122,7 +125,7 @@ describe('Hangar plugin installer', () => {
       assert.deepEqual(readdirSync(box.packagesDir), ['review-port@1.2.0'], 'no staging folders are left behind');
       assert.equal(existsSync(join(box.pluginsDir, 'review-port', 'skills', 'review', 'SKILL.md')), true);
 
-      assert.deepEqual(calls, [
+      assert.deepEqual(calls.filter((c) => c.method !== 'GetAllPlugins'), [
         { method: 'JetboxWriteState', body: { userConfig: { plugins: { 'review-port': { enabled: true } } } } },
       ]);
       assert.equal(existsSync(join(dirname(box.pluginsDir), 'config.json')), false, 'config.json is never edited');
@@ -136,6 +139,46 @@ describe('Hangar plugin installer', () => {
         ref: 'v1.2.0',
         path: 'plugins/review',
       });
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('asks for a restart only when Antigravity does not list the plugin after the install', async () => {
+    for (const [label, listed] of [['listed right away', true], ['not listed', false]]) {
+      const box = sandbox();
+      try {
+        const { calls, rpcFn } = recordingRpc({
+          GetAllPlugins: { plugins: listed ? [{ name: 'review-port', path: `file:///C:/Users/x/.gemini/config/plugins/review-port` }] : [{ name: 'other', path: 'file:///x/plugins/other' }] },
+        });
+        const res = await installRemotePlugin({
+          ...portRequest(box), porter: fakePorter(), rpcFn, execFn: fakeExec(box, CLAUDE_SOURCE, []),
+        });
+        assert.equal(res.ok, true, label);
+        assert.equal(res.restartRequired, !listed, label);
+        const order = calls.map((c) => c.method);
+        assert.equal(order[0], 'JetboxWriteState', 'the plugin is enabled before the list is read');
+        assert.equal(order.includes('GetAllPlugins'), true, label);
+      } finally {
+        box.cleanup();
+      }
+    }
+  });
+
+  it('waits for the plugin to show up before asking for a restart', async () => {
+    const box = sandbox();
+    try {
+      let reads = 0;
+      const rpcFn = async (method) => {
+        if (method !== 'GetAllPlugins') return {};
+        reads += 1;
+        return { plugins: reads >= 3 ? [{ name: 'review-port', path: 'file:///x/plugins/review-port' }] : [] };
+      };
+      const res = await installRemotePlugin({
+        ...portRequest(box, { pollMs: 1, maxWaitMs: 1000 }), porter: fakePorter(), rpcFn, execFn: fakeExec(box, CLAUDE_SOURCE, []),
+      });
+      assert.equal(res.restartRequired, false);
+      assert.equal(reads, 3);
     } finally {
       box.cleanup();
     }
@@ -318,7 +361,7 @@ describe('Hangar plugin installer', () => {
       assert.equal(preview.scannedTier, 'TIER_2_LOCAL_TOOLING');
       assert.equal(preview.flagsDigest, flagsDigest([HIGH_FLAG]));
       assert.equal(preview.report.unported.length, 1);
-      assert.equal(preview.restartRequired, true);
+      assert.equal('restartRequired' in preview, false, 'a dry run can not know, so it says nothing');
       assert.equal(existsSync(porter.calls[0].outDir), false, 'the dry run is cleaned up');
       assert.equal(execCalls.some((c) => c.cmd === 'agy'), false);
       assert.deepEqual(calls, []);
