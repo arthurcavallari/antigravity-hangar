@@ -45,7 +45,7 @@
         ${reportList('Ported', ported)}
         ${reportList('Warnings', (report.warnings || []).map(esc))}
       </details>
-      <div class="port-report-note">Antigravity loads new plugins when it starts, so restart it after installing.</div>`;
+      <div class="port-report-note">Antigravity lists a new plugin as soon as it is installed. If it does not appear, restart Antigravity.</div>`;
   };
 
   function pluginPayload(pkg, consent = {}) {
