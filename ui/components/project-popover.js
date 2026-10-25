@@ -45,6 +45,7 @@
         scope: sc.scope,
         ws: sc.workspaces,
         hib: Boolean(sc.autoHibernate),
+        hibLocked: Boolean(sc.autoHibernateLocked),
       })),
       suggestions: (suggestions || []).map((s) => ({
         id: s.sidecarId,
@@ -123,7 +124,10 @@
       hibBtn.type = 'button';
       hibBtn.className = `agy-btn has-icon ${sc.autoHibernate ? 'agy-btn-secondary' : 'agy-btn-outline'}`;
       hibBtn.innerHTML = `${ns.iconSvg('bolt', 13)}<span>Auto-Sleep</span>`;
-      hibBtn.title = 'Automatically hibernate process when workspace is inactive';
+      hibBtn.title = sc.autoHibernateLocked
+        ? "A plugin's sidecar starts and stops with its plugin, so it never hibernates"
+        : 'Automatically hibernate process when workspace is inactive';
+      hibBtn.disabled = Boolean(sc.autoHibernateLocked);
       hibBtn.addEventListener('click', () => {
         const ctx = popoverEl._ctx;
         const curSc = ctx?.scMap.get(sc.sidecarId) || sc;

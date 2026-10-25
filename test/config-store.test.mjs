@@ -134,6 +134,39 @@ describe('config-store and child iframe URL normalization', () => {
     );
   });
 
+  it('never hibernates a plugin sidecar, since that would switch off the whole plugin', async () => {
+    const rule = { scope: 'project', workspaces: ['c:/Elsewhere'], autoHibernate: true, installedVersion: '1.0.0' };
+    const hangarConfig = {
+      layout: {},
+      sidecars: { 'acme/viewer': { ...rule, source: 'plugin:acme' }, 'db-inspector': { ...rule, source: 'local' } },
+    };
+    const raw = (sidecarId, status) => ({ sidecarId, status, webPort: 61000, baseUrl: 'http://localhost:61001?token=t', config: { displayName: sidecarId, hasWebUi: true } });
+    const list = (status) => enrichSidecarList([raw('acme/viewer', status), raw('db-inspector', status)], hangarConfig, {
+      activeWorkspacePath: 'c:/Projects/App',
+      sidecarsDir: join(tmpdir(), 'nonexistent-sidecars-dir'),
+    });
+
+    const running = list('SIDECAR_STATUS_RUNNING');
+    const [plugin, standalone] = [running.find((s) => s.sidecarId === 'acme/viewer'), running.find((s) => s.sidecarId === 'db-inspector')];
+    assert.equal(plugin.autoHibernate, false);
+    assert.equal(plugin.autoHibernateLocked, true);
+    assert.equal(standalone.autoHibernate, true);
+    assert.equal(standalone.autoHibernateLocked, false);
+
+    const stopped = list('SIDECAR_STATUS_STOPPED');
+    assert.equal(stopped.find((s) => s.sidecarId === 'acme/viewer').statusBadge, 'STOPPED');
+    assert.equal(stopped.find((s) => s.sidecarId === 'db-inspector').statusBadge, 'HIBERNATED');
+
+    // Idle for longer than the timeout: only the standalone sidecar is disabled
+    const hibernator = new HibernationManager();
+    const calls = [];
+    const manageSidecarFn = async (action, id) => calls.push(`${action} ${id}`);
+    const t0 = 1_700_000_000_000;
+    await hibernator.reconcile(running, { hibernateAfterIdleMinutes: 10, nowMs: t0, manageSidecarFn });
+    await hibernator.reconcile(running, { hibernateAfterIdleMinutes: 10, nowMs: t0 + 11 * 60 * 1000, manageSidecarFn });
+    assert.deepEqual(calls, ['SIDECAR_ACTION_DISABLE db-inspector']);
+  });
+
   it('forwards dynamic conversationId from GetAllCascadeTrajectories into child iframeUrl via fetchHangarState', async () => {
     const trajectoriesResponse = {
       trajectorySummaries: {
