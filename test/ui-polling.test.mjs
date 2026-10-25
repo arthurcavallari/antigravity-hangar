@@ -48,7 +48,7 @@ function loadDeck() {
     },
   };
   const window = { addEventListener() {}, innerHeight: 800 };
-  const ctx = vm.createContext({ window, document });
+  const ctx = vm.createContext({ window, document, URL });
   for (const rel of ['components/tab-bar.js', 'components/iframe-deck.js']) {
     vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
   }
@@ -98,6 +98,15 @@ describe('Hangar UI polling load', () => {
     assert.deepEqual(visibility(cm), [true, true, false]);
     assert.deepEqual(visibility(other), [false, false, true]);
     assert.ok(other.classList.has('visible') && !cm.classList.has('visible'));
+
+    // When Hangar's guess changes (a Hangar opened without a conversation), a mounted child is told
+    // instead of being reloaded
+    state.sidecars[0].iframeUrl = 'http://127.0.0.1:51001/?conversationId=conv-next';
+    ns.reconcileIframeDeck({ state, els });
+    const convMsgs = () =>
+      cm.posted.filter((m) => m.type === 'conversation-change').map((m) => m.payload.conversationId);
+    assert.deepEqual(convMsgs(), ['conv-next']);
+    assert.equal(frames.length, 2);
   });
 
   it('refreshHangarState keeps one /api/state request in flight and re-runs once for callers', async () => {

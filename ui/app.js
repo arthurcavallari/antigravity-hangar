@@ -5,15 +5,9 @@
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   const urlParams = new URLSearchParams(window.location.search);
-  let hangarConversationId = urlParams.get('conversationId') || '';
-
-  window.addEventListener('message', (e) => {
-    if (!ns.isHostMessage?.(e.source)) return;
-    if (e.data?.type === 'conversation-change' && typeof e.data?.payload?.conversationId === 'string') {
-      hangarConversationId = e.data.payload.conversationId;
-      refreshHangarState();
-    }
-  });
+  // Antigravity opens a separate Hangar frame per conversation, so this frame's conversation never
+  // changes. It's '_new' on a new-conversation pane, and missing outside any conversation.
+  const hangarConversationId = urlParams.get('conversationId') || '';
 
   const state = {
     workspaceUris: [],

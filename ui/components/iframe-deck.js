@@ -9,7 +9,6 @@
   const deckFrames = new Map(); // sidecarId -> HTMLIFrameElement
   let latestThemeEvent = null;
   let latestWorkspaceEvent = null;
-  let latestConversationEvent = null;
   let lastConfigThemeSig = '';
 
   function broadcastToChildFrames(messageData) {
@@ -69,9 +68,6 @@
       } else if (type === 'workspace-change') {
         latestWorkspaceEvent = event.data;
         broadcastToChildFrames(event.data);
-      } else if (type === 'conversation-change' && event.data?.payload) {
-        latestConversationEvent = event.data;
-        broadcastToChildFrames(event.data);
       } else if (type === 'toggle-aux-pane' || type === 'toggle-conversation') {
         if (window.parent && window.parent !== window) {
           window.parent.postMessage(event.data, '*');
@@ -106,7 +102,6 @@
     frame.addEventListener('load', () => {
       if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');
       if (latestWorkspaceEvent) frame.contentWindow?.postMessage(latestWorkspaceEvent, '*');
-      if (latestConversationEvent) frame.contentWindow?.postMessage(latestConversationEvent, '*');
       // Anything posted before load went to the initial blank document
       postFrameVisibility(frame);
     });
