@@ -109,6 +109,40 @@ describe('Hangar UI polling load', () => {
     assert.equal(frames.length, 2);
   });
 
+  it('asks for no conversation when Antigravity frames it without an id, and guesses only in a plain tab', async () => {
+    const firstConversationId = async (search, framed) => {
+      const requests = [];
+      const window = {
+        location: { search },
+        addEventListener() {},
+        Hangar: {
+          partitionSplitTabs: () => ({ workspaceTabs: [], topTabs: [], bottomTabs: [], topSet: new Set() }),
+          apiCall: (path, body) => {
+            if (path === '/api/state') requests.push(body);
+            return new Promise(() => {});
+          },
+        },
+      };
+      window.parent = framed ? {} : window;
+      const ctx = vm.createContext({
+        window,
+        document: { hidden: false, getElementById: () => null, addEventListener() {} },
+        URLSearchParams,
+        sessionStorage: { getItem: () => '', setItem() {} },
+        console,
+        setTimeout,
+        setInterval: () => 0,
+      });
+      vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+      await flush();
+      return requests[0]?.conversationId;
+    };
+    // Antigravity's new-conversation screen opens sidecar frames with no conversationId
+    assert.equal(await firstConversationId('', true), '_new');
+    assert.equal(await firstConversationId('?conversationId=conv-1', true), 'conv-1');
+    assert.equal(await firstConversationId('', false), '');
+  });
+
   it('refreshHangarState keeps one /api/state request in flight and re-runs once for callers', async () => {
     let now = 0;
     let intervalTick = null;
