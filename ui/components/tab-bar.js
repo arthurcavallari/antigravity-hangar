@@ -242,16 +242,12 @@
   }
 
   ns.renderTabBar = function renderTabBar({
-    workspaceEl, tabStripEl, topOverflowBtnEl, bottomTabBarEl, bottomTabStripEl, bottomOverflowBtnEl,
-    tabOverflowPopoverEl, splitBtnEl, activeWorkspace, sidecars, registryPackages, hangar, bottomActiveTabId, layout,
+    tabStripEl, topOverflowBtnEl, bottomTabBarEl, bottomTabStripEl, bottomOverflowBtnEl,
+    tabOverflowPopoverEl, splitBtnEl, sidecars, registryPackages, hangar, bottomActiveTabId, layout,
     onSelectTopSplitTab, onSelectBottomSplitTab, onDropTab,
   }) {
     if (ns.isPointerOnTab) return;
     const splitEnabled = Boolean(layout?.splitViewEnabled);
-    if (workspaceEl) {
-      workspaceEl.textContent = activeWorkspace?.workspaceName || 'Global';
-      workspaceEl.parentElement.title = `Active Workspace: ${activeWorkspace?.workspacePath || 'Global (*)'} (click for project rules)`;
-    }
     splitBtnEl?.classList.toggle('active', splitEnabled);
 
     const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));

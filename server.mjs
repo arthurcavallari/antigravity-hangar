@@ -30,7 +30,7 @@ app.page('/index.html', serveAsset('index.html', 'text/html; charset=utf-8'));
 app.page('/compiled_tailwind.css', serveAgyCss);
 app.page('/styles.css', serveAsset('styles.css', 'text/css; charset=utf-8'));
 app.page('/components.css', serveAsset('components.css', 'text/css; charset=utf-8'));
-const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/project-popover.js', 'components/marketplace-panes.js',
+const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/marketplace-panes.js',
   'components/plugin-panes.js', 'components/extensions-tab.js', 'components/iframe-deck.js'];
 for (const script of SCRIPTS) app.page(`/${script}`, serveAsset(script, 'text/javascript; charset=utf-8'));
 

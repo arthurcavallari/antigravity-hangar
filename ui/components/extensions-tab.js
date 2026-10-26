@@ -60,9 +60,61 @@
     }
   }
 
+  function renderWorkspaceSuggestions(sugEl, { suggestions = [], onApplySuggestion }) {
+    if (!sugEl) return;
+    const list = Array.isArray(suggestions) ? suggestions : [];
+    sugEl.classList.toggle('hidden', list.length === 0);
+    sugEl._onApplySuggestion = onApplySuggestion;
+    const sig = JSON.stringify(list.map((s) => [s.sidecarId, s.name, s.reason, s.actionType]));
+    if (sugEl.dataset.sig === sig) return;
+    sugEl.dataset.sig = sig;
+    sugEl.innerHTML = '';
+    if (list.length === 0) return;
+
+    const header = document.createElement('div');
+    header.className = 'popover-sug-header';
+    header.textContent = 'Suggested for this workspace';
+    sugEl.appendChild(header);
+
+    for (const sug of list) {
+      const item = document.createElement('div');
+      item.className = 'popover-sug-row';
+
+      const info = document.createElement('div');
+      info.className = 'popover-sug-info';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'popover-sug-name';
+      nameEl.textContent = sug.name;
+      const reasonEl = document.createElement('span');
+      reasonEl.className = 'popover-sug-reason';
+      reasonEl.textContent = sug.reason;
+      info.append(nameEl, reasonEl);
+
+      const actBtn = document.createElement('button');
+      actBtn.type = 'button';
+      actBtn.className = 'agy-btn agy-btn-primary has-icon';
+      const isInstall = sug.actionType === 'install';
+      actBtn.innerHTML = `${ns.iconSvg(isInstall ? 'download' : 'check', 13)}<span>${isInstall ? 'Install…' : 'Enable'}</span>`;
+      if (isInstall) actBtn.title = 'Opens this sidecar in Discover to review its capability tier before installing';
+      actBtn.addEventListener('click', () => sugEl._onApplySuggestion?.(sug));
+
+      item.append(info, actBtn);
+      sugEl.appendChild(item);
+    }
+  }
+
   function reconcileInstalledPane(
     paneEl,
-    { sidecars, registryPackages, activeWorkspace, onManageSidecar, onSaveWorkspaces, onInstallRemote, onUninstallSidecar }
+    {
+      sidecars,
+      registryPackages,
+      activeWorkspace,
+      onManageSidecar,
+      onSaveWorkspaces,
+      onToggleAutoHibernate,
+      onInstallRemote,
+      onUninstallSidecar,
+    }
   ) {
     const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
     const seenIds = new Set();
@@ -120,11 +172,14 @@
           <div data-role="desc" class="manager-card-desc"></div>
           <div class="manager-section-bar">
             <span class="manager-section-label">Workspace Scope</span>
-            <div class="agy-toggle-group">
-              <button type="button" data-role="global-btn" class="agy-toggle-item">
-                ${ns.iconSvg('keep', 13)}<span>Global (*)</span>
-              </button>
-              <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
+            <div class="manager-scope-actions">
+              <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="global-btn" class="agy-toggle-item">
+                  ${ns.iconSvg('keep', 13)}<span>Global (*)</span>
+                </button>
+                <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
+              </div>
             </div>
           </div>
           <div data-role="rule-list" class="ws-rule-list"></div>
@@ -153,6 +208,10 @@
           }
         });
         card.querySelector('[data-role="add-rule-btn"]').addEventListener('click', commitNewPattern);
+        card.querySelector('[data-role="hibernate-btn"]').addEventListener('click', () => {
+          if (!card._sc || card._sc.autoHibernateLocked) return;
+          runCardAction(card, () => onToggleAutoHibernate?.(card._sc));
+        });
         card.querySelector('[data-role="global-btn"]').addEventListener('click', () => {
           const curSc = card._sc;
           const isGlobal = (curSc.workspaces || []).includes('*');
@@ -162,7 +221,13 @@
         card.querySelector('[data-role="add-ws-btn"]').addEventListener('click', () => {
           const currentWs = card._activeWorkspace?.workspacePath || '';
           if (!currentWs) return;
-          const next = Array.from(new Set([...(card._sc.workspaces || []).filter((w) => w !== '*'), currentWs]));
+          const existing = (card._sc.workspaces || []).filter((w) => w !== '*');
+          const hasCurrent =
+            !(card._sc.workspaces || []).includes('*') &&
+            existing.some((w) => w.toLowerCase() === currentWs.toLowerCase());
+          const next = hasCurrent
+            ? existing.filter((w) => w.toLowerCase() !== currentWs.toLowerCase())
+            : Array.from(new Set([...existing, currentWs]));
           runCardAction(card, () => onSaveWorkspaces(card._sc, next));
         });
         const procBtn = card.querySelector('[data-role="proc-btn"]');
@@ -277,22 +342,35 @@
         upBtn.title = `Update ${sc.displayName} to v${latestVer}`;
       }
 
+      const hibBtn = card.querySelector('[data-role="hibernate-btn"]');
+      const hibSig = `${Boolean(sc.autoHibernate)}:${Boolean(sc.autoHibernateLocked)}`;
+      if (hibBtn.dataset.sig !== hibSig) {
+        hibBtn.dataset.sig = hibSig;
+        hibBtn.className = `agy-btn has-icon ${sc.autoHibernate ? 'agy-btn-secondary' : 'agy-btn-outline'}`;
+        hibBtn.innerHTML = `${ns.iconSvg('bolt', 13)}<span>Auto-Sleep</span>`;
+        hibBtn.title = sc.autoHibernateLocked
+          ? "A plugin's sidecar starts and stops with its plugin, so it never hibernates"
+          : 'Automatically hibernate process when workspace is inactive';
+        hibBtn.disabled = Boolean(sc.autoHibernateLocked);
+        hibBtn.setAttribute('aria-pressed', String(Boolean(sc.autoHibernate)));
+      }
+
       const isGlobal = (sc.workspaces || []).includes('*');
       card.querySelector('[data-role="global-btn"]').classList.toggle('active', isGlobal);
 
       const addWsBtn = card.querySelector('[data-role="add-ws-btn"]');
       const currentWs = activeWorkspace?.workspacePath || '';
       const alreadyHasCurrent = Boolean(
-        currentWs && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase())
+        currentWs && !isGlobal && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase())
       );
-      addWsBtn.classList.toggle('active', alreadyHasCurrent && !isGlobal);
+      addWsBtn.classList.toggle('active', alreadyHasCurrent);
       const wsBtnLabel = activeWorkspace?.workspaceName || 'Workspace';
       const wsBtnSig = `${alreadyHasCurrent}:${wsBtnLabel}`;
       if (addWsBtn.dataset.sig !== wsBtnSig) {
         addWsBtn.dataset.sig = wsBtnSig;
         addWsBtn.innerHTML = `${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 13)}<span>${ns.escHtml(wsBtnLabel)}</span>`;
       }
-      addWsBtn.disabled = !currentWs || alreadyHasCurrent;
+      addWsBtn.disabled = !currentWs;
 
       renderRuleList(card.querySelector('[data-role="rule-list"]'), sc, (patternToRemove) => {
         runCardAction(card, () =>
@@ -332,7 +410,11 @@
           <div data-role="hangar-update-error" class="sideload-banner err hidden" role="alert"></div>
           <div class="store-header">
             <div>
-              <div class="store-title"><span>UI Extensions</span><span data-role="total-count" class="count-pill"></span></div>
+              <div class="store-title">
+                <span>UI Extensions</span>
+                <span data-role="total-count" class="count-pill"></span>
+                <span data-role="active-ws-pill" class="count-pill"></span>
+              </div>
               <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
             <div class="store-header-right">
@@ -348,6 +430,7 @@
             </div>
           </div>
           <div data-role="pane-installed">
+            <div data-role="workspace-suggestions" class="workspace-suggestions hidden"></div>
             <div data-role="installed-sidecars"></div>
             <div data-role="installed-plugins" class="hidden"></div>
           </div>
@@ -411,6 +494,15 @@
     }
 
     shell.querySelector('[data-role="total-count"]').textContent = String(sidecars.length);
+    const wsPill = shell.querySelector('[data-role="active-ws-pill"]');
+    const wsName = opts.activeWorkspace?.workspaceName || 'Global';
+    const wsPath = opts.activeWorkspace?.workspacePath || 'Global (*)';
+    const wsSig = `${wsName}:${wsPath}`;
+    if (wsPill && wsPill.dataset.sig !== wsSig) {
+      wsPill.dataset.sig = wsSig;
+      wsPill.title = `Active Workspace: ${wsPath}`;
+      wsPill.innerHTML = `${ns.iconSvg('folder', 12)}<span>${ns.escHtml(wsName)}</span>`;
+    }
     const runningCount = sidecars.filter((s) => s.isRunning).length;
     const runningCountEl = shell.querySelector('[data-role="running-count"]');
     if (runningCountEl.dataset.count !== String(runningCount)) {
@@ -436,6 +528,10 @@
     };
 
     if (activeSubTab === 'installed') {
+      renderWorkspaceSuggestions(installedPane.querySelector('[data-role="workspace-suggestions"]'), {
+        suggestions: opts.suggestions,
+        onApplySuggestion: opts.onApplySuggestion,
+      });
       reconcileInstalledPane(installedPane.querySelector('[data-role="installed-sidecars"]'), { ...opts, onSwitchTab: switchTab });
       ns.renderInstalledPlugins?.(installedPane.querySelector('[data-role="installed-plugins"]'), { ...opts, onSwitchTab: switchTab });
     } else if (activeSubTab === 'discover') {

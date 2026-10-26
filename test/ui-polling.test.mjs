@@ -273,4 +273,202 @@ describe('Hangar UI polling load', () => {
     await flush();
     assert.equal(stateCalls, 4);
   });
+
+  it('renders Auto-Sleep, active workspace, and workspace suggestions inside Extensions tab without top-left popover', async () => {
+    const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+    assert.equal(indexHtml.includes('workspace-pill'), false);
+    assert.equal(indexHtml.includes('project-popover'), false);
+
+    function makeNode(tag = 'div', attrs = {}) {
+      const classes = new Set((attrs.class || '').split(/\s+/).filter(Boolean));
+      const listeners = {};
+      const node = {
+        tagName: tag.toUpperCase(),
+        dataset: { ...(attrs.dataset || {}) },
+        attributes: { ...attrs },
+        children: [],
+        className: attrs.class || '',
+        disabled: Boolean(attrs.disabled),
+        title: attrs.title || '',
+        value: '',
+        textContent: '',
+        _innerHTML: '',
+        classList: {
+          add: (c) => classes.add(c),
+          remove: (c) => classes.delete(c),
+          toggle: (c, on) => {
+            const next = on === undefined ? !classes.has(c) : Boolean(on);
+            if (next) classes.add(c);
+            else classes.delete(c);
+            return next;
+          },
+          contains: (c) => classes.has(c),
+        },
+        setAttribute(k, v) {
+          this.attributes[k] = String(v);
+        },
+        get firstElementChild() {
+          return this.children[0] || makeNode('svg');
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        append(...items) {
+          this.children.push(...items);
+        },
+        remove() {},
+        addEventListener: (type, fn) => (listeners[type] = fn),
+        click: () => listeners.click?.({ preventDefault() {} }),
+        get innerHTML() {
+          return this._innerHTML;
+        },
+        set innerHTML(html) {
+          this._innerHTML = String(html);
+          this.children = [];
+          const stack = [this];
+          const re = /<\/([a-z0-9-]+)>|<([a-z0-9-]+)([^>]*?)(\/?)>/gi;
+          let m;
+          while ((m = re.exec(this._innerHTML))) {
+            if (m[1]) {
+              if (stack.length > 1) stack.pop();
+              continue;
+            }
+            const tagName = m[2];
+            const attrStr = m[3];
+            const selfClose = Boolean(m[4]) || tagName === 'input' || tagName === 'path';
+            const parsedAttrs = {};
+            const dataset = {};
+            const attrRe = /([a-z0-9-]+)="([^"]*)"/gi;
+            let am;
+            while ((am = attrRe.exec(attrStr))) {
+              parsedAttrs[am[1]] = am[2];
+              if (am[1].startsWith('data-')) {
+                const camel = am[1].slice(5).replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+                dataset[camel] = am[2];
+              }
+            }
+            const child = makeNode(tagName, { ...parsedAttrs, dataset });
+            stack[stack.length - 1].children.push(child);
+            if (!selfClose) stack.push(child);
+          }
+        },
+        querySelectorAll(sel) {
+          const all = [];
+          const visit = (n) => {
+            for (const c of n.children || []) {
+              if (matches(c, sel)) all.push(c);
+              visit(c);
+            }
+          };
+          visit(this);
+          return all;
+        },
+        querySelector(sel) {
+          return this.querySelectorAll(sel)[0] || null;
+        },
+      };
+      return node;
+    }
+
+    function matches(el, sel) {
+      if (sel.startsWith('[data-role="')) {
+        const role = sel.slice(12, -2);
+        return el.dataset?.role === role;
+      }
+      if (sel === '[data-subtab]') return el.dataset?.subtab !== undefined;
+      if (sel.startsWith('.manager-card[data-sidecar-id="')) {
+        const id = sel.slice(31, -2);
+        return el.dataset?.sidecarId === id;
+      }
+      if (sel === '.manager-card') return (el.className || '').split(/\s+/).includes('manager-card');
+      if (sel === '.ws-input') return (el.className || '').split(/\s+/).includes('ws-input');
+      return false;
+    }
+
+    const window = {};
+    const document = { createElement: (tag) => makeNode(tag) };
+    const CSS = { escape: (s) => String(s) };
+    const ctx = vm.createContext({ window, document, CSS });
+    for (const rel of ['core.js', 'components/extensions-tab.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+
+    const storeViewEl = makeNode('section');
+    const toggledHib = [];
+    const savedWorkspaces = [];
+    const appliedSuggestions = [];
+    const sidecars = [
+      {
+        sidecarId: 'context-monitor',
+        displayName: 'Context Monitor',
+        statusBadge: 'RUNNING',
+        isRunning: true,
+        isErrored: false,
+        scope: 'project',
+        workspaces: ['C:/Proj/App'],
+        autoHibernate: true,
+        autoHibernateLocked: false,
+        installedVersion: '1.3.0',
+        source: 'local',
+      },
+      {
+        sidecarId: 'my-plugin/pane',
+        displayName: 'Plugin Pane',
+        statusBadge: 'RUNNING',
+        isRunning: true,
+        isErrored: false,
+        scope: 'project',
+        workspaces: [],
+        autoHibernate: false,
+        autoHibernateLocked: true,
+        installedVersion: '1.0.0',
+        source: 'plugin:my-plugin',
+      },
+    ];
+
+    window.Hangar.renderExtensionsTab({
+      storeViewEl,
+      sidecars,
+      suggestions: [{ sidecarId: 'docker-ui', name: 'Docker UI', reason: 'Detected docker-compose.yml', actionType: 'install' }],
+      activeWorkspace: { workspaceName: 'App', workspacePath: 'C:/Proj/App' },
+      onToggleAutoHibernate: async (sc) => toggledHib.push(sc.sidecarId),
+      onSaveWorkspaces: async (sc, next) => savedWorkspaces.push([sc.sidecarId, next]),
+      onApplySuggestion: async (sug) => appliedSuggestions.push(sug.sidecarId),
+    });
+
+    const wsPill = storeViewEl.querySelector('[data-role="active-ws-pill"]');
+    assert.equal(wsPill.title, 'Active Workspace: C:/Proj/App');
+    assert.match(wsPill.innerHTML, /App/);
+
+    const sugBox = storeViewEl.querySelector('[data-role="workspace-suggestions"]');
+    assert.equal(sugBox.classList.contains('hidden'), false);
+    const sugBtn = sugBox.children[1].children[1];
+    sugBtn.click();
+    assert.deepEqual(appliedSuggestions, ['docker-ui']);
+
+    const cmCard = storeViewEl.querySelector('.manager-card[data-sidecar-id="context-monitor"]');
+    const cmHibBtn = cmCard.querySelector('[data-role="hibernate-btn"]');
+    assert.equal(cmHibBtn.disabled, false);
+    assert.equal(cmHibBtn.attributes['aria-pressed'], 'true');
+    cmHibBtn.click();
+    await flush();
+    assert.deepEqual(toggledHib, ['context-monitor']);
+
+    // Clicking the active workspace button on the card toggles the current workspace off
+    const cmWsBtn = cmCard.querySelector('[data-role="add-ws-btn"]');
+    assert.equal(cmWsBtn.disabled, false);
+    assert.equal(cmWsBtn.classList.contains('active'), true);
+    cmWsBtn.click();
+    await flush();
+    assert.deepEqual(JSON.parse(JSON.stringify(savedWorkspaces)), [['context-monitor', []]]);
+
+    // Plugin sidecar has Auto-Sleep locked and disabled
+    const pluginCard = storeViewEl.querySelector('.manager-card[data-sidecar-id="my-plugin/pane"]');
+    const pluginHibBtn = pluginCard.querySelector('[data-role="hibernate-btn"]');
+    assert.equal(pluginHibBtn.disabled, true);
+    pluginHibBtn.click();
+    await flush();
+    assert.deepEqual(toggledHib, ['context-monitor']);
+  });
 });

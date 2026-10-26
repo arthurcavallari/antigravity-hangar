@@ -151,7 +151,6 @@ antigravity-hangar/
 │   └── components/
 │       ├── tab-bar.js              # Chrome tab strips, edge-fade overflow & 150ms drag physics
 │       ├── iframe-deck.js          # Persistent child iframe deck & postMessage relay bridge
-│       ├── project-popover.js      # [+] Quick workspace rule popover
 │       ├── extensions-tab.js       # Extensions shell & Installed sidecars manager
 │       ├── marketplace-panes.js    # Discover catalog & Sideload (Local / GitHub) panes
 │       └── plugin-panes.js         # Plugin badges, port report consent & Installed plugins

@@ -26,7 +26,6 @@
   };
 
   const els = {
-    workspaceName: document.getElementById('workspace-name'),
     tabStrip: document.getElementById('tab-strip'),
     topOverflowBtn: document.getElementById('top-overflow-btn'),
     bottomTabBar: document.getElementById('bottom-tab-bar'),
@@ -34,7 +33,6 @@
     bottomOverflowBtn: document.getElementById('bottom-overflow-btn'),
     tabOverflowPopover: document.getElementById('tab-overflow-popover'),
     splitToggleBtn: document.getElementById('split-toggle-btn'),
-    projectPopover: document.getElementById('project-popover'),
     splitDividerGroup: document.getElementById('split-divider-group'),
     splitResizeHandle: document.getElementById('split-resize-handle'),
     mainViewport: document.getElementById('main-viewport'),
@@ -74,7 +72,6 @@
     ns.reconcileIframeDeck?.({ state, els });
 
     ns.renderTabBar?.({
-      workspaceEl: els.workspaceName,
       tabStripEl: els.tabStrip,
       topOverflowBtnEl: els.topOverflowBtn,
       bottomTabBarEl: els.bottomTabBar,
@@ -82,7 +79,6 @@
       bottomOverflowBtnEl: els.bottomOverflowBtn,
       tabOverflowPopoverEl: els.tabOverflowPopover,
       splitBtnEl: els.splitToggleBtn,
-      activeWorkspace: state.activeWorkspace,
       sidecars: state.sidecars,
       registryPackages: state.registryPackages,
       hangar: state.hangar,
@@ -137,56 +133,6 @@
       },
     });
 
-    ns.renderProjectPopover?.({
-      popoverEl: els.projectPopover,
-      activeWorkspace: state.activeWorkspace,
-      sidecars: state.sidecars,
-      suggestions: state.suggestions,
-      onToggleWorkspaceRule: async (sc, wsPath) => {
-        if (!wsPath || !apiCall) return;
-        const current = sc.workspaces.filter((w) => w !== '*');
-        const exists = current.some((w) => w.toLowerCase() === wsPath.toLowerCase());
-        const next = exists
-          ? current.filter((w) => w.toLowerCase() !== wsPath.toLowerCase())
-          : [...current, wsPath];
-        await apiCall('/api/rules/update', { sidecarId: sc.sidecarId, scope: 'project', workspaces: next });
-        if (!exists && !sc.isRunning) {
-          await apiCall('/api/sidecar/manage', { sidecarId: sc.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
-        }
-        await refreshHangarState();
-      },
-      onToggleGlobalPin: async (sc) => {
-        if (!apiCall) return;
-        const nextScope = sc.scope === 'global' ? 'project' : 'global';
-        const nextWs = nextScope === 'global' ? ['*'] : state.activeWorkspace.workspacePath ? [state.activeWorkspace.workspacePath] : [];
-        await apiCall('/api/rules/update', { sidecarId: sc.sidecarId, scope: nextScope, workspaces: nextWs });
-        await refreshHangarState();
-      },
-      onToggleAutoHibernate: async (sc) => {
-        if (!apiCall) return;
-        await apiCall('/api/rules/update', { sidecarId: sc.sidecarId, autoHibernate: !sc.autoHibernate });
-        await refreshHangarState();
-      },
-      onApplySuggestion: async (sug) => {
-        if (!apiCall) return;
-        const wsPath = state.activeWorkspace.workspacePath;
-        if (sug.actionType === 'install') {
-          // Installs go through Discover so the capability tier consent is always shown
-          els.projectPopover?.hidePopover?.();
-          ns.setExtensionsSubTab?.('discover');
-          ns.setDiscoverQuery?.(sug.sidecarId);
-          await openExtensionsTab();
-          return;
-        }
-        const existingSc = state.sidecars.find((s) => s.sidecarId === sug.sidecarId);
-        const curWs = (existingSc?.workspaces || []).filter((w) => w !== '*');
-        const nextWs = wsPath ? Array.from(new Set([...curWs, wsPath])) : ['*'];
-        await apiCall('/api/rules/update', { sidecarId: sug.sidecarId, scope: 'project', workspaces: nextWs });
-        await apiCall('/api/sidecar/manage', { sidecarId: sug.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
-        await refreshHangarState();
-      },
-    });
-
     const { activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars, state.layout);
     const isExtensionsVisible = state.layout.splitViewEnabled
       ? state.bottomActiveTabId === ns.EXTENSIONS_TAB_ID || activeTopId === ns.EXTENSIONS_TAB_ID
@@ -197,6 +143,7 @@
         storeViewEl: els.storeView,
         sidecars: state.sidecars,
         plugins: state.plugins,
+        suggestions: state.suggestions,
         registryPackages: state.registryPackages,
         hangar: state.hangar,
         layout: state.layout,
@@ -224,6 +171,28 @@
             scope: patterns.includes('*') ? 'global' : 'project',
             workspaces: patterns,
           });
+          await refreshHangarState();
+        },
+        onToggleAutoHibernate: async (sc) => {
+          if (!apiCall) return;
+          await apiCall('/api/rules/update', { sidecarId: sc.sidecarId, autoHibernate: !sc.autoHibernate });
+          await refreshHangarState();
+        },
+        onApplySuggestion: async (sug) => {
+          if (!apiCall) return;
+          const wsPath = state.activeWorkspace.workspacePath;
+          if (sug.actionType === 'install') {
+            // Installs go through Discover so the capability tier consent is always shown
+            ns.setExtensionsSubTab?.('discover');
+            ns.setDiscoverQuery?.(sug.sidecarId);
+            renderAll();
+            return;
+          }
+          const existingSc = state.sidecars.find((s) => s.sidecarId === sug.sidecarId);
+          const curWs = (existingSc?.workspaces || []).filter((w) => w !== '*');
+          const nextWs = wsPath ? Array.from(new Set([...curWs, wsPath])) : ['*'];
+          await apiCall('/api/rules/update', { sidecarId: sug.sidecarId, scope: 'project', workspaces: nextWs });
+          await apiCall('/api/sidecar/manage', { sidecarId: sug.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
           await refreshHangarState();
         },
         onInspectLocal: async (folderPath) => apiCall('/api/store/inspect', { folderPath }),
@@ -258,18 +227,6 @@
         },
       });
     }
-  }
-
-  async function openExtensionsTab() {
-    const { topSet } = ns.partitionSplitTabs(state.sidecars, state.layout);
-    if (state.layout.splitViewEnabled && !topSet.has(ns.EXTENSIONS_TAB_ID)) {
-      state.bottomActiveTabId = ns.EXTENSIONS_TAB_ID;
-      renderAll();
-      return;
-    }
-    state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
-    renderAll();
-    await ns.apiCall('/api/layout/update', { pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID });
   }
 
   let lastStateRefreshAt = 0;
@@ -312,10 +269,6 @@
       state.suggestions = data.suggestions || [];
       renderAll();
     } catch (err) {
-      if (els.workspaceName) {
-        els.workspaceName.textContent = 'Sync Error';
-        els.workspaceName.parentElement.title = err.message;
-      }
       console.error('[hangar] Failed to refresh state:', err);
     }
   }

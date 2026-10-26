@@ -106,7 +106,6 @@ runSidecarSetup({
     'ui/core.js',
     'ui/app.js',
     'ui/components/tab-bar.js',
-    'ui/components/project-popover.js',
     'ui/components/marketplace-panes.js',
     'ui/components/plugin-panes.js',
     'ui/components/extensions-tab.js',

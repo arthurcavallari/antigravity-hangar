@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="/components.css" />
   <script defer src="/core.js"></script>
   <script defer src="/components/tab-bar.js"></script>
-  <script defer src="/components/project-popover.js"></script>
   <script defer src="/components/marketplace-panes.js"></script>
   <script defer src="/components/plugin-panes.js"></script>
   <script defer src="/components/extensions-tab.js"></script>
@@ -20,23 +19,6 @@
 <body>
   <div id="hub-shell" class="hub-shell">
     <header id="chrome-bar" class="chrome-bar">
-      <button
-        id="workspace-pill"
-        type="button"
-        popovertarget="project-popover"
-        class="workspace-pill"
-        aria-label="Quick Project Sidecar Rules"
-        title="Active Workspace"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 -960 960 960" fill="currentColor" class="agy-icon ws-icon" aria-hidden="true">
-          <path d="M172.31-180Q142-180 121-201t-21-51.31V-707.69Q100-738 121-759t51.31-21H391.92l80,80H787.69Q818-700 839-679t21,51.31v375.38Q860-222 839-201t-51.31,21H172.31Zm0-60H787.69q5.39,0 8.85-3.46t3.46-8.85V-627.69q0-5.39-3.46-8.85T787.69-640H447.38l-80-80H172.31q-5.39,0-8.85,3.46T160-707.69v455.38q0,5.39 3.46,8.85t8.85,3.46Z"/>
-        </svg>
-        <span id="workspace-name" class="ws-name">Detecting...</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 -960 960 960" fill="currentColor" class="agy-icon ws-chevron" aria-hidden="true">
-          <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
-        </svg>
-      </button>
-
       <nav id="tab-strip" class="tab-strip" aria-label="Primary or Top Pane Sidecar Tabs"></nav>
 
       <button
@@ -66,7 +48,6 @@
       </div>
     </header>
 
-    <div id="project-popover" popover="auto" class="project-popover"></div>
     <div id="tab-overflow-popover" popover="auto" class="tab-overflow-popover"></div>
 
     <main id="main-viewport" class="main-viewport">
