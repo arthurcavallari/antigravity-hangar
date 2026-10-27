@@ -29,6 +29,9 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
     assert.equal(isNewerSemver('1.0.0', '1.1.0'), true);
     assert.equal(isNewerSemver('1.2.0', '1.0.0'), false);
     assert.equal(isNewerSemver('1.0.0', '1.0.0'), false);
+    assert.equal(isNewerSemver('1.3.0-beta.1', '1.3.0'), true, 'Stable release upgrades pre-release');
+    assert.equal(isNewerSemver('1.2.0', '1.3.0-beta.1'), false, 'Pre-release candidate is never promoted');
+    assert.equal(isNewerSemver('1.2.0', 'not-semver'), false);
 
     const dir = mkdtempSync(join(tmpdir(), 'hangar-registry-test-'));
     try {
