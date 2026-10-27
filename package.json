@@ -1,6 +1,6 @@
 {
   "name": "antigravity-hangar",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "description": "Hangar — Chrome-style project-aware tab multiplexer, split-pane telemetry host, and extension marketplace for Google Antigravity Auxiliary Pane sidecars.",
   "license": "MIT",
