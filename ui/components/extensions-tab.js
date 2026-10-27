@@ -414,6 +414,7 @@
                 <span>UI Extensions</span>
                 <span data-role="total-count" class="count-pill"></span>
                 <span data-role="active-ws-pill" class="count-pill"></span>
+                <span data-role="hangar-ver-pill" class="count-pill hidden"></span>
               </div>
               <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
@@ -502,6 +503,16 @@
       wsPill.dataset.sig = wsSig;
       wsPill.title = `Active Workspace: ${wsPath}`;
       wsPill.innerHTML = `${ns.iconSvg('folder', 12)}<span>${ns.escHtml(wsName)}</span>`;
+    }
+    const verPill = shell.querySelector('[data-role="hangar-ver-pill"]');
+    const instVer = String(hangar?.installedVersion || '').trim();
+    if (verPill) {
+      verPill.classList.toggle('hidden', !instVer);
+      if (instVer && verPill.dataset.ver !== instVer) {
+        verPill.dataset.ver = instVer;
+        verPill.title = `Installed Antigravity Hangar version: v${instVer}`;
+        verPill.textContent = `Hangar v${instVer}`;
+      }
     }
     const runningCount = sidecars.filter((s) => s.isRunning).length;
     const runningCountEl = shell.querySelector('[data-role="running-count"]');

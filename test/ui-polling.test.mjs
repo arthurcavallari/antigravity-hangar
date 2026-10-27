@@ -430,12 +430,18 @@ describe('Hangar UI polling load', () => {
     window.Hangar.renderExtensionsTab({
       storeViewEl,
       sidecars,
+      hangar: { installedVersion: '1.2.5', latestVersion: '1.2.5', updateAvailable: false },
       suggestions: [{ sidecarId: 'docker-ui', name: 'Docker UI', reason: 'Detected docker-compose.yml', actionType: 'install' }],
       activeWorkspace: { workspaceName: 'App', workspacePath: 'C:/Proj/App' },
       onToggleAutoHibernate: async (sc) => toggledHib.push(sc.sidecarId),
       onSaveWorkspaces: async (sc, next) => savedWorkspaces.push([sc.sidecarId, next]),
       onApplySuggestion: async (sug) => appliedSuggestions.push(sug.sidecarId),
     });
+
+    const verPill = storeViewEl.querySelector('[data-role="hangar-ver-pill"]');
+    assert.equal(verPill.classList.contains('hidden'), false);
+    assert.equal(verPill.textContent, 'Hangar v1.2.5');
+    assert.equal(verPill.title, 'Installed Antigravity Hangar version: v1.2.5');
 
     const wsPill = storeViewEl.querySelector('[data-role="active-ws-pill"]');
     assert.equal(wsPill.title, 'Active Workspace: C:/Proj/App');
