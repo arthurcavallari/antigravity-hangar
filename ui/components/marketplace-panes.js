@@ -319,7 +319,7 @@
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-scope="project" class="agy-toggle-item">${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span></button>
-                <button type="button" data-scope="global" class="agy-toggle-item">${ns.iconSvg('keep', 13)}<span>Global (*)</span></button>
+                <button type="button" data-scope="global" class="agy-toggle-item">${ns.iconSvg('globe', 13)}<span>Global (*)</span></button>
               </div>
             </div>
             <div class="ws-add-row">

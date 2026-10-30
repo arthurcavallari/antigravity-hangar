@@ -11,9 +11,12 @@
   let latestWorkspaceEvent = null;
   let lastConfigThemeSig = '';
 
+  ns.getLatestThemeEvent = () => latestThemeEvent;
+
   function broadcastToChildFrames(messageData) {
     if (!messageData) return;
-    for (const frame of deckFrames.values()) {
+    const extra = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.term-jetbox-frame') : [];
+    for (const frame of [...deckFrames.values(), ...extra]) {
       try {
         frame.contentWindow?.postMessage(messageData, '*');
       } catch {
@@ -178,7 +181,8 @@
     const splitEnabled = Boolean(state.layout?.splitViewEnabled);
     const { bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
       state.sidecars || [],
-      state.layout
+      state.layout,
+      state.terminals || []
     );
 
     els.mainViewport.classList.toggle('is-split', splitEnabled);
@@ -248,11 +252,13 @@
 
     const storeInTop = topSlotId === ns.EXTENSIONS_TAB_ID;
     const storeInBottom = splitEnabled && bottomSlotId === ns.EXTENSIONS_TAB_ID;
+    const termInTop = Boolean(ns.isTerminalTabId?.(topSlotId));
+    const termInBottom = splitEnabled && Boolean(ns.isTerminalTabId?.(bottomSlotId));
     els.storeView.classList.toggle('hidden', !storeInTop && !storeInBottom);
     els.storeView.classList.toggle('slot-top', storeInTop);
     els.storeView.classList.toggle('slot-bottom', storeInBottom);
 
-    const topFrameMounted = storeInTop || (topSlotId && deckFrames.has(topSlotId));
+    const topFrameMounted = storeInTop || termInTop || (topSlotId && deckFrames.has(topSlotId));
     if (els.emptyTopState) {
       els.emptyTopState.classList.toggle('hidden', Boolean(topFrameMounted));
       if (!topFrameMounted) {
@@ -267,7 +273,7 @@
     }
 
     const bottomFrameMounted =
-      !splitEnabled || storeInBottom || (bottomSlotId && deckFrames.has(bottomSlotId));
+      !splitEnabled || storeInBottom || termInBottom || (bottomSlotId && deckFrames.has(bottomSlotId));
     if (els.emptyDeckState) {
       els.emptyDeckState.classList.toggle('hidden', Boolean(bottomFrameMounted));
       if (!bottomFrameMounted) {

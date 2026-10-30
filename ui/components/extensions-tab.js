@@ -30,7 +30,7 @@
     for (const pattern of patterns) {
       const row = document.createElement('div');
       row.className = 'ws-rule-item';
-      const iconName = pattern === '*' ? 'keep' : pattern.includes('*') ? 'code_blocks' : 'folder';
+      const iconName = pattern === '*' ? 'globe' : pattern.includes('*') ? 'code_blocks' : 'folder';
       const code = document.createElement('span');
       code.className = 'ws-rule-code';
       code.textContent = pattern === '*' ? '* (All Workspaces)' : pattern;
@@ -176,7 +176,7 @@
               <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
               <div class="agy-toggle-group">
                 <button type="button" data-role="global-btn" class="agy-toggle-item">
-                  ${ns.iconSvg('keep', 13)}<span>Global (*)</span>
+                  ${ns.iconSvg('globe', 13)}<span>Global (*)</span>
                 </button>
                 <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
               </div>

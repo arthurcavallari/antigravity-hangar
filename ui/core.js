@@ -9,12 +9,16 @@
   const PATHS = {
     folder:
       'M172.31-180Q142-180 121-201t-21-51.31V-707.69Q100-738 121-759t51.31-21H391.92l80,80H787.69Q818-700 839-679t21,51.31v375.38Q860-222 839-201t-51.31,21H172.31Zm0-60H787.69q5.39,0 8.85-3.46t3.46-8.85V-627.69q0-5.39-3.46-8.85T787.69-640H447.38l-80-80H172.31q-5.39,0-8.85,3.46T160-707.69v455.38q0,5.39 3.46,8.85t8.85,3.46Z',
+    globe:
+      'M480-80q-82 0-155-31.5t-127.5-86Q143-252 111.5-325T80-480q0-83 31.5-155.5t86-127Q252-817 325-848.5T480-880q83 0 155.5 31.5t127 86q54.5 54.5 86 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-82q26-36 45-75t31-83H404q12 44 31 83t45 75Zm-104-16q-18-33-31.5-68.5T322-320H204q29 50 72.5 87t99.5 55Zm208 0q56-18 99.5-55t72.5-87H638q-9 38-22.5 73.5T584-178ZM170-400h136q-3-20-4.5-39.5T300-480q0-21 1.5-40.5T306-560H170q-5 20-7.5 39.5T160-480q0 21 2.5 40.5T170-400Zm216 0h188q3-20 4.5-39.5T580-480q0-21-1.5-40.5T574-560H386q-3 20-4.5 39.5T380-480q0 21 1.5 40.5T386-400Zm268 0h136q5-20 7.5-39.5T800-480q0-21-2.5-40.5T790-560H654q3 20 4.5 39.5T660-480q0 21-1.5 40.5T654-400Zm-16-240h118q-29-50-72.5-87T584-782q18 33 31.5 68.5T638-640Zm-234 0h152q-12-44-31-83t-45-75q-26 36-45 75t-31 83Zm-200 0h118q9-38 22.5-73.5T376-782q-56 18-99.5 55T204-640Z',
     keep:
       'M620-471.54L691.54-400v60H510v220L480-90l-30-30V-340H268.46v-60L340-471.54V-760H300v-60H660v60H620v288.46ZM354-400H606l-46-46V-760H400v314l-46,46Zm126,0Z',
     extension:
       'M208.85-197.69H713.46q3.85,0 6.35-2.69t2.5-6.54V-383.23l36.92-15.85q18.31-6.85 29.54-23.54T800-461.15q0-21.62-11.23-38.42t-29.54-24.04l-36.92-15.23V-715.38q0-4.23-2.5-6.73t-6.35-2.5H534.92l-7.31-51.08q-3.77-25.85-22.38-43.92t-44.08-18.08q-26.08,0-44.69,18.08t-22.38,43.92l-7.31,51.08H208.46q-3.46,0-5.96,2.5t-2.5,6.73V-624q51.77,17.15 84.15,62.04t32.38,100.81q0,57.31-32.19,102.19T200-297.69v90.77q0,3.85 2.5,6.54t6.35,2.69Zm0,60q-29,0-48.92-20.12T140-206.92V-347q48-1.54 82.27-33.58t34.27-80.58q0-45.62-34.46-78.12T140-575.69V-715.38q0-28.77 20.04-49t48.42-20.23H334.69q6.62-47.92 42.15-80.5t84.31-32.58q48.15,0 83.69,32.58t42.77,80.5H713.46q28.38,0 48.61,20.23t20.23,49v136.69q34.85,14.15 56.27,46.23T860-461.15q0,39.08-21.42,70.96t-56.27,46.58v136.69q0,29-20.23,49.11t-48.61,20.12H208.85Z',
     splitscreen:
       'M212.31-527.31q-30.31,0-51.31-21t-21-51.31V-747.69Q140-778 161-799t51.31-21H747.69Q778-820 799-799t21,51.31v148.08q0,30.31-21,51.31t-51.31,21H212.31Zm0-60H747.69q5.39,0 8.85-3.46t3.46-8.85V-747.69q0-5.39-3.46-8.85T747.69-760H212.31q-5.39,0-8.85,3.46T200-747.69v148.08q0,5.39 3.46,8.85t8.85,3.46Zm0,447.31Q182-140 161-161t-21-51.31V-360q0-30.31 21-51.31t51.31-21H747.69q30.31,0 51.31,21T820-360v147.69Q820-182 799-161t-51.31,21H212.31Zm0-60H747.69q5.39,0 8.85-3.46t3.46-8.85V-360q0-5.39-3.46-8.85t-8.85-3.46H212.31q-5.39,0-8.85,3.46T200-360v147.69q0,5.39 3.46,8.85t8.85,3.46Z',
+    splitscreen_vertical_add:
+      'M180-160q-24.75 0-42.37-17.63Q120-195.25 120-220v-520q0-24.75 17.63-42.38Q155.25-800 180-800h210q24.75 0 42.38 17.62Q450-764.75 450-740v520q0 24.75-17.62 42.37Q414.75-160 390-160H180Zm0-60h210v-520H180v520Zm390 60q-24.75 0-42.38-17.63Q510-195.25 510-220v-520q0-24.75 17.62-42.38Q545.25-800 570-800h210q24.75 0 42.38 17.62Q840-764.75 840-740v210h-60v-210H570v520h110v60H570Zm180-40v-100H650v-60h100v-100h60v100h100v60H810v100h-60Z',
     add:
       'M450-450H250q-12.75,0-21.37-8.63T220-480.01t8.62-21.37T250-510H450V-710q0-12.75 8.63-21.37T480.01-740t21.37,8.62T510-710v200H710q12.75,0 21.37,8.63T740-479.99t-8.62,21.37T710-450H510v200q0,12.75-8.63,21.37T479.99-220t-21.37-8.62T450-250V-450Z',
     play_arrow:
@@ -45,6 +49,8 @@
       'M344-60L268-188l-144-32l14-148L40-480l98-112l-14-148l144-32l76-128l136,58l136-58l76,128l144,32l-14,148l98,112l-98,112l14,148l-144,32l-76,128l-136-58l-136,58Zm94-278l226-226l-56-58l-170,170l-86-84l-56,56l142,142Z',
     shield:
       'M480-80q-139-35-229.5-159.5T160-516v-244l320-120l320,120v244q0,152-90.5,276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90l-240,90v189q0,121 68,220t172,132Zm0-316Z',
+    terminal:
+      'M160-160q-33,0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33,0 56.5,23.5T880-720v480q0,33-23.5,56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40l-56-56l103-104l-104-104l57-56l160,160l-160,160Zm180,0v-80h240v80H480Z',
   };
 
   ns.apiCall = async function apiCall(path, body = {}) {
@@ -62,8 +68,11 @@
   };
 
   ns.iconSvg = function iconSvg(name, size = 16, className = '') {
-    const d = PATHS[name] || PATHS.code_blocks;
     const cls = ['agy-icon', className].filter(Boolean).join(' ');
+    if (name === 'terminal') {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" class="${cls}" aria-hidden="true"><path transform="translate(18.775, 19.85) rotate(-180)" d="M10.925 14.05L11.975 13L8.9 9.925L11.975 6.85L10.925 5.8L6.8 9.925L10.925 14.05Z" fill="currentColor"/><path d="M11.675 14.95H16.175V13.45H11.675V14.95Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M3 5.25C3 4.00736 4.00736 3 5.25 3H18.75C19.9926 3 21 4.00736 21 5.25V18.75C21 19.9926 19.9926 21 18.75 21H5.25C4.00736 21 3 19.9926 3 18.75V5.25ZM5.25 4.5C4.83579 4.5 4.5 4.83579 4.5 5.25V18.75C4.5 19.1642 4.83579 19.5 5.25 19.5H18.75C19.1642 19.5 19.5 19.1642 19.5 18.75V5.25C19.5 4.83579 19.1642 4.5 18.75 4.5H5.25Z" fill="currentColor"/></svg>`;
+    }
+    const d = PATHS[name] || PATHS.code_blocks;
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${cls}" aria-hidden="true"><path d="${d}"/></svg>`;
   };
 
@@ -114,4 +123,51 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   };
+
+  let activeContextMenuEl = null;
+  ns.closeTabContextMenu = function closeTabContextMenu() {
+    if (activeContextMenuEl) { activeContextMenuEl.remove?.(); activeContextMenuEl = null; }
+  };
+
+  ns.openTabContextMenu = function openTabContextMenu(e, items = []) {
+    e?.preventDefault?.(); e?.stopPropagation?.();
+    ns.closeTabContextMenu();
+    const validItems = (items || []).filter(Boolean);
+    if (!validItems.length || !document.body) return null;
+    const menu = document.createElement('div');
+    menu.className = 'agy-context-menu';
+    menu.setAttribute('role', 'menu');
+    menu.addEventListener('contextmenu', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+    for (const item of validItems) {
+      if (item.separator) {
+        const sep = document.createElement('div');
+        sep.className = 'agy-context-menu-sep'; sep.setAttribute('role', 'separator');
+        menu.appendChild(sep); continue;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'agy-context-menu-item'; btn.setAttribute('role', 'menuitem');
+      if (item.id) btn.dataset.menuId = item.id;
+      btn.disabled = Boolean(item.disabled);
+      btn.innerHTML = `<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>`;
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (btn.disabled) return;
+        ns.closeTabContextMenu();
+        item.onClick?.();
+      });
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    activeContextMenuEl = menu;
+    const r = menu.getBoundingClientRect?.() || { width: 176, height: 132 };
+    const maxW = (window.innerWidth || 800) - (r.width || 176) - 6, maxH = (window.innerHeight || 600) - (r.height || 132) - 6;
+    menu.style.left = `${Math.max(6, Math.min(maxW, e?.clientX || 0))}px`;
+    menu.style.top = `${Math.max(6, Math.min(maxH, e?.clientY || 0))}px`;
+    return menu;
+  };
+
+  window.addEventListener?.('pointerdown', (e) => { if (activeContextMenuEl && !activeContextMenuEl.contains?.(e.target)) ns.closeTabContextMenu(); }, true);
+  window.addEventListener?.('keydown', (e) => { if (e.key === 'Escape') ns.closeTabContextMenu(); }, true);
+  window.addEventListener?.('blur', () => ns.closeTabContextMenu());
+  window.addEventListener?.('wheel', () => ns.closeTabContextMenu(), { passive: true });
 })();
