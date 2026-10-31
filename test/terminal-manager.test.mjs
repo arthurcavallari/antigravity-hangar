@@ -32,13 +32,14 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.equal(method, 'ListTerminals');
       return {
         terminals: [
-          { terminalId: 't-match', pid: 1234, title: 'pwsh', workspaceUri: 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', cwd: 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-hub' },
-          { terminalId: 't-other', pid: 5678, title: 'bash', workspaceUri: 'file:///c:/other/project', cwd: 'C:\\other\\project' },
+          { terminalId: 't-match', pid: 1234, title: 'pwsh', projectId: 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'hangar:conv-1' },
+          { terminalId: 't-other', pid: 5678, title: 'bash', projectId: 'file:///c:/other/project', cwd: 'C:\\other\\project' },
         ],
       };
     };
     const list = await listWorkspaceTerminals({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', rpcFn: mockRpc });
     assert.equal(list.length, 1); assert.equal(list[0].terminalId, 't-match'); assert.equal(list[0].pid, 1234);
+    assert.equal(list[0].conversationId, 'conv-1'); assert.equal(list[0].workspaceUri, 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
   });
 
   it('creates a terminal, streams 5-byte Connect output, chains inputOffset acks, renames, and closes cleanly', async () => {
@@ -47,7 +48,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const rpcCalls = [];
     const mockRpc = async (method, body) => {
       rpcCalls.push({ method, body });
-      if (method === 'CreateTerminal') return { terminal: { terminalId: 'term-live-1', pid: 4242, title: 'pwsh', workspaceUri: body.workspaceUri } };
+      if (method === 'CreateTerminal') return { terminal: { terminalId: 'term-live-1', pid: 4242, title: 'pwsh', projectId: body.projectId, conversationId: body.conversationId } };
       if (method === 'SendTerminalInput' && body.input) return { ackedOffset: String(Number(body.inputOffset) + Buffer.from(body.input, 'base64').length) };
       return {};
     };
@@ -60,8 +61,14 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     ]);
     const mockFetch = async () => ({ ok: true, body: new ReadableStream({ start(c) { c.enqueue(streamFrames); c.close(); } }) });
     try {
-      const created = await createWorkspaceTerminal({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: '_new', cols: 120, rows: 32, rpcFn: mockRpc, fetchFn: mockFetch });
-      assert.equal(created.terminalId, 'term-live-1'); assert.equal(rpcCalls[0].method, 'CreateTerminal'); assert.equal(rpcCalls[0].body.conversationId, undefined);
+      const created = await createWorkspaceTerminal({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'conv-abc', cols: 120, rows: 32, rpcFn: mockRpc, fetchFn: mockFetch });
+      assert.equal(created.terminalId, 'term-live-1'); assert.equal(created.conversationId, 'conv-abc');
+      assert.equal(rpcCalls[0].method, 'CreateTerminal');
+      assert.equal(rpcCalls[0].body.workspaceUri, undefined);
+      assert.equal(rpcCalls[0].body.projectId, 'file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
+      assert.equal(rpcCalls[0].body.conversationId, 'hangar:conv-abc');
+      const initCall = rpcCalls.find((c) => c.method === 'SendTerminalInput' && c.body.inputStreamId === 'hangar-init');
+      assert.ok(initCall && Buffer.from(initCall.body.input, 'base64').toString('utf8').includes('cd "c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub"'));
       await new Promise((r) => setTimeout(r, 25));
       const polled = pollTerminalOutput({ terminalId: 'term-live-1', afterSeq: 0, fetchFn: mockFetch });
       assert.equal(polled.title, 'pwsh-custom'); assert.equal(polled.exited, true); assert.equal(polled.exitCode, 0);
@@ -71,7 +78,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       await sendTerminalInput({ terminalId: 'term-live-1', data: 'ls\r', rpcFn: mockRpc, fetchFn: mockFetch });
       const secondSend = await sendTerminalInput({ terminalId: 'term-live-1', data: 'pwd\r', rpcFn: mockRpc, fetchFn: mockFetch });
       assert.equal(secondSend.ackedOffset, 7);
-      const inputCalls = rpcCalls.filter((c) => c.method === 'SendTerminalInput' && c.body.input);
+      const inputCalls = rpcCalls.filter((c) => c.method === 'SendTerminalInput' && c.body.input && c.body.inputStreamId !== 'hangar-init');
       assert.equal(inputCalls.length, 2); assert.equal(inputCalls[0].body.inputOffset, '0'); assert.equal(inputCalls[1].body.inputOffset, '3');
 
       const renamed = await renameWorkspaceTerminal({ terminalId: 'term-live-1', title: '  api-worker  ', rpcFn: mockRpc });
