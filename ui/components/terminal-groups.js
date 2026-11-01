@@ -3,21 +3,46 @@
   const ns = (window.Hangar = window.Hangar || {});
   ns.TERMINAL_TAB_ID = '__terminal__'; ns.TERMINAL_TAB_PREFIX = 'terminal__';
   ns.isTerminalTabId = (tabId = '') => tabId === ns.TERMINAL_TAB_ID || String(tabId || '').startsWith(ns.TERMINAL_TAB_PREFIX);
+  let mainTerminalOpen = false, hydratedTermState = false, isHydratingTerm = false, lastTermStateJson = '', onPersistTermState = null;
   const ENGINE_STORAGE_KEY = 'hangar.terminalEngine.v2', POPPED_STORAGE_KEY = 'hangar.poppedTerminalIds', GROUP_STORAGE_KEY = 'hangar.terminalGroupMap', TAB_GROUPS_STORAGE_KEY = 'hangar.terminalTabGroups';
-  ns.readEngineMode = () => { try { return localStorage.getItem(ENGINE_STORAGE_KEY) === 'direct' ? 'direct' : 'jetbox'; } catch { return 'jetbox'; } };
-  ns.saveEngineMode = (mode) => { try { localStorage.setItem(ENGINE_STORAGE_KEY, mode); } catch {} };
-  ns.readCustomTermTitles = () => { try { const r = JSON.parse(localStorage.getItem('hangar.terminalCustomTitles') || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
-  ns.saveCustomTermTitle = (tid, title) => { try { const m = ns.readCustomTermTitles(); if (title) m[tid] = title; else delete m[tid]; localStorage.setItem('hangar.terminalCustomTitles', JSON.stringify(m)); } catch {} };
-  ns.getPoppedTerminalIds = () => { try { const r = JSON.parse(localStorage.getItem(POPPED_STORAGE_KEY) || '[]'); return new Set(Array.isArray(r) ? r : []); } catch { return new Set(); } };
-  ns.setPoppedTerminalIds = (idSet) => { try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify([...idSet])); } catch {} };
-  ns.readGroupMap = () => { try { const r = JSON.parse(localStorage.getItem(GROUP_STORAGE_KEY) || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
-  ns.saveGroupMap = (map) => { try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(map)); } catch {} };
-  ns.getInstanceTerminals = (allTerminals = [], rootId = '') => { const popped = ns.getPoppedTerminalIds(), groupMap = ns.readGroupMap(); return rootId ? allTerminals.filter((t) => popped.has(rootId) && (t.terminalId === rootId || groupMap[t.terminalId] === rootId)) : allTerminals.filter((t) => !popped.has(t.terminalId) && !popped.has(groupMap[t.terminalId])); };
-  ns.formatTermTitle = (raw = '') => { const s = String(raw || '').trim(), m = s.match(/^(?:Administrator:\s*)?[A-Za-z]:\\.+\\([^\\]+)$/i) || s.match(/^\/.+\/([^/]+)$/); return !s ? 'pwsh' : (m ? m[1] : s); };
   const readAllStoredGroups = () => { try { const r = JSON.parse(localStorage.getItem(TAB_GROUPS_STORAGE_KEY) || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
   const writeAllStoredGroups = (all) => { try { localStorage.setItem(TAB_GROUPS_STORAGE_KEY, JSON.stringify(all)); } catch {} };
+  const activeGroupByInstance = new Map();
+  ns.setTerminalPersistCallback = (fn) => { onPersistTermState = typeof fn === 'function' ? fn : null; };
+  ns.serializeTerminalState = () => ({
+    mainTerminalOpen: Boolean(mainTerminalOpen), engineMode: ns.readEngineMode(),
+    poppedTerminalIds: [...ns.getPoppedTerminalIds()], terminalGroupMap: ns.readGroupMap(),
+    terminalTabGroups: readAllStoredGroups(), terminalCustomTitles: ns.readCustomTermTitles(),
+    activeGroupByInstance: Object.fromEntries(activeGroupByInstance.entries()),
+  });
+  const notifyTermPersist = () => {
+    if (isHydratingTerm || !onPersistTermState) return;
+    const next = ns.serializeTerminalState(), json = JSON.stringify(next);
+    if (json === lastTermStateJson) return;
+    lastTermStateJson = json; onPersistTermState(next);
+  };
+  ns.isMainTerminalOpen = () => mainTerminalOpen;
+  ns.setMainTerminalOpen = (v) => { const next = Boolean(v); if (mainTerminalOpen !== next) { mainTerminalOpen = next; notifyTermPersist(); } };
+  ns.readEngineMode = () => { try { return localStorage.getItem(ENGINE_STORAGE_KEY) === 'direct' ? 'direct' : 'jetbox'; } catch { return 'jetbox'; } };
+  ns.saveEngineMode = (mode) => { try { localStorage.setItem(ENGINE_STORAGE_KEY, mode); } catch {} notifyTermPersist(); };
+  ns.readCustomTermTitles = () => { try { const r = JSON.parse(localStorage.getItem('hangar.terminalCustomTitles') || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
+  ns.saveCustomTermTitle = (tid, title) => { try { const m = ns.readCustomTermTitles(); if (title) m[tid] = title; else delete m[tid]; localStorage.setItem('hangar.terminalCustomTitles', JSON.stringify(m)); } catch {} notifyTermPersist(); };
+  ns.getPoppedTerminalIds = () => { try { const r = JSON.parse(localStorage.getItem(POPPED_STORAGE_KEY) || '[]'); return new Set(Array.isArray(r) ? r : []); } catch { return new Set(); } };
+  ns.setPoppedTerminalIds = (idSet) => { try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify([...idSet])); } catch {} notifyTermPersist(); };
+  ns.readGroupMap = () => { try { const r = JSON.parse(localStorage.getItem(GROUP_STORAGE_KEY) || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
+  ns.saveGroupMap = (map) => { try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(map)); } catch {} notifyTermPersist(); };
+  ns.getInstanceTerminals = (allTerminals = [], rootId = '') => { const popped = ns.getPoppedTerminalIds(), groupMap = ns.readGroupMap(); return rootId ? allTerminals.filter((t) => popped.has(rootId) && (t.terminalId === rootId || groupMap[t.terminalId] === rootId)) : allTerminals.filter((t) => !popped.has(t.terminalId) && !popped.has(groupMap[t.terminalId])); };
+  ns.formatTermTitle = (raw = '') => {
+    const s = String(raw || '').trim().replace(/^(?:Administrator:\s*)/i, '');
+    if (!s) return 'pwsh';
+    const dash = s.match(/^(?:[A-Za-z]:\\.+\\[^\\]+|Windows PowerShell|PowerShell[^-]*|Command Prompt)\s+-\s+(.+)$/i);
+    const target = dash ? dash[1].trim() : s, m = target.match(/^[A-Za-z]:\\.+\\([^\\]+)$/i) || target.match(/^\/.+\/([^/]+)$/);
+    return m ? m[1] : target;
+  };
+  ns.getActiveGroupId = (instanceTabId = '__terminal__') => activeGroupByInstance.get(instanceTabId) || '';
+  ns.setActiveGroupId = (instanceTabId = '__terminal__', groupId = '') => { const prev = activeGroupByInstance.get(instanceTabId) || ''; if (groupId) activeGroupByInstance.set(instanceTabId, groupId); else activeGroupByInstance.delete(instanceTabId); if (prev !== (groupId || '')) notifyTermPersist(); };
   ns.readTabGroups = (instanceTabId = '__terminal__') => { const list = readAllStoredGroups()[instanceTabId]; return Array.isArray(list) ? list.filter((g) => g && Array.isArray(g.paneIds) && g.paneIds.length > 0) : []; };
-  ns.saveTabGroups = (instanceTabId = '__terminal__', groups = []) => { const all = readAllStoredGroups(); if (!groups || !groups.length) delete all[instanceTabId]; else all[instanceTabId] = groups.map((g) => ({ groupId: g.groupId, paneIds: [...g.paneIds], focusedPaneId: g.focusedPaneId, ...(g.pinned ? { pinned: true } : {}) })); writeAllStoredGroups(all); };
+  ns.saveTabGroups = (instanceTabId = '__terminal__', groups = []) => { const all = readAllStoredGroups(); if (!groups || !groups.length) delete all[instanceTabId]; else all[instanceTabId] = groups.map((g) => ({ groupId: g.groupId, paneIds: [...g.paneIds], focusedPaneId: g.focusedPaneId, ...(g.pinned ? { pinned: true } : {}) })); writeAllStoredGroups(all); notifyTermPersist(); };
   ns.migrateTabGroups = function migrateTabGroups(fromTabId, toTabId, paneIdSet) {
     const all = readAllStoredGroups(), fromList = Array.isArray(all[fromTabId]) ? all[fromTabId] : [], toList = Array.isArray(all[toTabId]) ? all[toTabId] : [], moving = [], staying = [];
     for (const g of fromList) {
@@ -25,7 +50,43 @@
       if (moved.length) moving.push({ groupId: g.groupId || moved[0], paneIds: moved, focusedPaneId: moved.includes(g.focusedPaneId) ? g.focusedPaneId : moved[0], ...(g.pinned ? { pinned: true } : {}) });
       if (kept.length) staying.push({ groupId: g.groupId || kept[0], paneIds: kept, focusedPaneId: kept.includes(g.focusedPaneId) ? g.focusedPaneId : kept[0], ...(g.pinned ? { pinned: true } : {}) });
     }
-    if (!staying.length) delete all[fromTabId]; else all[fromTabId] = staying; all[toTabId] = [...toList, ...moving]; writeAllStoredGroups(all);
+    if (!staying.length) delete all[fromTabId]; else all[fromTabId] = staying; all[toTabId] = [...toList, ...moving]; writeAllStoredGroups(all); notifyTermPersist();
+  };
+  ns.hydrateTerminalStateFromLayout = function hydrateTerminalStateFromLayout(layout = {}, liveTerminals = []) {
+    isHydratingTerm = true;
+    try {
+      const ts = layout?.terminalState;
+      if (!hydratedTermState && ts && typeof ts === 'object') {
+        hydratedTermState = true;
+        if (ts.engineMode === 'direct' || ts.engineMode === 'jetbox') try { localStorage.setItem(ENGINE_STORAGE_KEY, ts.engineMode); } catch {}
+        if (Array.isArray(ts.poppedTerminalIds)) try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify(ts.poppedTerminalIds)); } catch {}
+        if (ts.terminalGroupMap && typeof ts.terminalGroupMap === 'object') try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(ts.terminalGroupMap)); } catch {}
+        if (ts.terminalTabGroups && typeof ts.terminalTabGroups === 'object') writeAllStoredGroups(ts.terminalTabGroups);
+        if (ts.terminalCustomTitles && typeof ts.terminalCustomTitles === 'object') try { localStorage.setItem('hangar.terminalCustomTitles', JSON.stringify(ts.terminalCustomTitles)); } catch {}
+        if (ts.activeGroupByInstance && typeof ts.activeGroupByInstance === 'object') {
+          for (const [k, v] of Object.entries(ts.activeGroupByInstance)) if (v) activeGroupByInstance.set(k, String(v));
+        }
+        if (typeof ts.mainTerminalOpen === 'boolean') mainTerminalOpen = ts.mainTerminalOpen;
+        lastTermStateJson = JSON.stringify(ns.serializeTerminalState());
+      }
+      const liveIds = new Set((Array.isArray(liveTerminals) ? liveTerminals : []).map((t) => t?.terminalId).filter(Boolean));
+      const closed = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds : []);
+      if (liveIds.size > 0) {
+        const popped = ns.getPoppedTerminalIds(); let poppedChanged = false;
+        for (const id of [...(layout?.tabOrder || []), ...(layout?.topSplitTabIds || []), layout?.pinnedTopSidecarId || '']) {
+          if (String(id).startsWith(ns.TERMINAL_TAB_PREFIX) && !closed.has(id)) {
+            const tid = String(id).slice(ns.TERMINAL_TAB_PREFIX.length);
+            if (liveIds.has(tid) && !popped.has(tid)) { popped.add(tid); poppedChanged = true; }
+          }
+        }
+        if (poppedChanged) try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify([...popped])); } catch {}
+      }
+      const unpopped = ns.getInstanceTerminals(Array.isArray(liveTerminals) ? liveTerminals : [], '');
+      if (!closed.has(ns.TERMINAL_TAB_ID) && (unpopped.length > 0 || layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID || (layout?.topSplitTabIds || []).includes(ns.TERMINAL_TAB_ID))) {
+        mainTerminalOpen = true;
+      }
+    } finally { isHydratingTerm = false; }
+    notifyTermPersist();
   };
   ns.reconcileTabGroups = function reconcileTabGroups(groups = [], validTerminals = [], pendingSplit = null, splitGroupMap = null) {
     const isPending = Boolean(pendingSplit && !(pendingSplit instanceof Map) && (pendingSplit.groupId || pendingSplit.afterPaneId));
@@ -94,7 +155,8 @@
     let replacedSidecarId = null;
     if (srcTabId.startsWith(ns.TERMINAL_TAB_PREFIX) && moveSet.has(srcTabId.slice(ns.TERMINAL_TAB_PREFIX.length))) {
       const srcRoot = srcTabId.slice(ns.TERMINAL_TAB_PREFIX.length), nextSrcRoot = remainingPanes[0], nextSrcTabId = ns.TERMINAL_TAB_PREFIX + nextSrcRoot;
-      popped.delete(srcRoot); popped.add(nextSrcRoot); delete groupMap[nextSrcRoot];
+      const ordered = [...popped].map((id) => (id === srcRoot ? nextSrcRoot : id)); popped.clear(); ordered.forEach((id) => popped.add(id));
+      delete groupMap[nextSrcRoot];
       for (const remId of remainingPanes.slice(1)) groupMap[remId] = nextSrcRoot;
       ns.saveTabGroups(srcTabId, []); ns.saveTabGroups(nextSrcTabId, stayingGroups);
       ns.disposeTerminalInstance?.(srcTabId); replacedSidecarId = { from: srcTabId, to: nextSrcTabId };
@@ -159,16 +221,18 @@
   ns.clearAllTermDropIndicators = () => {
     ns.activeTermDrag = null; document.body?.classList?.remove('dragging-tab');
     document.querySelectorAll?.('.drop-left, .drop-right, .drop-target, .is-dragging, .merge-drop-target, .split-drop-target').forEach((el) => el.classList?.remove('drop-left', 'drop-right', 'drop-target', 'is-dragging', 'merge-drop-target', 'split-drop-target'));
-    if (!ns.isPointerOnTab) document.querySelectorAll?.('.hub-tab, .term-session-pill').forEach((el) => ns.setTabShift(el, 0));
+    if (!ns.isPointerOnTab) document.querySelectorAll?.('.hub-tab, .term-session-pill, .sidechat-session-pill').forEach((el) => ns.setTabShift(el, 0));
   };
   ns.bindHangarChromeDropZone = function bindHangarChromeDropZone(cfg = {}) { hangarDropCfg = { ...hangarDropCfg, ...cfg }; };
+  ns.getHangarDropCfg = () => hangarDropCfg;
   ns.bindTermPointerDrag = function bindTermPointerDrag(el, cfg) {
     let activePointerId = null, startX = 0, startY = 0, isDragging = false, ghostEl = null, dragMeta = null, dropAction = null, hoverTimer = null, hoverTargetId = '', previewedTargetId = '';
     const clearHover = (resetPreview, slot) => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } hoverTargetId = ''; if (resetPreview && previewedTargetId) { previewedTargetId = ''; hangarDropCfg.onPreviewTerminalSlot?.('', slot); } };
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target?.closest?.('[data-close-gid], [data-pin-gid], [data-role="pane-close"]')) return;
+      if (e.button !== 0 || e.target?.closest?.('[data-close-gid], [data-pin-gid], .term-session-close-wrap, [data-role="pane-close"], .term-rename-input')) return;
       ns.clearAllTermDropIndicators(); clearHover(false); previewedTargetId = ''; activePointerId = e.pointerId; ns.isPointerOnTab = true; ns.pointerTermInstanceId = cfg.instanceTabId;
       startX = e.clientX; startY = e.clientY; isDragging = false; ghostEl = null; dragMeta = null; dropAction = null; el.setPointerCapture?.(e.pointerId);
+      window.addEventListener?.('pointerup', onWinPointerEnd, true); window.addEventListener?.('pointercancel', onWinPointerCancel, true);
     });
     el.addEventListener('pointermove', (e) => {
       if (activePointerId !== e.pointerId) return;
@@ -230,6 +294,7 @@
       const activeGid = getActiveGroupId?.() || '';
       if (!(kind === 'tab' && curGid === activeGid)) {
         for (const pEl of stageEl?.querySelectorAll?.('.term-pane[data-terminal-id]') || []) {
+          if (pEl.classList?.contains?.('hidden')) continue;
           const pid = pEl.dataset.terminalId, pRect = pEl.getBoundingClientRect();
           if (pid && !(kind === 'pane' && pid === terminalId) && pRect.width > 0 && e.clientX >= pRect.left && e.clientX <= pRect.right && e.clientY >= pRect.top && e.clientY <= pRect.bottom) {
             const side = (e.clientX - pRect.left) < pRect.width / 2 ? 'left' : 'right';
@@ -256,6 +321,7 @@
     });
     const endPointer = (e, cancelled = false) => {
       if (activePointerId !== e.pointerId) return;
+      window.removeEventListener?.('pointerup', onWinPointerEnd, true); window.removeEventListener?.('pointercancel', onWinPointerCancel, true);
       const wasDragging = isDragging, drag = ns.activeTermDrag, finalAction = dropAction, slot = cfg.getSlotKey?.() || 'top';
       activePointerId = null; isDragging = false; dropAction = null; ns.isPointerOnTab = false; ns.pointerTermInstanceId = '';
       try { if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId); } catch {}
@@ -266,6 +332,7 @@
       else if (finalAction.type === 'merge') { clearHover(false); previewedTargetId = ''; const res = ns.mergeTermDragIntoInstance(drag, finalAction.target); if (res) hangarDropCfg.onMergeIntoTerminalTab?.(res); else hangarDropCfg.onPreviewTerminalSlot?.('', slot); }
       else if (finalAction.type === 'promote') { clearHover(true, slot); const res = ns.promoteDragToHangarBar(drag); if (res?.newSidecarId) hangarDropCfg.onPromoteToHangarTab?.({ sidecarId: res.newSidecarId, replacedSidecarId: res.replacedSidecarId, targetPane: finalAction.pane, beforeTabId: finalAction.beforeTabId }); }
     };
+    const onWinPointerEnd = (e) => endPointer(e, false), onWinPointerCancel = (e) => endPointer(e, true);
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((evt) => el.addEventListener(evt, (e) => endPointer(e, evt !== 'pointerup')));
   };
   ns.inspectHangarPointerOverTerminal = function inspectHangarPointerOverTerminal(clientX, clientY, draggedSidecarId, checkShells = true) {

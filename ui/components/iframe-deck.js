@@ -15,7 +15,7 @@
 
   function broadcastToChildFrames(messageData) {
     if (!messageData) return;
-    const extra = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.term-jetbox-frame') : [];
+    const extra = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.term-jetbox-frame, .term-sidechat-frame') : [];
     for (const frame of [...deckFrames.values(), ...extra]) {
       try {
         frame.contentWindow?.postMessage(messageData, '*');
@@ -38,6 +38,7 @@
     }
     const isLight = payload.themeType === 'light' || payload.isDark === false;
     rootStyle.colorScheme = isLight ? 'light' : 'dark';
+    ns.applyAgysThemeFromPayload?.(payload);
     if (document.body) {
       document.body.style.fontFamily =
         payload.cssVariables['--vscode-font-family'] ||
@@ -254,11 +255,13 @@
     const storeInBottom = splitEnabled && bottomSlotId === ns.EXTENSIONS_TAB_ID;
     const termInTop = Boolean(ns.isTerminalTabId?.(topSlotId));
     const termInBottom = splitEnabled && Boolean(ns.isTerminalTabId?.(bottomSlotId));
+    const sideChatInTop = Boolean(ns.isSideChatTabId?.(topSlotId));
+    const sideChatInBottom = splitEnabled && Boolean(ns.isSideChatTabId?.(bottomSlotId));
     els.storeView.classList.toggle('hidden', !storeInTop && !storeInBottom);
     els.storeView.classList.toggle('slot-top', storeInTop);
     els.storeView.classList.toggle('slot-bottom', storeInBottom);
 
-    const topFrameMounted = storeInTop || termInTop || (topSlotId && deckFrames.has(topSlotId));
+    const topFrameMounted = storeInTop || termInTop || sideChatInTop || (topSlotId && deckFrames.has(topSlotId));
     if (els.emptyTopState) {
       els.emptyTopState.classList.toggle('hidden', Boolean(topFrameMounted));
       if (!topFrameMounted) {
@@ -273,7 +276,7 @@
     }
 
     const bottomFrameMounted =
-      !splitEnabled || storeInBottom || termInBottom || (bottomSlotId && deckFrames.has(bottomSlotId));
+      !splitEnabled || storeInBottom || termInBottom || sideChatInBottom || (bottomSlotId && deckFrames.has(bottomSlotId));
     if (els.emptyDeckState) {
       els.emptyDeckState.classList.toggle('hidden', Boolean(bottomFrameMounted));
       if (!bottomFrameMounted) {

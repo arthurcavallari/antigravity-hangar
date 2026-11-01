@@ -1,34 +1,58 @@
 /** @fileoverview Renders top and bottom Chrome tab bars using Antigravity 2.0's C5 AuxPaneTab layout, Material Symbols SVGs, scroll fade, and overflow popover. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  ns.EXTENSIONS_TAB_ID = '__extensions__'; ns.TERMINAL_TAB_ID = ns.TERMINAL_TAB_ID || '__terminal__';
+  ns.EXTENSIONS_TAB_ID = '__extensions__'; ns.TERMINAL_TAB_ID = ns.TERMINAL_TAB_ID || '__terminal__'; ns.SIDECHAT_TAB_ID = ns.SIDECHAT_TAB_ID || '__sidechat__';
+  ns.SIDECHAT_TAB_PREFIX = ns.SIDECHAT_TAB_PREFIX || 'sidechat__';
+  ns.isSideChatTabId = ns.isSideChatTabId || ((tabId = '') => tabId === ns.SIDECHAT_TAB_ID || String(tabId || '').startsWith(ns.SIDECHAT_TAB_PREFIX));
   const TERMINAL_TAB = { sidecarId: ns.TERMINAL_TAB_ID, displayName: 'Terminal', statusBadge: 'TERMINAL', isVirtual: true, isTerminal: true, matchesWorkspace: true };
   const EXTENSIONS_TAB = { sidecarId: ns.EXTENSIONS_TAB_ID, displayName: 'Extensions', statusBadge: 'MANAGER', isVirtual: true, matchesWorkspace: true };
+  const SIDECHAT_TAB = { sidecarId: ns.SIDECHAT_TAB_ID, displayName: 'Side Chat', statusBadge: 'RUNNING', isVirtual: true, isSideChat: true, matchesWorkspace: true };
 
   ns.partitionSplitTabs = function partitionSplitTabs(sidecars = [], layout = {}, terminals = []) {
     const popped = ns.getPoppedTerminalIds?.() || new Set(), customTitles = ns.readCustomTermTitles?.() || {}, grpMap = ns.readGroupMap?.() || {};
+    const poppedSc = ns.getPoppedSideChatIds?.() || new Set(), customScTitles = ns.readCustomSideChatTitles?.() || {}, scGrpMap = ns.getSideChatGroupMap?.() || {};
     const pinnedSet = new Set(Array.isArray(layout?.pinnedTabIds) ? layout.pinnedTabIds : []), closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds.filter((id) => !pinnedSet.has(id)) : []);
-    const poppedList = (terminals || []).length ? (terminals || []).filter((t) => popped.has(t.terminalId)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
-    const poppedTabs = poppedList.map((t) => {
-      const base = customTitles[t.terminalId] || (ns.formatTermTitle ? ns.formatTermTitle(t.title || 'Terminal') : (t.title || 'Terminal')), cnt = 1 + (terminals || []).filter((x) => x.terminalId !== t.terminalId && grpMap[x.terminalId] === t.terminalId).length;
-      return { sidecarId: `terminal__${t.terminalId}`, terminalId: t.terminalId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, matchesWorkspace: true };
+    const termById = new Map((terminals || []).map((t) => [t.terminalId, t]));
+    const poppedList = termById.size ? [...popped].filter((id) => termById.has(id)).map((id) => termById.get(id)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
+    const poppedTabs = poppedList.map((t, idx) => {
+      const sidecarId = `terminal__${t.terminalId}`, grps = ns.readTabGroups?.(sidecarId) || [], actGid = ns.getActiveGroupId?.(sidecarId) || '';
+      const actGrp = grps.find((g) => g.groupId === actGid) || grps[0] || null, focTid = actGrp?.focusedPaneId || actGrp?.paneIds?.[0] || t.terminalId;
+      const base = customTitles[focTid] || `Terminal ${idx + 2}`, cnt = 1 + (terminals || []).filter((x) => x.terminalId !== t.terminalId && grpMap[x.terminalId] === t.terminalId).length;
+      return { sidecarId, terminalId: t.terminalId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, matchesWorkspace: true };
     });
-    const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...poppedTabs, TERMINAL_TAB, EXTENSIONS_TAB].map((sc) => ({ ...sc, isPinned: pinnedSet.has(sc.sidecarId), canClose: Boolean(sc.terminalId) }));
+    const scState = ns.getSideChatState?.(), allScThreads = scState?.threads || [];
+    const poppedScTabs = [...poppedSc].map((rootId, idx) => {
+      const sidecarId = `${ns.SIDECHAT_TAB_PREFIX}${rootId}`;
+      const instThreads = allScThreads.filter((t) => t.cascadeId === rootId || scGrpMap[t.cascadeId] === rootId);
+      const actCid = ns.getActiveSideChatId?.(sidecarId) || instThreads[0]?.cascadeId || rootId;
+      const actThread = instThreads.find((t) => t.cascadeId === actCid) || instThreads[0] || null;
+      const base = customScTitles[actCid] || actThread?.title || `Side Chat ${idx + 2}`;
+      const cnt = Math.max(1, instThreads.length);
+      return { sidecarId, sideChatId: rootId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isSideChat: true, matchesWorkspace: true };
+    });
+    const isTermBtn = layout?.terminalDisplayMode === 'button';
+    const isExtBtn = layout?.extensionsDisplayMode === 'button';
+    const unpoppedSc = ns.getInstanceSideChats ? ns.getInstanceSideChats(allScThreads, '') : allScThreads;
+    const hasSideChat = Boolean((scState?.isOpen || closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedSet.has(ns.SIDECHAT_TAB_ID) || unpoppedSc.length > 0) && (unpoppedSc.length > 0 || !poppedScTabs.length));
+    const hasMainTerm = typeof ns.isMainTerminalOpen === 'function' ? Boolean(ns.isMainTerminalOpen() || closedSet.has(ns.TERMINAL_TAB_ID) || pinnedSet.has(ns.TERMINAL_TAB_ID)) : true;
+    const virtualTabs = [...(!isTermBtn && hasMainTerm ? [TERMINAL_TAB] : []), ...(hasSideChat ? [SIDECHAT_TAB] : []), ...(isExtBtn ? [] : [EXTENSIONS_TAB])];
+    const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...poppedTabs, ...poppedScTabs, ...virtualTabs].map((sc) => ({ ...sc, isPinned: pinnedSet.has(sc.sidecarId), canClose: Boolean(sc.terminalId || sc.sideChatId || sc.isTerminal || sc.isSideChat) }));
     const tabOrder = Array.isArray(layout?.tabOrder) ? layout.tabOrder : [], orderIndex = new Map(tabOrder.map((id, idx) => [id, idx]));
     if (tabOrder.length > 0) allTabs.sort((a, b) => (orderIndex.get(a.sidecarId) ?? 9999) - (orderIndex.get(b.sidecarId) ?? 9999));
     const openTabs = allTabs.filter((sc) => !closedSet.has(sc.sidecarId)), closedTabs = allTabs.filter((sc) => closedSet.has(sc.sidecarId));
     const workspaceTabs = [...openTabs.filter((sc) => sc.isPinned), ...openTabs.filter((sc) => !sc.isPinned)];
     const rawTopIds = Array.isArray(layout?.topSplitTabIds) ? layout.topSplitTabIds : layout?.pinnedTopSidecarId ? [layout.pinnedTopSidecarId] : workspaceTabs[0] ? [workspaceTabs[0].sidecarId] : [];
     const topSet = new Set(rawTopIds), topTabs = workspaceTabs.filter((sc) => topSet.has(sc.sidecarId)), bottomTabs = workspaceTabs.filter((sc) => !topSet.has(sc.sidecarId));
-    const activeSingleId = workspaceTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || workspaceTabs[0]?.sidecarId || '';
-    const activeTopId = topTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || topTabs[0]?.sidecarId || '';
+    const specialBtnId = (isExtBtn && layout?.pinnedTopSidecarId === ns.EXTENSIONS_TAB_ID) || (isTermBtn && layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID) ? layout.pinnedTopSidecarId : '';
+    const activeSingleId = specialBtnId || workspaceTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || workspaceTabs[0]?.sidecarId || '';
+    const activeTopId = specialBtnId || topTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || topTabs[0]?.sidecarId || '';
     return { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId, topSet, pinnedSet, closedSet };
   };
 
   function cleanupAllDragGhosts() {
-    ns.isPointerOnTab = false; ns.pointerTermInstanceId = ''; ns.clearAllTermDropIndicators?.();
+    ns.isPointerOnTab = false; ns.pointerTermInstanceId = ''; ns.pointerSideChatInstanceId = ''; ns.clearAllTermDropIndicators?.();
     document.querySelectorAll('.tab-drag-ghost').forEach((el) => el.remove());
-    document.querySelectorAll('.hub-tab, .term-session-pill').forEach((el) => { el.classList.remove('is-dragging-source', 'merge-drop-target'); if (ns.setTabShift) ns.setTabShift(el, 0); else el.style.transform = ''; });
+    document.querySelectorAll('.hub-tab, .term-session-pill, .sidechat-session-pill').forEach((el) => { el.classList.remove('is-dragging-source', 'merge-drop-target'); if (ns.setTabShift) ns.setTabShift(el, 0); else el.style.transform = ''; });
     document.body.classList.remove('dragging-tab');
     document.querySelectorAll('.split-drop-target').forEach((el) => el.classList.remove('split-drop-target'));
   }
@@ -54,14 +78,20 @@
 
   function updateSidecarTabButton(btn, sc, isActive, opts = {}) {
     btn._sc = sc; btn._opts = opts; btn.dataset.pane = opts.pane || 'single'; btn.dataset.pinned = sc.isPinned ? 'true' : 'false'; btn.classList.toggle('active', Boolean(isActive));
-    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
-    if (pinEl) { pinEl.className = sc.isPinned ? 'hub-tab-pin' : 'hub-tab-pin hidden'; if (sc.isPinned && !pinEl.innerHTML) { pinEl.innerHTML = ns.iconSvg('keep', 12); pinEl.title = 'Unpin Tab'; } }
-    if (closeEl) { closeEl.className = sc.canClose && !sc.isPinned ? 'hub-tab-close' : 'hub-tab-close hidden'; if (sc.canClose && !sc.isPinned && !closeEl.innerHTML) { closeEl.innerHTML = ns.iconSvg('close', 13); closeEl.title = 'Close Tab'; } }
+    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeWrapEl = btn.querySelector('[data-role="tab-close-wrap"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
+    if (pinEl) { pinEl.className = sc.isPinned ? 'hub-tab-pin' : 'hub-tab-pin hidden'; if (sc.isPinned && !pinEl.innerHTML) { pinEl.innerHTML = ns.iconSvg('keep', 16); pinEl.title = 'Unpin Tab'; } }
+    if (closeWrapEl && closeEl) { const showClose = Boolean(sc.canClose && !sc.isPinned); closeWrapEl.className = showClose ? 'hub-tab-close-wrap' : 'hub-tab-close-wrap hidden'; if (showClose) { if (!closeEl.innerHTML) closeEl.innerHTML = ns.iconSvg('close', 14); closeEl.title = ((sc.isSideChat && !sc.sideChatId) || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab'; } }
     if (sc.isTerminal) {
       btn.title = `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${pinSuffix}`;
       if (iconSlot && iconSlot.dataset.icon !== 'terminal') { iconSlot.dataset.icon = 'terminal'; iconSlot.innerHTML = ns.iconSvg('terminal', 16); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
       if (dot) dot.className = 'status-dot hidden'; return;
+    }
+    if (sc.isSideChat) {
+      btn.title = `${sc.displayName} (Tool-Enabled Terminal Side Chat)${pinSuffix}`;
+      if (iconSlot && iconSlot.dataset.icon !== 'chat') { iconSlot.dataset.icon = 'chat'; iconSlot.innerHTML = ns.iconSvg('chat', 15); }
+      if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
+      if (dot) dot.className = 'status-dot running'; return;
     }
     if (sc.isVirtual) {
       const updCount = Number(opts.updateCount || 0);
@@ -78,10 +108,11 @@
   }
 
   function createSidecarTabButton(sc, isActive, opts = {}) {
-    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), dot = document.createElement('span'), pinEl = document.createElement('span'), closeEl = document.createElement('span');
+    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), dot = document.createElement('span'), pinEl = document.createElement('span'), closeWrapEl = document.createElement('span'), closeEl = document.createElement('span');
     btn.type = 'button'; btn.className = 'hub-tab'; btn.dataset.sidecarId = sc.sidecarId;
-    iconSlot.className = 'hub-tab-icon-slot'; label.dataset.role = 'tab-label'; dot.dataset.role = 'tab-dot'; pinEl.dataset.role = 'tab-pin'; closeEl.dataset.role = 'tab-close';
-    btn.append(iconSlot, label, dot, pinEl, closeEl);
+    iconSlot.className = 'hub-tab-icon-slot'; label.className = 'hub-tab-label'; label.dataset.role = 'tab-label'; dot.dataset.role = 'tab-dot'; pinEl.dataset.role = 'tab-pin'; closeWrapEl.dataset.role = 'tab-close-wrap'; closeEl.className = 'hub-tab-close'; closeEl.dataset.role = 'tab-close';
+    closeWrapEl.appendChild(closeEl);
+    btn.append(iconSlot, label, dot, pinEl, closeWrapEl);
     updateSidecarTabButton(btn, sc, isActive, opts);
     pinEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: btn._sc?.sidecarId || sc.sidecarId }); });
     closeEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); });
@@ -95,10 +126,12 @@
         { id: 'toggle-global', label: isGlobal ? 'Restrict to Current Workspace' : 'Show in All Workspaces (Global)', disabled: isGlobal && !btn._opts?.hasActiveWorkspace, onClick: () => btn._opts?.onContextAction?.({ action: 'toggle-global', sidecarId: curId }) },
         { separator: true },
       ] : [];
+      const isCloseDestructive = Boolean(canClose && !(curSc.isSideChat && !curSc.sideChatId) && !(curSc.isTerminal && !curSc.terminalId));
       ns.openTabContextMenu?.(e, [
         { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: curId }) },
         ...scopeItems,
-        { id: canClose ? 'close-tab' : 'hide-tab', label: canClose ? 'Close Tab' : 'Hide Tab', disabled: isPinned, onClick: () => btn._opts?.onContextAction?.({ action: 'close', targetIds: [curId], pane }) },
+        { id: isCloseDestructive ? 'close-tab' : 'hide-tab', label: isCloseDestructive ? 'Close Tab' : 'Hide Tab', disabled: isPinned, onClick: () => btn._opts?.onContextAction?.({ action: 'close', targetIds: [curId], pane }) },
+        ...(curSc.isSideChat && !curSc.sideChatId ? [{ id: 'delete-sidechat', label: 'Delete Side Chat', onClick: () => btn._opts?.onContextAction?.({ action: 'delete-sidechat', pane }) }] : []),
         { id: 'close-other-tabs', label: 'Close Other Tabs', disabled: !others.length, onClick: () => btn._opts?.onContextAction?.({ action: 'close', targetIds: others, keepSidecarId: curId, pane }) },
         { id: 'close-tabs-to-the-right', label: 'Close Tabs to the Right', disabled: !right.length, onClick: () => btn._opts?.onContextAction?.({ action: 'close', targetIds: right, keepSidecarId: curId, pane }) },
       ]);
@@ -108,10 +141,11 @@
     const clearHoverTimer = () => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } hoverTargetId = ''; };
 
     btn.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target?.closest?.('[data-role="tab-pin"], [data-role="tab-close"]')) return;
+      if (e.button !== 0 || e.target?.closest?.('[data-role="tab-pin"], [data-role="tab-close"], [data-role="tab-close-wrap"]')) return;
       cleanupAllDragGhosts(); clearHoverTimer(); previewedTargetId = ''; activePointerId = e.pointerId; ns.isPointerOnTab = true;
       startX = e.clientX; startY = e.clientY; isDragging = false; targetPane = btn._opts?.pane || 'single'; beforeTabId = null; dragMeta = null; termDropTarget = null;
-      btn.setPointerCapture(e.pointerId);
+      btn.setPointerCapture?.(e.pointerId);
+      window.addEventListener?.('pointerup', onWinPointerEnd, true); window.addEventListener?.('pointercancel', onWinPointerCancel, true);
     });
     btn.addEventListener('pointermove', (e) => {
       if (activePointerId !== e.pointerId) return;
@@ -134,7 +168,11 @@
       ghostEl.style.transition = dragMeta.lockChangedAt && performance.now() - dragMeta.lockChangedAt < 120 ? 'top 120ms ease-out, left 120ms ease-out' : '';
       ghostEl.style.left = `${left}px`; ghostEl.style.top = `${dragMeta.locked ? dragMeta.originalTop : e.clientY - dragMeta.grabOffsetY}px`;
       const probeX = dragMeta.locked ? left + dragMeta.draggedWidth / 2 : e.clientX;
-      termDropTarget = btn._sc?.isTerminal ? ns.inspectHangarPointerOverTerminal?.(probeX, e.clientY, curId, !dragMeta.locked) : null;
+      termDropTarget = btn._sc?.isTerminal
+        ? ns.inspectHangarPointerOverTerminal?.(probeX, e.clientY, curId, !dragMeta.locked)
+        : btn._sc?.isSideChat
+          ? ns.inspectHangarPointerOverSideChat?.(probeX, e.clientY, curId, !dragMeta.locked)
+          : null;
       if (termDropTarget) {
         if (termDropTarget.zone === 'hub-tab' && hoverTargetId !== termDropTarget.targetInstanceTabId) {
           clearHoverTimer(); hoverTargetId = termDropTarget.targetInstanceTabId;
@@ -154,7 +192,8 @@
         const pinnedCount = dragMeta.sourceTabs.filter((t) => t.dataset.pinned === 'true').length, isPin = Boolean(btn._sc?.isPinned);
         let dropIndex = dragMeta.draggedIndex;
         for (let i = 0; i < dragMeta.centers.length; i++) {
-          const c = dragMeta.centers[i] - scrollDelta, span = dragMeta.draggedWidth * (btn._sc?.isTerminal && dragMeta.sourceTabs[i]?._sc?.isTerminal ? -0.38 : 0.5);
+          const sameKindMerge = (btn._sc?.isTerminal && dragMeta.sourceTabs[i]?._sc?.isTerminal) || (btn._sc?.isSideChat && dragMeta.sourceTabs[i]?._sc?.isSideChat);
+          const c = dragMeta.centers[i] - scrollDelta, span = dragMeta.draggedWidth * (sameKindMerge ? -0.38 : 0.5);
           if (i < dragMeta.draggedIndex && x < c + span) dropIndex = Math.min(dropIndex, i);
           else if (i > dragMeta.draggedIndex && x > c - span) dropIndex = Math.max(dropIndex, i);
         }
@@ -175,7 +214,8 @@
         beforeTabId = null;
         targetSibs.forEach((sib) => {
           const sibPin = sib.dataset.pinned === 'true', r = ns.getUnshiftedRect ? ns.getUnshiftedRect(sib) : sib.getBoundingClientRect();
-          if (inBar && beforeTabId === null && ((isPin && !sibPin) || (isPin === sibPin && e.clientX < r.left + r.width * (btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId) ? 0.12 : 0.5)))) beforeTabId = sib.dataset.sidecarId;
+          const sameKindTarget = (btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId)) || (btn._sc?.isSideChat && ns.isSideChatTabId?.(sib.dataset.sidecarId));
+          if (inBar && beforeTabId === null && ((isPin && !sibPin) || (isPin === sibPin && e.clientX < r.left + r.width * (sameKindTarget ? 0.12 : 0.5)))) beforeTabId = sib.dataset.sidecarId;
           const s = inBar && beforeTabId !== null ? dragMeta.draggedSlot : 0; if (ns.setTabShift) ns.setTabShift(sib, s); else sib.style.transform = s ? `translateX(${s}px)` : '';
         });
         tBar?.classList.add('split-drop-target'); if (!inBar) document.querySelector(targetPane === 'top' ? '.slot-top:not(.hidden)' : '.slot-bottom:not(.hidden)')?.classList.add('split-drop-target');
@@ -184,9 +224,10 @@
 
     const endPointer = (e, cancelled = false) => {
       if (activePointerId !== e.pointerId) return;
+      window.removeEventListener?.('pointerup', onWinPointerEnd, true); window.removeEventListener?.('pointercancel', onWinPointerCancel, true);
       const wasDragging = isDragging, pane = btn._opts?.pane || 'single', curId = btn._sc?.sidecarId || sc.sidecarId, finalTermDrop = termDropTarget;
       activePointerId = null; isDragging = false; ghostEl = null; dragMeta = null; termDropTarget = null; clearHoverTimer();
-      try { if (btn.hasPointerCapture(e.pointerId)) btn.releasePointerCapture(e.pointerId); } catch {}
+      try { if (btn.hasPointerCapture?.(e.pointerId)) btn.releasePointerCapture(e.pointerId); } catch {}
       cleanupAllDragGhosts();
       if (!cancelled) {
         if (!wasDragging) { btn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); btn._opts?.onClick?.(curId); }
@@ -194,6 +235,7 @@
         else btn._opts?.onDropTab?.({ sidecarId: curId, sourcePane: pane, targetPane, beforeTabId });
       } else if (wasDragging) btn._opts?.onPreviewTerminalSlot?.('', pane);
     };
+    const onWinPointerEnd = (e) => endPointer(e, false), onWinPointerCancel = (e) => endPointer(e, true);
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((evt) => btn.addEventListener(evt, (e) => endPointer(e, evt !== 'pointerup')));
     return btn;
   }
@@ -241,7 +283,7 @@
           const item = document.createElement('button'), left = document.createElement('span'), icon = document.createElement('span'), title = document.createElement('span');
           item.type = 'button'; item.className = `tab-overflow-item${isClosed ? ' is-hidden-tab' : tab.sidecarId === activeId ? ' active' : ''}`;
           left.className = 'tab-overflow-item-left'; icon.className = 'hub-tab-icon-slot'; title.className = 'tab-overflow-item-title';
-          icon.innerHTML = ns.iconSvg(tab.isTerminal ? 'terminal' : tab.isVirtual ? 'extension' : (tab.scope === 'global' ? 'globe' : 'folder'), 15);
+          icon.innerHTML = ns.iconSvg(tab.isTerminal ? 'terminal' : tab.isSideChat ? 'chat' : tab.isVirtual ? 'extension' : (tab.scope === 'global' ? 'globe' : 'folder'), 15);
           title.textContent = tab.displayName; left.append(icon, title); item.append(left);
           if (isClosed) { item.title = `Show ${tab.displayName}`; const pill = document.createElement('span'); pill.className = 'tab-overflow-restore'; pill.textContent = 'Show'; item.append(pill); }
           else if (!tab.isVirtual) { const badge = ns.formatStatusBadge(tab.statusBadge, tab.isRunning, tab.isErrored), dot = document.createElement('span'); dot.className = `status-dot ${badge.state}`; item.append(dot); }
@@ -257,7 +299,7 @@
       });
     }
   }
-  ns.renderTabBar = function renderTabBar({ tabStripEl, topOverflowBtnEl, bottomTabBarEl, bottomTabStripEl, bottomOverflowBtnEl, tabOverflowPopoverEl, splitBtnEl, sidecars, terminals, registryPackages, hangar, bottomActiveTabId, layout, hasActiveWorkspace, onSelectTopSplitTab, onSelectBottomSplitTab, onDropTab, onPreviewTerminalSlot, onDropIntoTerminal, onContextAction }) {
+  ns.renderTabBar = function renderTabBar({ tabStripEl, topOverflowBtnEl, bottomTabBarEl, bottomTabStripEl, bottomOverflowBtnEl, tabOverflowPopoverEl, terminalBtnEl, extensionsBtnEl, splitBtnEl, sidecars, terminals, registryPackages, hangar, bottomActiveTabId, layout, hasActiveWorkspace, onSelectTopSplitTab, onSelectBottomSplitTab, onDropTab, onPreviewTerminalSlot, onDropIntoTerminal, onContextAction }) {
     if (ns.isPointerOnTab) return;
     const splitEnabled = Boolean(layout?.splitViewEnabled), regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
     splitBtnEl?.classList.toggle('active', splitEnabled);
@@ -265,13 +307,52 @@
     if (topOverflowBtnEl) topOverflowBtnEl._updateCount = updateCount;
     if (bottomOverflowBtnEl) bottomOverflowBtnEl._updateCount = updateCount;
     const { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(sidecars || [], layout, terminals || []);
+    const isTermBtn = layout?.terminalDisplayMode === 'button';
+    const termActive = (splitEnabled ? activeTopId : activeSingleId) === ns.TERMINAL_TAB_ID || (splitEnabled && bottomActiveTabId === ns.TERMINAL_TAB_ID);
+    if (terminalBtnEl) {
+      terminalBtnEl.classList.toggle('hidden', !isTermBtn);
+      terminalBtnEl.classList.toggle('active', isTermBtn && termActive);
+      terminalBtnEl.setAttribute?.('aria-pressed', String(Boolean(isTermBtn && termActive)));
+    }
+    const isExtBtn = layout?.extensionsDisplayMode === 'button';
+    const extActive = (splitEnabled ? activeTopId : activeSingleId) === ns.EXTENSIONS_TAB_ID || (splitEnabled && bottomActiveTabId === ns.EXTENSIONS_TAB_ID);
+    if (extensionsBtnEl) {
+      extensionsBtnEl.classList.toggle('hidden', !isExtBtn);
+      extensionsBtnEl.classList.toggle('active', isExtBtn && extActive);
+      extensionsBtnEl.setAttribute?.('aria-pressed', String(Boolean(isExtBtn && extActive)));
+      extensionsBtnEl.title = updateCount > 0 ? `Extensions (${updateCount} update${updateCount === 1 ? '' : 's'} available)` : 'Extensions';
+    }
     const baseOpts = { updateCount, hasActiveWorkspace: Boolean(hasActiveWorkspace), onDropTab, onPreviewTerminalSlot, onDropIntoTerminal, onContextAction }, reopen = (sidecarId) => onContextAction?.({ action: 'reopen', sidecarId });
+    function ensureHubAddButton(stripEl, stripOpts) {
+      let addBtn = stripEl.querySelector?.('[data-role="hub-add-tab"]');
+      if (!addBtn) {
+        addBtn = document.createElement('button');
+        addBtn.type = 'button'; addBtn.className = 'chrome-icon-btn term-strip-add-btn';
+        addBtn.dataset.role = 'hub-add-tab'; addBtn.dataset.testid = 'hangar-new-tab-button';
+        addBtn.title = 'Open Terminal or Side Chat'; addBtn.innerHTML = ns.iconSvg('add', 16);
+        addBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const r = addBtn.getBoundingClientRect?.() || { left: e.clientX || 40, bottom: e.clientY || 36 };
+          const pane = addBtn._opts?.pane || 'single';
+          ns.openTabContextMenu?.(
+            { clientX: r.left, clientY: (r.bottom || 36) + 4, preventDefault() {}, stopPropagation() {} },
+            [
+              { id: 'new-terminal', icon: 'terminal', label: 'New Terminal', onClick: () => addBtn._opts?.onContextAction?.({ action: 'new-terminal', pane }) },
+              { id: 'new-sidechat', icon: 'chat', label: 'New Side Chat', onClick: () => addBtn._opts?.onContextAction?.({ action: 'new-sidechat', pane }) },
+            ]
+          );
+        });
+      }
+      addBtn._opts = stripOpts;
+      if (stripEl.children?.[stripEl.children.length - 1] !== addBtn) stripEl.appendChild(addBtn);
+    }
     function populateStrip(stripEl, tabs, activeId, opts) {
       if (!stripEl) return;
       const stripOpts = { ...opts, stripTabs: tabs }, seenIds = new Set();
       if (!tabs.length) {
         stripEl._lastActiveId = ''; stripEl.querySelectorAll('.hub-tab').forEach((el) => el.remove());
         if (!stripEl.querySelector('.tab-drop-hint')) { const hint = document.createElement('span'); hint.className = 'tab-drop-hint'; hint.textContent = 'Drag a tab here'; stripEl.appendChild(hint); }
+        ensureHubAddButton(stripEl, stripOpts);
         return;
       }
       stripEl.querySelectorAll('.tab-drop-hint').forEach((el) => el.remove());
@@ -282,6 +363,7 @@
         if (stripEl.children[i] !== btn) stripEl.insertBefore(btn, stripEl.children[i] || null);
       });
       stripEl.querySelectorAll('.hub-tab').forEach((child) => { if (!seenIds.has(child.dataset.sidecarId)) child.remove(); });
+      ensureHubAddButton(stripEl, stripOpts);
       if (stripEl._lastActiveId !== activeId) { stripEl._lastActiveId = activeId; stripEl.querySelector('.hub-tab.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }
     }
     if (!splitEnabled) {
