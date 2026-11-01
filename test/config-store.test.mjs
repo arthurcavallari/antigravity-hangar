@@ -39,11 +39,17 @@ describe('config-store and child iframe URL normalization', () => {
         { scope: 'project', workspaces: ['c:/Projects/App', 'c:/Test'], autoHibernate: true },
         { configPath: cfgPath, sidecarsDir: dir }
       );
-      updateHangarLayout({ splitViewEnabled: true, pinnedTopHeightPx: 210 }, cfgPath);
+      updateHangarLayout(
+        { splitViewEnabled: true, pinnedTopHeightPx: 210, autoUpdate: true, extensionsDisplayMode: 'button', terminalDisplayMode: 'button' },
+        cfgPath
+      );
 
       const loaded = loadHangarConfig(cfgPath);
       assert.equal(loaded.layout.splitViewEnabled, true);
       assert.equal(loaded.layout.pinnedTopHeightPx, 210);
+      assert.equal(loaded.layout.autoUpdate, true);
+      assert.equal(loaded.layout.extensionsDisplayMode, 'button');
+      assert.equal(loaded.layout.terminalDisplayMode, 'button');
       assert.deepEqual(loaded.sidecars['db-inspector'].workspaces, ['c:/Projects/App', 'c:/Test']);
     } finally {
       rmSync(dir, { recursive: true, force: true });

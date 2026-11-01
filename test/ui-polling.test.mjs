@@ -107,6 +107,17 @@ describe('Hangar UI polling load', () => {
       cm.posted.filter((m) => m.type === 'conversation-change').map((m) => m.payload.conversationId);
     assert.deepEqual(convMsgs(), ['conv-next']);
     assert.equal(frames.length, 2);
+
+    // When extensionsDisplayMode / terminalDisplayMode is 'button', tabs adjust accordingly
+    const tabMode = ns.partitionSplitTabs(state.sidecars, { pinnedTopSidecarId: '__extensions__', extensionsDisplayMode: 'tab', terminalDisplayMode: 'tab' });
+    assert.equal(tabMode.workspaceTabs.some((t) => t.sidecarId === '__extensions__'), true);
+    assert.equal(tabMode.workspaceTabs.some((t) => t.sidecarId === '__terminal__'), true);
+    const btnMode = ns.partitionSplitTabs(state.sidecars, { pinnedTopSidecarId: '__extensions__', extensionsDisplayMode: 'button', terminalDisplayMode: 'button' });
+    assert.equal(btnMode.workspaceTabs.some((t) => t.sidecarId === '__extensions__'), false);
+    assert.equal(btnMode.workspaceTabs.some((t) => t.sidecarId === '__terminal__'), false);
+    assert.equal(btnMode.activeSingleId, '__extensions__');
+    const termBtnActive = ns.partitionSplitTabs(state.sidecars, { pinnedTopSidecarId: '__terminal__', terminalDisplayMode: 'button' });
+    assert.equal(termBtnActive.activeSingleId, '__terminal__');
   });
 
   it('asks for no conversation when Antigravity frames it without an id, and guesses only in a plain tab', async () => {
@@ -476,5 +487,53 @@ describe('Hangar UI polling load', () => {
     pluginHibBtn.click();
     await flush();
     assert.deepEqual(toggledHib, ['context-monitor']);
+
+    // Clicking the gear button toggles the Settings pane and updates settings
+    const settingsPatches = [];
+    let currentEngine = 'jetbox';
+    window.Hangar.readEngineMode = () => currentEngine;
+    window.Hangar.saveEngineMode = (m) => { currentEngine = m; };
+    window.Hangar.renderExtensionsTab({
+      storeViewEl,
+      sidecars,
+      layout: { hibernateAfterIdleMinutes: 10 },
+      onUpdateSettings: async (patch) => settingsPatches.push(patch),
+    });
+
+    const settingsBtn = storeViewEl.querySelector('[data-role="settings-btn"]');
+    const settingsPane = storeViewEl.querySelector('[data-role="pane-settings"]');
+    assert.equal(settingsBtn.attributes['aria-pressed'], 'false');
+    assert.equal(settingsPane.classList.contains('hidden'), true);
+
+    settingsBtn.click();
+    assert.equal(settingsBtn.attributes['aria-pressed'], 'true');
+    assert.equal(settingsPane.classList.contains('hidden'), false);
+    assert.equal(storeViewEl.querySelector('[data-role="pane-installed"]').classList.contains('hidden'), true);
+
+    assert.equal(settingsPane.querySelector('[data-role="auto-update-off"]').classList.contains('active'), true);
+    assert.equal(settingsPane.querySelector('[data-role="auto-update-on"]').classList.contains('active'), false);
+    settingsPane.querySelector('[data-role="auto-update-on"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="ttl-30"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="ext-mode-button"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="term-mode-button"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="engine-direct"]').click();
+    assert.equal(currentEngine, 'direct');
+
+    assert.deepEqual(JSON.parse(JSON.stringify(settingsPatches)), [
+      { autoUpdate: true },
+      { hibernateAfterIdleMinutes: 30 },
+      { extensionsDisplayMode: 'button' },
+      { terminalDisplayMode: 'button' },
+    ]);
+
+    // Clicking the gear button again returns to Installed
+    settingsBtn.click();
+    assert.equal(settingsBtn.attributes['aria-pressed'], 'false');
+    assert.equal(settingsPane.classList.contains('hidden'), true);
+    assert.equal(storeViewEl.querySelector('[data-role="pane-installed"]').classList.contains('hidden'), false);
   });
 });

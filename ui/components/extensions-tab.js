@@ -6,10 +6,12 @@
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
 
-  let activeSubTab = 'installed'; // 'installed' | 'discover' | 'sideload'
+  let activeSubTab = 'installed'; // 'installed' | 'discover' | 'sideload' | 'settings'
+  let settingsFeedback = null; // { tone: 'ok' | 'err', text: string }
 
   ns.setExtensionsSubTab = function setExtensionsSubTab(tab) {
     activeSubTab = tab;
+    settingsFeedback = null;
   };
 
   function renderRuleList(ruleListEl, sc, onRemovePattern) {
@@ -140,6 +142,9 @@
               </div>
             </div>
             <div class="manager-card-actions">
+              <button type="button" data-role="fix-agent-btn" class="agy-btn agy-btn-outline has-icon hidden" title="Send sidecar error diagnostics to the agent">
+                ${ns.iconSvg('bolt', 13)}<span>Fix with Agent</span>
+              </button>
               <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden" title="Update sidecar">
                 ${ns.iconSvg('download', 13)}<span>Update</span>
               </button>
@@ -247,6 +252,21 @@
         card.querySelector('[data-role="restart-btn"]').addEventListener('click', () =>
           runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'))
         );
+        const fixAgentBtn = card.querySelector('[data-role="fix-agent-btn"]');
+        fixAgentBtn?.addEventListener('click', async () => {
+          const curSc = card._sc;
+          if (!curSc || fixAgentBtn.disabled) return;
+          fixAgentBtn.disabled = true;
+          const convId = card._activeWorkspace?.conversationId || '';
+          await runCardAction(card, async () => {
+            const msg = `Sidecar "${curSc.displayName || curSc.sidecarId}" (${curSc.sidecarId}) is in an errored state (${curSc.statusBadge || 'ERROR'}). Please inspect its setup and server logs and fix the issue.`;
+            const res = await ns.notifyAgent?.(msg, convId, `Sidecar Error: ${curSc.sidecarId}`);
+            if (res?.ok === false) throw new Error(res.error || 'Could not send message to agent');
+            const span = fixAgentBtn.querySelector('span');
+            if (span) { span.textContent = 'Sent to Agent'; setTimeout(() => { span.textContent = 'Fix with Agent'; }, 2000); }
+          });
+          fixAgentBtn.disabled = false;
+        });
         const uninstallBtn = card.querySelector('[data-role="uninstall-btn"]');
         const uninstallConfirm = card.querySelector('[data-role="uninstall-confirm"]');
         uninstallBtn.addEventListener('click', () => {
@@ -335,6 +355,7 @@
 
       const canUninstall = !sc.sidecarId.includes('/');
       card.querySelector('[data-role="uninstall-btn"]').classList.toggle('hidden', !canUninstall);
+      card.querySelector('[data-role="fix-agent-btn"]')?.classList.toggle('hidden', !sc.isErrored);
 
       const upBtn = card.querySelector('[data-role="update-btn"]');
       upBtn.classList.toggle('hidden', !hasUpdate);
@@ -390,6 +411,171 @@
     }
   }
 
+  function renderSettingsPane(paneEl, opts = {}) {
+    if (!paneEl) return;
+    paneEl._opts = opts;
+    let shell = paneEl.querySelector('[data-role="settings-shell"]');
+    if (!shell) {
+      paneEl.innerHTML = `
+        <div data-role="settings-shell">
+          <div data-role="settings-banner" class="sideload-banner hidden" role="status"></div>
+          <div class="manager-card">
+            <div class="manager-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Idle Process Hibernation</span>
+                  <span data-role="settings-ttl-badge" class="badge running"></span>
+                </div>
+                <div class="manager-card-meta">Minutes an inactive project's sidecars stay running before Auto-Sleep stops their Node.js processes (1–240 min)</div>
+              </div>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="ttl-5" data-ttl="5" class="agy-toggle-item">5m</button>
+                <button type="button" data-role="ttl-10" data-ttl="10" class="agy-toggle-item">10m</button>
+                <button type="button" data-role="ttl-30" data-ttl="30" class="agy-toggle-item">30m</button>
+                <button type="button" data-role="ttl-60" data-ttl="60" class="agy-toggle-item">60m</button>
+              </div>
+            </div>
+            <div class="ws-add-row">
+              <input type="number" min="1" max="240" data-role="settings-ttl-input" class="ws-input" placeholder="Custom idle timeout in minutes (1–240)…" />
+              <button type="button" data-role="settings-ttl-save" class="agy-btn agy-btn-secondary">Apply</button>
+            </div>
+          </div>
+          <div class="manager-card">
+            <div class="manager-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Automatic Updates</span>
+                </div>
+                <div class="manager-card-meta">Automatically install updates for Hangar and managed extensions when capabilities do not escalate</div>
+              </div>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="auto-update-off" class="agy-toggle-item">Off</button>
+                <button type="button" data-role="auto-update-on" class="agy-toggle-item">On</button>
+              </div>
+            </div>
+          </div>
+          <div class="manager-card">
+            <div class="manager-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Extensions Entrypoint</span>
+                </div>
+                <div class="manager-card-meta">Show Extensions as a tab in the tab bar or as a compact icon button on the top-right bar</div>
+              </div>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="ext-mode-tab" class="agy-toggle-item">Tab Bar</button>
+                <button type="button" data-role="ext-mode-button" class="agy-toggle-item">Top-Bar Button</button>
+              </div>
+            </div>
+          </div>
+          <div class="manager-card">
+            <div class="manager-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Interactive Terminal</span>
+                </div>
+                <div class="manager-card-meta">Show Terminal as a tab in the tab bar or as a compact icon button on the top-right bar</div>
+              </div>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="term-mode-tab" class="agy-toggle-item">Tab Bar</button>
+                <button type="button" data-role="term-mode-button" class="agy-toggle-item">Top-Bar Button</button>
+              </div>
+            </div>
+            <div class="manager-section-bar">
+              <span class="manager-section-label">Terminal Engine (Native xterm.js iframe or Direct VT100)</span>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="engine-jetbox" class="agy-toggle-item">Native (Jetbox)</button>
+                <button type="button" data-role="engine-direct" class="agy-toggle-item">Direct VT100</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      shell = paneEl.querySelector('[data-role="settings-shell"]');
+      const applyUpdate = async (patch, okMsg) => {
+        try {
+          await paneEl._opts?.onUpdateSettings?.(patch);
+          settingsFeedback = okMsg ? { tone: 'ok', text: okMsg } : null;
+        } catch (err) {
+          settingsFeedback = { tone: 'err', text: err?.message || 'Could not save settings' };
+        }
+        renderSettingsPane(paneEl, paneEl._opts);
+      };
+      for (const mins of [5, 10, 30, 60]) {
+        shell.querySelector(`[data-role="ttl-${mins}"]`)?.addEventListener('click', () => {
+          applyUpdate({ hibernateAfterIdleMinutes: mins }, `Updated Auto-Sleep idle timeout to ${mins}m.`);
+        });
+      }
+      const ttlInput = shell.querySelector('[data-role="settings-ttl-input"]');
+      const commitTtl = () => {
+        const val = Math.max(1, Math.min(240, Math.round(Number(ttlInput.value) || 0)));
+        if (!Number.isFinite(val) || val < 1) return;
+        applyUpdate({ hibernateAfterIdleMinutes: val }, `Updated Auto-Sleep idle timeout to ${val}m.`);
+      };
+      ttlInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault?.(); commitTtl(); } });
+      shell.querySelector('[data-role="settings-ttl-save"]')?.addEventListener('click', commitTtl);
+
+      shell.querySelector('[data-role="auto-update-off"]')?.addEventListener('click', () => {
+        applyUpdate({ autoUpdate: false }, 'Disabled automatic updates.');
+      });
+      shell.querySelector('[data-role="auto-update-on"]')?.addEventListener('click', () => {
+        applyUpdate({ autoUpdate: true }, 'Enabled automatic updates.');
+      });
+
+      shell.querySelector('[data-role="ext-mode-tab"]')?.addEventListener('click', () => {
+        applyUpdate({ extensionsDisplayMode: 'tab' }, 'Showing Extensions as a tab in the tab bar.');
+      });
+      shell.querySelector('[data-role="ext-mode-button"]')?.addEventListener('click', () => {
+        applyUpdate({ extensionsDisplayMode: 'button' }, 'Showing Extensions as a top-bar icon button.');
+      });
+      shell.querySelector('[data-role="term-mode-tab"]')?.addEventListener('click', () => {
+        applyUpdate({ terminalDisplayMode: 'tab' }, 'Showing Terminal as a tab in the tab bar.');
+      });
+      shell.querySelector('[data-role="term-mode-button"]')?.addEventListener('click', () => {
+        applyUpdate({ terminalDisplayMode: 'button' }, 'Showing Terminal as a top-bar icon button.');
+      });
+
+      const setEngine = (mode) => {
+        ns.saveEngineMode?.(mode);
+        settingsFeedback = { tone: 'ok', text: `Switched interactive terminal engine to ${mode === 'direct' ? 'Direct VT100' : 'Native (Jetbox)'}.` };
+        renderSettingsPane(paneEl, paneEl._opts);
+      };
+      shell.querySelector('[data-role="engine-jetbox"]')?.addEventListener('click', () => setEngine('jetbox'));
+      shell.querySelector('[data-role="engine-direct"]')?.addEventListener('click', () => setEngine('direct'));
+    }
+
+    const bannerEl = shell.querySelector('[data-role="settings-banner"]');
+    if (bannerEl) {
+      bannerEl.className = settingsFeedback ? `sideload-banner ${settingsFeedback.tone}` : 'sideload-banner hidden';
+      bannerEl.textContent = settingsFeedback ? settingsFeedback.text : '';
+    }
+
+    const ttl = Number(opts.layout?.hibernateAfterIdleMinutes ?? 10) || 10;
+    const ttlBadge = shell.querySelector('[data-role="settings-ttl-badge"]');
+    if (ttlBadge) ttlBadge.textContent = `${ttl}m TTL`;
+    for (const mins of [5, 10, 30, 60]) {
+      shell.querySelector(`[data-role="ttl-${mins}"]`)?.classList.toggle('active', ttl === mins);
+    }
+    const ttlInput = shell.querySelector('[data-role="settings-ttl-input"]');
+    if (ttlInput && document.activeElement !== ttlInput) ttlInput.value = String(ttl);
+
+    const autoUpdate = Boolean(opts.layout?.autoUpdate);
+    shell.querySelector('[data-role="auto-update-off"]')?.classList.toggle('active', !autoUpdate);
+    shell.querySelector('[data-role="auto-update-on"]')?.classList.toggle('active', autoUpdate);
+
+    const extMode = opts.layout?.extensionsDisplayMode === 'button' ? 'button' : 'tab';
+    shell.querySelector('[data-role="ext-mode-tab"]')?.classList.toggle('active', extMode === 'tab');
+    shell.querySelector('[data-role="ext-mode-button"]')?.classList.toggle('active', extMode === 'button');
+
+    const termMode = opts.layout?.terminalDisplayMode === 'button' ? 'button' : 'tab';
+    shell.querySelector('[data-role="term-mode-tab"]')?.classList.toggle('active', termMode === 'tab');
+    shell.querySelector('[data-role="term-mode-button"]')?.classList.toggle('active', termMode === 'button');
+
+    const engineMode = ns.readEngineMode?.() === 'direct' ? 'direct' : 'jetbox';
+    shell.querySelector('[data-role="engine-jetbox"]')?.classList.toggle('active', engineMode === 'jetbox');
+    shell.querySelector('[data-role="engine-direct"]')?.classList.toggle('active', engineMode === 'direct');
+  }
+
   ns.renderExtensionsTab = function renderExtensionsTab(opts = {}) {
     const { storeViewEl, sidecars = [], hangar = null } = opts;
     if (!storeViewEl) return;
@@ -427,6 +613,9 @@
               <button type="button" data-role="check-updates-btn" class="icon-btn" title="Check for updates" aria-label="Check for updates">
                 ${ns.iconSvg('refresh', 14)}
               </button>
+              <button type="button" data-role="settings-btn" class="icon-btn" title="Hangar settings" aria-label="Hangar settings" aria-pressed="false">
+                ${ns.iconSvg('settings', 14)}
+              </button>
               <span data-role="running-count" class="badge running"></span>
             </div>
           </div>
@@ -437,15 +626,25 @@
           </div>
           <div data-role="pane-discover" class="hidden"></div>
           <div data-role="pane-sideload" class="hidden"></div>
+          <div data-role="pane-settings" class="hidden"></div>
         </div>
       `;
       shell = storeViewEl.querySelector('[data-role="store-shell"]');
       shell.querySelectorAll('[data-subtab]').forEach((btn) => {
         btn.addEventListener('click', () => {
           activeSubTab = btn.dataset.subtab;
+          settingsFeedback = null;
           ns.clearSideloadFeedback?.();
           ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
         });
+      });
+
+      const settingsBtn = shell.querySelector('[data-role="settings-btn"]');
+      settingsBtn?.addEventListener('click', () => {
+        activeSubTab = activeSubTab === 'settings' ? 'installed' : 'settings';
+        settingsFeedback = null;
+        ns.clearSideloadFeedback?.();
+        ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
       });
 
       const checkBtn = shell.querySelector('[data-role="check-updates-btn"]');
@@ -524,17 +723,26 @@
     shell.querySelectorAll('[data-subtab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.subtab === activeSubTab);
     });
+    const settingsBtn = shell.querySelector('[data-role="settings-btn"]');
+    if (settingsBtn) {
+      const isSettings = activeSubTab === 'settings';
+      settingsBtn.classList.toggle('active', isSettings);
+      settingsBtn.setAttribute('aria-pressed', String(isSettings));
+    }
 
     const installedPane = shell.querySelector('[data-role="pane-installed"]');
     const discoverPane = shell.querySelector('[data-role="pane-discover"]');
     const sideloadPane = shell.querySelector('[data-role="pane-sideload"]');
+    const settingsPane = shell.querySelector('[data-role="pane-settings"]');
 
     installedPane.classList.toggle('hidden', activeSubTab !== 'installed');
     discoverPane.classList.toggle('hidden', activeSubTab !== 'discover');
     sideloadPane.classList.toggle('hidden', activeSubTab !== 'sideload');
+    settingsPane?.classList.toggle('hidden', activeSubTab !== 'settings');
 
     const switchTab = (tab) => {
       activeSubTab = tab;
+      settingsFeedback = null;
       ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
     };
 
@@ -553,6 +761,8 @@
         onSwitchTab: switchTab,
         rerender: () => ns.renderExtensionsTab(storeViewEl._lastOpts || opts),
       });
+    } else if (activeSubTab === 'settings') {
+      renderSettingsPane(settingsPane, opts);
     }
   };
 })();

@@ -743,4 +743,119 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('auto-updates managed sidecars, plugins, and Hangar when layout.autoUpdate is true, while holding back capability escalations and preserving manual stops', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-auto-update-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const pluginsDir = join(dir, 'plugins');
+
+      for (const id of ['safe-sc', 'stopped-sc', 'escalated-sc', 'hangar']) {
+        installManagedCopy(sidecarsDir, packagesDir, id);
+        writeJsonNoBom(join(sidecarsDir, id, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+        writeJsonNoBom(join(sidecarsDir, id, 'package.json'), { name: id, version: '1.0.0' });
+      }
+      mkdirSync(join(pluginsDir, 'safe-plugin'), { recursive: true });
+      writeJsonNoBom(join(pluginsDir, 'safe-plugin', 'plugin.json'), { name: 'safe-plugin', version: '1.0.0' });
+
+      writeJsonNoBom(agyCfgPath, {
+        sidecars: {
+          'safe-sc': { enabled: true },
+          'stopped-sc': { enabled: false },
+          'escalated-sc': { enabled: true },
+          hangar: { enabled: true },
+        },
+      });
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        telemetry: false,
+        registryUrl: 'https://registry.example.test',
+        layout: { autoUpdate: true },
+        manuallyStopped: ['stopped-sc'],
+        sidecars: {
+          'safe-sc': { scope: 'global', workspaces: ['*'], installedVersion: '1.0.0', capabilityTier: 'TIER_1_TELEMETRY', source: 'github', gitRepo: 'https://github.com/acme/safe-sc' },
+          'stopped-sc': { scope: 'global', workspaces: ['*'], installedVersion: '1.0.0', capabilityTier: 'TIER_1_TELEMETRY', source: 'github', gitRepo: 'https://github.com/acme/stopped-sc' },
+          'escalated-sc': { scope: 'global', workspaces: ['*'], installedVersion: '1.0.0', capabilityTier: 'TIER_1_TELEMETRY', source: 'github', gitRepo: 'https://github.com/acme/escalated-sc' },
+        },
+        plugins: {
+          'safe-plugin': { dir: 'safe-plugin', installedVersion: '1.0.0', capabilityTier: 'TIER_1_TELEMETRY', gitRepo: 'https://github.com/acme/safe-plugin', ref: 'v1.0.0' },
+        },
+      });
+
+      const rpcCalls = [];
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        agyConfigPath: agyCfgPath,
+        sidecarsDir,
+        packagesDir,
+        pluginsDir,
+        probeUpstream: false,
+        autoUpdate: true,
+        delayMs: 0,
+        rpcFn: async (method, payload) => {
+          rpcCalls.push({ method, payload });
+          if (method === 'GetAllPlugins') return { plugins: [{ name: 'safe-plugin', path: join(pluginsDir, 'safe-plugin') }] };
+          return { ok: true };
+        },
+        porter: {
+          auditPlugin: () => ({ flags: [], warnings: [], tier: 'TIER_1_TELEMETRY', reasons: [] }),
+        },
+        execFn: (cmd, args) => {
+          if (cmd === 'agy') return;
+          if (cmd !== 'git' || args[0] !== 'clone') return;
+          const repoUrl = args[args.length - 2];
+          const dest = args[args.length - 1];
+          mkdirSync(dest, { recursive: true });
+          if (repoUrl.endsWith('/safe-plugin')) {
+            writeJsonNoBom(join(dest, 'plugin.json'), { name: 'safe-plugin', version: '1.1.0' });
+            return;
+          }
+          const ver = repoUrl.endsWith('/hangar') ? '99.0.0' : '1.1.0';
+          writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['server.mjs'] });
+          writeJsonNoBom(join(dest, 'package.json'), { name: repoUrl.split('/').pop(), version: ver });
+          if (repoUrl.endsWith('/escalated-sc')) {
+            writeFileSync(join(dest, 'server.mjs'), 'import { spawn } from "node:child_process";', 'utf8');
+          }
+        },
+        fetchFn: async (url) => {
+          if (!url.endsWith('/registry.json')) return { ok: false, status: 404 };
+          return {
+            ok: true,
+            json: async () => ({
+              hangar: { id: 'hangar', latestVersion: '99.0.0', release: { gitRepo: 'https://github.com/acme/hangar' } },
+              packages: [
+                { id: 'safe-sc', name: 'Safe SC', latestVersion: '1.1.0', capabilityTier: 'TIER_1_TELEMETRY', release: { gitRepo: 'https://github.com/acme/safe-sc' } },
+                { id: 'stopped-sc', name: 'Stopped SC', latestVersion: '1.1.0', capabilityTier: 'TIER_1_TELEMETRY', release: { gitRepo: 'https://github.com/acme/stopped-sc' } },
+                { id: 'escalated-sc', name: 'Escalated SC', latestVersion: '1.1.0', capabilityTier: 'TIER_1_TELEMETRY', release: { gitRepo: 'https://github.com/acme/escalated-sc' } },
+                { id: 'safe-plugin', kind: 'plugin', name: 'Safe Plugin', latestVersion: '1.1.0', capabilityTier: 'TIER_1_TELEMETRY', release: { gitRepo: 'https://github.com/acme/safe-plugin', ref: 'v1.1.0' } },
+              ],
+            }),
+          };
+        },
+      });
+
+      const byId = Object.fromEntries(catalog.packages.map((p) => [p.id, p]));
+      assert.equal(byId['safe-sc'].installedVersion, '1.1.0');
+      assert.equal(byId['safe-sc'].updateAvailable, false);
+      assert.equal(byId['stopped-sc'].installedVersion, '1.1.0');
+      assert.equal(byId['stopped-sc'].updateAvailable, false);
+      assert.equal(readJsonSafe(agyCfgPath, {}).sidecars['stopped-sc'].enabled, false, 'stopped sidecar stays disabled in config.json');
+      assert.equal(rpcCalls.some((c) => c.method === 'ManageSidecar' && c.payload?.sidecarId === 'stopped-sc'), false, 'stopped sidecar is not restarted');
+
+      // Escalated sidecar was held back for manual consent
+      assert.equal(byId['escalated-sc'].installedVersion, '1.0.0');
+      assert.equal(byId['escalated-sc'].updateAvailable, true);
+
+      // Plugin and Hangar updated cleanly
+      assert.equal(byId['safe-plugin'].installedVersion, '1.1.0');
+      assert.equal(byId['safe-plugin'].updateAvailable, false);
+      assert.equal(catalog.hangar.installedVersion, '99.0.0');
+      assert.equal(catalog.hangar.updateAvailable, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

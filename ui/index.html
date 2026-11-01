@@ -6,8 +6,10 @@
   <title>Hangar</title>
   <script src="/preload.js"></script>
   <link rel="stylesheet" href="/compiled_tailwind.css" />
+  <link rel="stylesheet" href="/shell.css" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/components.css" />
+  <script defer src="/agys-client.js"></script>
   <script defer src="/core.js"></script>
   <script defer src="/components/tab-bar.js"></script>
   <script defer src="/components/marketplace-panes.js"></script>
@@ -38,6 +40,30 @@
       </button>
 
       <div class="chrome-actions">
+        <button
+          id="terminal-toggle-btn"
+          type="button"
+          class="chrome-icon-btn hidden"
+          aria-label="Interactive Terminal"
+          title="Interactive Terminal"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="agy-icon" aria-hidden="true">
+            <path transform="translate(18.775, 19.85) rotate(-180)" d="M10.925 14.05L11.975 13L8.9 9.925L11.975 6.85L10.925 5.8L6.8 9.925L10.925 14.05Z" fill="currentColor"/>
+            <path d="M11.675 14.95H16.175V13.45H11.675V14.95Z" fill="currentColor"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M3 5.25C3 4.00736 4.00736 3 5.25 3H18.75C19.9926 3 21 4.00736 21 5.25V18.75C21 19.9926 19.9926 21 18.75 21H5.25C4.00736 21 3 19.9926 3 18.75V5.25ZM5.25 4.5C4.83579 4.5 4.5 4.83579 4.5 5.25V18.75C4.5 19.1642 4.83579 19.5 5.25 19.5H18.75C19.1642 19.5 19.5 19.1642 19.5 18.75V5.25C19.5 4.83579 19.1642 4.5 18.75 4.5H5.25Z" fill="currentColor"/>
+          </svg>
+        </button>
+        <button
+          id="extensions-toggle-btn"
+          type="button"
+          class="chrome-icon-btn hidden"
+          aria-label="Extensions"
+          title="Extensions"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" class="agy-icon" aria-hidden="true">
+            <path d="M208.85-197.69H713.46q3.85,0 6.35-2.69t2.5-6.54V-383.23l36.92-15.85q18.31-6.85 29.54-23.54T800-461.15q0-21.62-11.23-38.42t-29.54-24.04l-36.92-15.23V-715.38q0-4.23-2.5-6.73t-6.35-2.5H534.92l-7.31-51.08q-3.77-25.85-22.38-43.92t-44.08-18.08q-26.08,0-44.69,18.08t-22.38,43.92l-7.31,51.08H208.46q-3.46,0-5.96,2.5t-2.5,6.73V-624q51.77,17.15 84.15,62.04t32.38,100.81q0,57.31-32.19,102.19T200-297.69v90.77q0,3.85 2.5,6.54t6.35,2.69Zm0,60q-29,0-48.92-20.12T140-206.92V-347q48-1.54 82.27-33.58t34.27-80.58q0-45.62-34.46-78.12T140-575.69V-715.38q0-28.77 20.04-49t48.42-20.23H334.69q6.62-47.92 42.15-80.5t84.31-32.58q48.15,0 83.69,32.58t42.77,80.5H713.46q28.38,0 48.61,20.23t20.23,49v136.69q34.85,14.15 56.27,46.23T860-461.15q0,39.08-21.42,70.96t-56.27,46.58v136.69q0,29-20.23,49.11t-48.61,20.12H208.85Z"/>
+          </svg>
+        </button>
         <button
           id="split-toggle-btn"
           type="button"

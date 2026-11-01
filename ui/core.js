@@ -49,8 +49,12 @@
       'M344-60L268-188l-144-32l14-148L40-480l98-112l-14-148l144-32l76-128l136,58l136-58l76,128l144,32l-14,148l98,112l-98,112l14,148l-144,32l-76,128l-136-58l-136,58Zm94-278l226-226l-56-58l-170,170l-86-84l-56,56l142,142Z',
     shield:
       'M480-80q-139-35-229.5-159.5T160-516v-244l320-120l320,120v244q0,152-90.5,276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90l-240,90v189q0,121 68,220t172,132Zm0-316Z',
+    settings:
+      'M370-80l-16-128q-13-5-24.5-12T307-235l-119,50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190l119,50q11-8 23-15t24-12l16-128h220l16,128q13,5 24.5,12t22.5,15l119-50l110,190l-103,78q1,7 1,13.5v27q0,6.5-2,13.5l103,78l-110,190l-118-50q-11,8-23,15t-24,12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99,41l39-68l-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65l-39-68l-99,42q-22-23-48.5-38.5T533-694l-13-106h-79l-14,106q-31,8-57.5,23.5T321-633l-99-41l-39,68l86,64q-5,15-7,30t-2,32q0,16 2,31t7,30l-86,65l39,68l99-42q22,23 48.5,38.5T427-266l13,106Zm42-180q58,0 99-41t41-99q0-58-41-99t-99-41q-59,0-99.5,41T342-480q0,58 40.5,99t99.5,41Zm-2-140Z',
     terminal:
       'M160-160q-33,0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33,0 56.5,23.5T880-720v480q0,33-23.5,56.5T800-160H160Zm0-80h640v-400H160v400Zm140-40l-56-56l103-104l-104-104l57-56l160,160l-160,160Zm180,0v-80h240v80H480Z',
+    chat:
+      'M240-400h320v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z',
   };
 
   ns.apiCall = async function apiCall(path, body = {}) {
@@ -148,7 +152,8 @@
       btn.type = 'button'; btn.className = 'agy-context-menu-item'; btn.setAttribute('role', 'menuitem');
       if (item.id) btn.dataset.menuId = item.id;
       btn.disabled = Boolean(item.disabled);
-      btn.innerHTML = `<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>`;
+      const iconHtml = item.icon ? `<span class="hub-tab-icon-slot">${ns.iconSvg(item.icon, 15)}</span>` : '';
+      btn.innerHTML = `${iconHtml}<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>`;
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (btn.disabled) return;
