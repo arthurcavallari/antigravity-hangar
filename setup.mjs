@@ -90,6 +90,7 @@ runSidecarSetup({
     'package.json',
     'sidecar.json',
     'registry.json',
+    'launch.mjs',
     'server.mjs',
     'lib/constants.mjs',
     'lib/config-store.mjs',
