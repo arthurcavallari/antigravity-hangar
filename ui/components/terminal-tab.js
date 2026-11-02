@@ -201,7 +201,7 @@
         p.dotEl?.classList.toggle('active', isFoc); p.wrap.dataset.active = isFoc ? 'true' : 'false';
         p.wrap.classList.toggle('is-focused-pane', isFoc && isSplit); p.viewportEl?.classList.toggle('hidden', isJetbox);
         if (isJetbox) {
-          const effCid = (conversationId && conversationId !== '_new') ? conversationId : (t?.conversationId || tid), src = `/jetbox-terminal?cascadeId=${encodeURIComponent(effCid)}&terminalId=${encodeURIComponent(tid)}&hostTheme=${isLight ? 'light' : 'dark'}&v=10${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+          const effCid = (conversationId && conversationId !== '_new') ? conversationId : (t?.conversationId || tid), src = `/jetbox-terminal?cascadeId=${encodeURIComponent(effCid)}&terminalId=${encodeURIComponent(tid)}&hostTheme=${isLight ? 'light' : 'dark'}&v=11${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
           if (!p.frame) {
             p.frame = document.createElement('iframe'); p.frame.className = 'term-jetbox-frame'; p.frame.dataset.loadedSrc = src; p.frame.src = src;
             p.frame.addEventListener?.('load', () => { const te = ns.getLatestThemeEvent?.(); if (te) try { p.frame.contentWindow?.postMessage(te, '*'); } catch {} if (isInstanceVisible && tid === getActiveTerminalId()) focusPane(tid); });
@@ -279,8 +279,11 @@
           const t = terminals.find((x) => x.terminalId === tid) || getActiveTermObj(); if (!t) return;
           const sel = String(payload.selectionContent || p?.jetboxSelection || ''), qp = ns.copyTerminalQuoteToClipboard({ terminalId: t.terminalId, title: resolveTitle(t.terminalId, payload.title || t.title || 'terminal'), selectionContent: sel, alreadyCopied: Boolean(payload.copied) });
           if (p) p.jetboxSelection = '';
-          ns.showTerminalQuoteToast?.(rootEl, sel ? `Quoted selection from "${qp.cleanName}" — press Ctrl+V in chat` : `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`);
-          if (payload.askAgent) ns.openTerminalQuoteComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t.conversationId || '') });
+          if (payload.askAgent) {
+            ns.openTerminalMiniComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t.conversationId || '') });
+          } else {
+            ns.showTerminalQuoteToast?.(rootEl, sel ? `Quoted selection from "${qp.cleanName}" — press Ctrl+V in chat` : `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`);
+          }
         } else if (type === 'hangar-jetbox-quote-dragend') {
           const t = terminals.find((x) => x.terminalId === tid) || getActiveTermObj(); if (!t) return;
           const sel = String(payload.selectionContent || p?.jetboxSelection || '').trim(); if (!sel) return;

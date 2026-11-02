@@ -358,16 +358,37 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(children.some((c) => c.className === 'term-quote-toast' && c.textContent.includes('Quoted selection from "committed-name"')));
     assert.equal(children.find((c) => c.className === 'term-quote-composer'), undefined);
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-quote-clicked', payload: { terminalId: 't1', title: 'pwsh-1', selectionContent: 'ERR_TEST', copied: true, askAgent: true } } });
-    const composer = children.find((c) => c.className === 'term-quote-composer');
-    assert.ok(composer && !composer.classList.contains('hidden'));
-    composer._els.input.value = 'Why did this fail?\nCheck line 2.';
-    composer._els.input.emit('keydown', { key: 'Enter', shiftKey: true, preventDefault() {}, stopPropagation() {} });
+    const miniComposer = children.find((c) => c.className === 'term-mini-composer');
+    assert.ok(miniComposer && !miniComposer.classList.contains('hidden'));
+    assert.equal(windowObj.Hangar.getSideChatState().isOpen, false);
+    assert.equal(windowObj.Hangar.getSideChatState().threads.length, 0);
+    miniComposer._els.input.value = 'Why did this fail?\nCheck line 2.';
+    miniComposer._els.input.emit('keydown', { key: 'Enter', shiftKey: true, preventDefault() {}, stopPropagation() {} });
     assert.equal(notified.length, 0);
-    await composer._submit();
+    await miniComposer._submitMain();
     assert.equal(notified.length, 1);
     assert.match(notified[0].msg, /From terminal "committed-name":\n```text\nERR_TEST\n```\n\nWhy did this fail\?\nCheck line 2\./);
+    assert.equal(miniComposer.classList.contains('hidden'), true);
+    assert.equal(windowObj.Hangar.getSideChatState().isOpen, false);
+    assert.equal(windowObj.Hangar.getSideChatState().threads.length, 0);
+
+    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-quote-clicked', payload: { terminalId: 't1', title: 'pwsh-1', selectionContent: 'ERR_SIDECHAT', copied: true, askAgent: true } } });
+    assert.equal(miniComposer.classList.contains('hidden'), false);
+    miniComposer._els.input.value = 'Investigate this in Side Chat';
+    const composer = miniComposer._submitSideChat();
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal(miniComposer.classList.contains('hidden'), true);
+    assert.ok(composer && !composer.classList.contains('hidden'));
     assert.equal(windowObj.Hangar.getSideChatState().isOpen, true);
     assert.equal(windowObj.Hangar.getSideChatState().isDocked, true);
+    assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(composer._pendingQuote)), {
+      terminalId: 't1',
+      title: 'committed-name',
+      selectionContent: 'ERR_SIDECHAT',
+      promptText: 'Investigate this in Side Chat',
+      autoSubmit: true,
+    });
     const dockedTabs = windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs;
     assert.ok(dockedTabs.some((t) => t.sidecarId === '__sidechat__' && t.displayName === 'Side Chat' && t.canClose === true));
     const vpEl = makeEl();
@@ -390,6 +411,12 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(composer._els.deleteBtn.className.includes('hidden'));
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Chat #1');
+    miniComposer._setTargetCascadeId(windowObj.Hangar.getSideChatState().threads[0].cascadeId);
+    assert.ok(miniComposer._els.sideChatBtn.innerHTML.includes('Ask in Side Chat #1'));
+    miniComposer._els.input.value = 'Follow-up in existing thread';
+    miniComposer._submitSideChat();
+    assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
+    assert.equal(composer._pendingQuote.promptText, 'Follow-up in existing thread');
     windowObj.Hangar.openTerminalQuoteComposer(vpEl, {}, { conversationId: 'conv-host-1', forceNewThread: true });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 2);

@@ -217,7 +217,7 @@
   function buildChatFrameSrc(cascadeId) {
     const isLight = Boolean(document.body?.classList?.contains?.('theme-light'));
     const uiTok = new URLSearchParams(window.location?.search || '').get('token') || '';
-    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=4${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=5${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
   }
 
   const resolveSideChatTitle = (t) => (t ? (ns.readCustomSideChatTitles()[t.cascadeId] || t.title || 'Side Chat') : 'Side Chat');
@@ -310,13 +310,11 @@
           sideChatBoxes.set(nextTabId, b);
           b._setInstance(nextTabId, nextRoot);
         }
-        const nextAct = rem[rem.length - 1].cascadeId;
         activeSideChatByInstance.delete(instanceTabId);
         ns.setActiveSideChatId(nextTabId, nextAct);
         b?._syncThreadsUi?.(nextAct, null);
         onSideChatStateChange?.({ ...ns.getSideChatState(), replacedSidecarId: { from: instanceTabId, to: nextTabId } });
       } else {
-        const nextAct = rem[rem.length - 1].cascadeId;
         ns.setActiveSideChatId(instanceTabId, nextAct);
         sideChatBoxes.get(instanceTabId)?._syncThreadsUi?.(nextAct, null);
         onSideChatStateChange?.(ns.getSideChatState());
@@ -327,7 +325,6 @@
       ns.closeSideChatDrawer({ deleteAll: sideChatThreads.length === 0, notify: true });
       return;
     }
-    const nextAct = rem[rem.length - 1].cascadeId;
     ns.setActiveSideChatId(ns.SIDECHAT_TAB_ID, nextAct);
     sideChatBoxes.get(ns.SIDECHAT_TAB_ID)?._syncThreadsUi?.(nextAct, null);
     onSideChatStateChange?.(ns.getSideChatState());
@@ -883,19 +880,22 @@
       const th = sideChatThreads.find((t) => t.cascadeId === targetCascadeId);
       if (quoteToInject && (quoteToInject.selectionContent || quoteToInject.terminalId)) {
         if (th) { th.hasActivity = true; th.quotePayload = quoteToInject; }
-        box._pendingQuote = { terminalId: quoteToInject.terminalId || '', title: quoteToInject.cleanName || 'terminal', selectionContent: quoteToInject.selectionContent || '' };
+        box._pendingQuote = {
+          terminalId: quoteToInject.terminalId || '',
+          title: quoteToInject.cleanName || 'terminal',
+          selectionContent: quoteToInject.selectionContent || '',
+          promptText: quoteToInject.promptText || '',
+          autoSubmit: Boolean(quoteToInject.autoSubmit),
+        };
       }
       const activeQuote = th?.quotePayload || null;
-      const hasActiveQuote = Boolean(activeQuote && (activeQuote.selectionContent || activeQuote.terminalId));
       if (activeQuote) box._payload = activeQuote;
       const sel = String(activeQuote?.selectionContent || '').trim(), lines = sel ? sel.split(/\r?\n/) : [];
-      badge.textContent = hasActiveQuote ? `@${activeQuote.cleanName || 'terminal'}${lines.length ? ` (${lines.length} line${lines.length > 1 ? 's' : ''})` : ''}` : '';
-      badge.classList?.toggle?.('hidden', !hasActiveQuote);
-      mainToggleBtn.classList?.toggle?.('hidden', !hasActiveQuote);
-      if (!hasActiveQuote) {
-        mainBar.classList?.add?.('hidden');
-        mainToggleBtn.classList?.remove?.('active');
-      }
+      badge.textContent = '';
+      badge.classList?.add?.('hidden');
+      mainToggleBtn.classList?.add?.('hidden');
+      mainBar.classList?.add?.('hidden');
+      mainToggleBtn.classList?.remove?.('active');
       preview.textContent = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n…' : '');
       preview.classList?.toggle?.('hidden', !sel);
 
@@ -945,21 +945,40 @@
     const root = viewportEl || hostEl || document.body;
     if (!root || typeof document?.createElement !== 'function') return null;
     const hasQuote = Boolean(rawPayload && (rawPayload.selectionContent || rawPayload.terminalId || rawPayload.cleanName));
-    const payload = hasQuote ? (rawPayload.cleanName ? rawPayload : ns.buildTerminalScopePayload(rawPayload)) : { cleanName: opts.title || 'terminal', terminalId: opts.terminalId || '', selectionContent: '' };
+    const basePayload = hasQuote ? (rawPayload.cleanName ? rawPayload : ns.buildTerminalScopePayload(rawPayload)) : { cleanName: opts.title || 'terminal', terminalId: opts.terminalId || '', selectionContent: '' };
+    const payload = { ...basePayload, promptText: String(rawPayload?.promptText || opts.promptText || ''), autoSubmit: Boolean(rawPayload?.autoSubmit ?? opts.autoSubmit) };
     const popOut = Boolean(opts.popOut);
+    const existingTarget = opts.targetCascadeId ? sideChatThreads.find((t) => t.cascadeId === opts.targetCascadeId) : null;
+    if (existingTarget) {
+      const existingCid = existingTarget.cascadeId;
+      const rootId = poppedSideChatIds.has(existingCid) ? existingCid : (sideChatGroupMap[existingCid] || '');
+      const targetTabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
+      const targetBox = ensureSideChatBox(targetTabId, root);
+      if (hostEl && hostEl !== root) hostEl._hangarQuoteComposer = targetBox;
+      targetBox._toastRoot = hostEl || root;
+      targetBox._payload = payload;
+      targetBox._convId = opts.conversationId || targetBox._convId || '';
+      if (!rootId) {
+        isSideChatOpen = true;
+        isSideChatDocked = true;
+        targetBox.dataset.dockMode = 'docked';
+        targetBox.classList?.remove?.('hidden');
+      }
+      targetBox._syncThreadsUi?.(existingCid, hasQuote ? payload : null);
+      onSideChatStateChange?.({ ...ns.getSideChatState(), activateTab: !opts.skipActivate, targetTabId, pane: opts.pane || '' });
+      return targetBox;
+    }
     const box = ensureSideChatBox(ns.SIDECHAT_TAB_ID, root);
     if (hostEl && hostEl !== root) hostEl._hangarQuoteComposer = box;
     box._toastRoot = hostEl || root;
     box._payload = payload;
     box._convId = opts.conversationId || box._convId || '';
     const sel = String(payload.selectionContent || '').trim(), lines = sel ? sel.split(/\r?\n/) : [];
-    box._els.badge.textContent = hasQuote ? `@${payload.cleanName}${lines.length ? ` (${lines.length} line${lines.length > 1 ? 's' : ''})` : ''}` : '';
-    box._els.badge.classList?.toggle?.('hidden', !hasQuote);
-    box._els.mainToggleBtn.classList?.toggle?.('hidden', !hasQuote);
-    if (!hasQuote) {
-      box._els.mainBar.classList?.add?.('hidden');
-      box._els.mainToggleBtn.classList?.remove?.('active');
-    }
+    box._els.badge.textContent = '';
+    box._els.badge.classList?.add?.('hidden');
+    box._els.mainToggleBtn.classList?.add?.('hidden');
+    box._els.mainBar.classList?.add?.('hidden');
+    box._els.mainToggleBtn.classList?.remove?.('active');
     box._els.preview.textContent = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n…' : '');
     box._els.preview.classList?.toggle?.('hidden', !sel);
 
@@ -992,6 +1011,154 @@
     });
     if (!popOut && !opts.skipActivate) onSideChatStateChange?.({ ...ns.getSideChatState(), activateTab: true, targetTabId: ns.SIDECHAT_TAB_ID, pane: opts.pane || '' });
     return box;
+  };
+
+  ns.openTerminalMiniComposer = function openTerminalMiniComposer(hostEl, rawPayload = {}, opts = {}) {
+    const root = hostEl || document.body;
+    if (!root || typeof document?.createElement !== 'function') return null;
+    const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || '');
+    const payload = rawPayload?.cleanName ? rawPayload : ns.buildTerminalScopePayload(rawPayload || {});
+    let mini = root._hangarMiniComposer;
+    if (!mini) {
+      mini = document.createElement('div');
+      mini.className = 'term-mini-composer';
+      const hdr = document.createElement('div'); hdr.className = 'term-mini-header';
+      const hdrLeft = document.createElement('div'); hdrLeft.className = 'term-mini-header-left';
+      const badge = document.createElement('span'); badge.className = 'term-quote-composer-badge';
+      const preview = document.createElement('pre'); preview.className = 'term-quote-composer-preview term-mini-preview';
+      hdrLeft.append?.(badge, preview);
+      const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.className = 'term-quote-composer-close term-mini-close'; closeBtn.title = 'Cancel (Esc)'; closeBtn.textContent = '×';
+      hdr.append?.(hdrLeft, closeBtn);
+
+      const input = document.createElement('textarea'); input.className = 'term-quote-composer-input term-mini-input'; input.rows = 2;
+      input.placeholder = `Ask about this terminal output… (Enter to send to Main Chat, ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} for Side Chat)`;
+      const syncHeight = () => { if (input.style) { input.style.height = 'auto'; if (input.scrollHeight) input.style.height = `${Math.min(110, Math.max(36, input.scrollHeight))}px`; } };
+      input.addEventListener?.('input', syncHeight);
+
+      const footer = document.createElement('div'); footer.className = 'term-mini-footer';
+      const hint = document.createElement('span'); hint.className = 'term-mini-hint'; hint.textContent = 'Esc to cancel · Shift+Enter for new line';
+      const actions = document.createElement('div'); actions.className = 'term-mini-actions';
+      const scSplit = document.createElement('div'); scSplit.className = 'term-mini-sidechat-split';
+      const sideChatBtn = document.createElement('button'); sideChatBtn.type = 'button'; sideChatBtn.className = 'agy-btn agy-btn-outline term-mini-sidechat-btn';
+      if (!sideChatBtn.dataset) sideChatBtn.dataset = {}; sideChatBtn.dataset.role = 'mini-ask-sidechat';
+      const sideChatPickBtn = document.createElement('button'); sideChatPickBtn.type = 'button'; sideChatPickBtn.className = 'agy-btn agy-btn-outline term-mini-sidechat-pick';
+      if (!sideChatPickBtn.dataset) sideChatPickBtn.dataset = {}; sideChatPickBtn.dataset.role = 'mini-pick-sidechat';
+      sideChatPickBtn.title = 'Choose Side Chat thread (New Side Chat by default)';
+      sideChatPickBtn.innerHTML = ns.iconSvg?.('expand_more', 14) || '▾';
+      scSplit.append?.(sideChatBtn, sideChatPickBtn);
+
+      const sendBtn = document.createElement('button'); sendBtn.type = 'button'; sendBtn.className = 'agy-btn agy-btn-primary term-mini-send-btn';
+      if (!sendBtn.dataset) sendBtn.dataset = {}; sendBtn.dataset.role = 'mini-send-main';
+      sendBtn.textContent = 'Send to Main ↵';
+      actions.append?.(scSplit, sendBtn);
+      footer.append?.(hint, actions);
+
+      mini.append?.(hdr, input, footer);
+      root.appendChild?.(mini);
+
+      mini._targetCascadeId = '';
+      const syncSideChatBtn = () => {
+        const th = mini._targetCascadeId ? sideChatThreads.find((t) => t.cascadeId === mini._targetCascadeId) : null;
+        if (!th) mini._targetCascadeId = '';
+        const targetLabel = th ? `Ask in ${resolveSideChatTitle(th)}` : 'Ask in Side Chat';
+        sideChatBtn.title = `${targetLabel} (${isMac ? '⌘+Enter' : 'Ctrl+Enter'})`;
+        sideChatBtn.innerHTML = `<span>${ns.escHtml?.(targetLabel) || targetLabel}</span><span class="term-mini-kbd">${isMac ? '⌘↵' : 'Ctrl+↵'}</span>`;
+      };
+      mini._setTargetCascadeId = (cid = '') => {
+        mini._targetCascadeId = String(cid || '');
+        syncSideChatBtn();
+        setTimeout(() => input.focus?.(), 10);
+      };
+      mini._hide = () => {
+        mini.classList?.add?.('hidden');
+      };
+      mini._submitMain = async () => {
+        if (sendBtn.disabled) return;
+        const cur = mini._payload || { cleanName: 'terminal', terminalId: '', selectionContent: '' }, convId = mini._convId || '';
+        const msg = ns.formatTerminalAgentMessage(cur, input.value);
+        sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
+        try {
+          const res = await ns.notifyAgent?.(msg, convId, `Terminal Quote: ${cur.cleanName}`);
+          if (res?.ok === false) throw new Error(res.error || 'Could not send message to agent');
+          input.value = ''; syncHeight(); mini._hide();
+          ns.showTerminalQuoteToast(mini._toastRoot || root, `Sent quote from "${cur.cleanName}" to Main Chat`);
+        } catch (err) {
+          ns.showTerminalQuoteToast(mini._toastRoot || root, err?.message || 'Failed to send to Agent');
+        } finally {
+          sendBtn.disabled = false; sendBtn.textContent = 'Send to Main ↵';
+        }
+      };
+      mini._submit = mini._submitMain;
+      mini._submitSideChat = (overrideTargetCid) => {
+        const cur = mini._payload || { cleanName: 'terminal', terminalId: '', selectionContent: '' }, convId = mini._convId || '';
+        const rawTarget = overrideTargetCid !== undefined ? String(overrideTargetCid || '') : mini._targetCascadeId;
+        const validTarget = rawTarget && sideChatThreads.some((t) => t.cascadeId === rawTarget) ? rawTarget : '';
+        const promptText = String(input.value || '').trim();
+        input.value = ''; syncHeight(); mini._hide();
+        return ns.openTerminalQuoteComposer(mini._toastRoot || root, {
+          ...cur,
+          promptText,
+          autoSubmit: Boolean(promptText),
+        }, {
+          conversationId: convId,
+          forceNewThread: !validTarget,
+          targetCascadeId: validTarget,
+        });
+      };
+
+      closeBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); mini._hide(); });
+      sendBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); mini._submitMain(); });
+      sideChatBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); mini._submitSideChat(); });
+      sideChatPickBtn.addEventListener?.('click', (e) => {
+        e.stopPropagation?.();
+        const r = sideChatPickBtn.getBoundingClientRect?.() || { left: e.clientX || 120, top: e.clientY || 120 };
+        const items = [
+          {
+            id: 'new-sidechat-target',
+            icon: 'add',
+            label: `+ New Side Chat${!mini._targetCascadeId ? ' ✓' : ''}`,
+            onClick: () => mini._setTargetCascadeId(''),
+          },
+        ];
+        if (sideChatThreads.length > 0) {
+          items.push({ separator: true });
+          for (const t of sideChatThreads) {
+            const ttl = resolveSideChatTitle(t);
+            items.push({
+              id: `target-${t.cascadeId}`,
+              icon: 'chat',
+              label: `${ttl}${mini._targetCascadeId === t.cascadeId ? ' ✓' : ''}`,
+              onClick: () => mini._setTargetCascadeId(t.cascadeId),
+            });
+          }
+        }
+        ns.openTabContextMenu?.({ clientX: r.left, clientY: Math.max(24, (r.top || 120) - 8), preventDefault() {}, stopPropagation() {} }, items);
+      });
+      input.addEventListener?.('keydown', (e) => {
+        e.stopPropagation?.();
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault?.(); mini._submitSideChat(); }
+        else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault?.(); mini._submitMain(); }
+        else if (e.key === 'Escape') { e.preventDefault?.(); mini._hide(); }
+      });
+
+      mini._els = { badge, preview, input, sendBtn, sideChatBtn, sideChatPickBtn, closeBtn, hint };
+      mini._syncSideChatBtn = syncSideChatBtn;
+      root._hangarMiniComposer = mini;
+    }
+
+    mini._toastRoot = root;
+    mini._payload = payload;
+    mini._convId = opts.conversationId || mini._convId || '';
+    mini._targetCascadeId = '';
+    mini._syncSideChatBtn?.();
+
+    const sel = String(payload.selectionContent || '').trim(), lines = sel ? sel.split(/\r?\n/) : [];
+    mini._els.badge.textContent = `@${payload.cleanName || 'terminal'}${lines.length ? ` (${lines.length} line${lines.length === 1 ? '' : 's'})` : ''}`;
+    mini._els.preview.textContent = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n…' : '');
+    mini._els.preview.classList?.toggle?.('hidden', !sel);
+    mini.classList?.remove?.('hidden');
+    setTimeout(() => mini._els.input.focus?.(), 10);
+    return mini;
   };
 
   ns.renderSideChatSlot = function renderSideChatSlot({ viewportEl, topSlotId, bottomSlotId, splitEnabled } = {}) {
@@ -1198,8 +1365,11 @@
       popup.classList?.add?.('hidden');
       activeSelection = null;
       window.getSelection?.()?.removeAllRanges?.();
-      ns.showTerminalQuoteToast(toastRoot, `Quoted "${payload.cleanName}" (${text.split('\n').length} line${text.includes('\n') ? 's' : ''}) — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`);
-      if (askAgent) ns.openTerminalQuoteComposer(toastRoot, payload, { conversationId: meta.conversationId || '' });
+      if (askAgent) {
+        ns.openTerminalMiniComposer(toastRoot, payload, { conversationId: meta.conversationId || '' });
+      } else {
+        ns.showTerminalQuoteToast(toastRoot, `Quoted "${payload.cleanName}" (${text.split('\n').length} line${text.includes('\n') ? 's' : ''}) — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`);
+      }
       opts.onQuoted?.(payload);
       return payload;
     };
