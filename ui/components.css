@@ -102,6 +102,7 @@
 .term-session-pill.is-dragging-source, .sidechat-session-pill.is-dragging-source { opacity: 0; pointer-events: none; }
 .term-session-pill.is-dragging, .sidechat-session-pill.is-dragging, .term-pane-header.is-dragging { opacity: 0.45; }
 .term-split-badge { opacity: 0.78; font-size: var(--text-sm, 0.875rem); line-height: 1.25rem; }
+.term-external-badge { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 3px; color: #60a5fa; background: rgba(59, 130, 246, 0.12); flex-shrink: 0; }
 .term-session-label { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-rename-input { width: 100px; height: 20px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--hub-primary); background: var(--hub-bg); color: var(--hub-fg); font-family: var(--hub-font-sans); font-size: 12px; outline: none; }
 .term-session-pin { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 2px; border: none; background: transparent; color: var(--hub-muted); border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy); }

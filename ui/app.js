@@ -298,9 +298,10 @@
         onUpdateSettings: async (patch) => {
           if (!apiCall) return;
           ++layoutSeq;
-          if (patch?.extensionsDisplayMode !== undefined || patch?.terminalDisplayMode !== undefined) {
+          if (patch?.extensionsDisplayMode !== undefined || patch?.terminalDisplayMode !== undefined || patch?.showExternalTerminals !== undefined) {
             if (patch.extensionsDisplayMode !== undefined) state.layout.extensionsDisplayMode = patch.extensionsDisplayMode;
             if (patch.terminalDisplayMode !== undefined) state.layout.terminalDisplayMode = patch.terminalDisplayMode;
+            if (patch.showExternalTerminals !== undefined) state.layout.showExternalTerminals = patch.showExternalTerminals;
             state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
             patch = { ...patch, pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID };
           }

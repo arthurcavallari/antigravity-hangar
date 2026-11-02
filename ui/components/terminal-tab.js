@@ -136,12 +136,14 @@
       tabGroups.forEach((grp, gIdx) => {
         const isCurrent = grp.groupId === activeGrp?.groupId, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
         const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
+        const isExternal = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal);
         const pill = document.createElement('button');
-        pill.type = 'button'; pill.className = `term-session-pill${isCurrent ? ' active' : ''}`; pill.dataset.pinned = isPinned ? 'true' : 'false'; pill.dataset.termTid = focTid;
-        pill.title = `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`;
+        pill.type = 'button'; pill.className = `term-session-pill${isCurrent ? ' active' : ''}`; pill.dataset.pinned = isPinned ? 'true' : 'false'; pill.dataset.termTid = focTid; pill.dataset.external = isExternal ? 'true' : 'false';
+        pill.title = `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`;
         const badgeHtml = grp.paneIds.length > 1 ? `<span class="term-split-badge">(${grp.paneIds.length})</span>` : '';
+        const extBadgeHtml = isExternal ? `<span class="term-external-badge" title="Opened outside Hangar (shared with Antigravity)">${ns.iconSvg('open_in_new', 11)}</span>` : '';
         const trailHtml = isPinned ? `<span class="term-session-pin" data-pin-gid="${ns.escHtml(grp.groupId)}" title="Unpin Tab">${ns.iconSvg('keep', 16)}</span>` : `<span class="term-session-close-wrap"><span class="term-session-close" data-close-gid="${ns.escHtml(grp.groupId)}" title="Close Tab">${ns.iconSvg('close', 14)}</span></span>`;
-        pill.innerHTML = `${ns.iconSvg('terminal', 16)}<span class="term-session-label">${ns.escHtml(cleanTitle)}</span>${badgeHtml}${trailHtml}`;
+        pill.innerHTML = `${ns.iconSvg('terminal', 16)}<span class="term-session-label">${ns.escHtml(cleanTitle)}</span>${badgeHtml}${extBadgeHtml}${trailHtml}`;
         pill.querySelector('[data-close-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); closeTerminalsByIds(grp.paneIds); });
         pill.querySelector('[data-pin-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); togglePin(grp); });
         pill.addEventListener('dblclick', (e) => { e.stopPropagation(); startInlineRename(pill, focTid); });

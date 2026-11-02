@@ -488,6 +488,13 @@
                 <button type="button" data-role="engine-direct" class="agy-toggle-item">Direct VT100</button>
               </div>
             </div>
+            <div class="manager-section-bar">
+              <span class="manager-section-label">External Workspace Terminals (Tabs opened outside Hangar)</span>
+              <div class="agy-toggle-group">
+                <button type="button" data-role="ext-terms-show" class="agy-toggle-item">Show External</button>
+                <button type="button" data-role="ext-terms-hide" class="agy-toggle-item">Hangar Only</button>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -534,6 +541,12 @@
       shell.querySelector('[data-role="term-mode-button"]')?.addEventListener('click', () => {
         applyUpdate({ terminalDisplayMode: 'button' }, 'Showing Terminal as a top-bar icon button.');
       });
+      shell.querySelector('[data-role="ext-terms-show"]')?.addEventListener('click', () => {
+        applyUpdate({ showExternalTerminals: true }, 'Showing external workspace terminals inside Hangar.');
+      });
+      shell.querySelector('[data-role="ext-terms-hide"]')?.addEventListener('click', () => {
+        applyUpdate({ showExternalTerminals: false }, 'Hiding external terminals (showing Hangar terminals only).');
+      });
 
       const setEngine = (mode) => {
         ns.saveEngineMode?.(mode);
@@ -574,6 +587,10 @@
     const engineMode = ns.readEngineMode?.() === 'direct' ? 'direct' : 'jetbox';
     shell.querySelector('[data-role="engine-jetbox"]')?.classList.toggle('active', engineMode === 'jetbox');
     shell.querySelector('[data-role="engine-direct"]')?.classList.toggle('active', engineMode === 'direct');
+
+    const showExtTerms = opts.layout?.showExternalTerminals !== false;
+    shell.querySelector('[data-role="ext-terms-show"]')?.classList.toggle('active', showExtTerms);
+    shell.querySelector('[data-role="ext-terms-hide"]')?.classList.toggle('active', !showExtTerms);
   }
 
   ns.renderExtensionsTab = function renderExtensionsTab(opts = {}) {

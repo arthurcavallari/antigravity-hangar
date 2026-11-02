@@ -12,13 +12,15 @@
     const popped = ns.getPoppedTerminalIds?.() || new Set(), customTitles = ns.readCustomTermTitles?.() || {}, grpMap = ns.readGroupMap?.() || {};
     const poppedSc = ns.getPoppedSideChatIds?.() || new Set(), customScTitles = ns.readCustomSideChatTitles?.() || {}, scGrpMap = ns.getSideChatGroupMap?.() || {};
     const pinnedSet = new Set(Array.isArray(layout?.pinnedTabIds) ? layout.pinnedTabIds : []), closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds.filter((id) => !pinnedSet.has(id)) : []);
-    const termById = new Map((terminals || []).map((t) => [t.terminalId, t]));
-    const poppedList = termById.size ? [...popped].filter((id) => termById.has(id)).map((id) => termById.get(id)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
+    const visibleTerminals = layout?.showExternalTerminals === false ? (terminals || []).filter((t) => !t?.isExternal) : (terminals || []);
+    const termById = new Map(visibleTerminals.map((t) => [t.terminalId, t]));
+    const poppedList = (terminals || []).length ? [...popped].filter((id) => termById.has(id)).map((id) => termById.get(id)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
     const poppedTabs = poppedList.map((t, idx) => {
       const sidecarId = `terminal__${t.terminalId}`, grps = ns.readTabGroups?.(sidecarId) || [], actGid = ns.getActiveGroupId?.(sidecarId) || '';
       const actGrp = grps.find((g) => g.groupId === actGid) || grps[0] || null, focTid = actGrp?.focusedPaneId || actGrp?.paneIds?.[0] || t.terminalId;
-      const base = customTitles[focTid] || `Terminal ${idx + 2}`, cnt = 1 + (terminals || []).filter((x) => x.terminalId !== t.terminalId && grpMap[x.terminalId] === t.terminalId).length;
-      return { sidecarId, terminalId: t.terminalId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, matchesWorkspace: true };
+      const base = customTitles[focTid] || `Terminal ${idx + 2}`, cnt = 1 + visibleTerminals.filter((x) => x.terminalId !== t.terminalId && grpMap[x.terminalId] === t.terminalId).length;
+      const isExternal = Boolean(t.isExternal || visibleTerminals.some((x) => grpMap[x.terminalId] === t.terminalId && x.isExternal));
+      return { sidecarId, terminalId: t.terminalId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, isExternal, matchesWorkspace: true };
     });
     const scState = ns.getSideChatState?.(), allScThreads = scState?.threads || [];
     const poppedScTabs = [...poppedSc].map((rootId, idx) => {
@@ -78,11 +80,13 @@
 
   function updateSidecarTabButton(btn, sc, isActive, opts = {}) {
     btn._sc = sc; btn._opts = opts; btn.dataset.pane = opts.pane || 'single'; btn.dataset.pinned = sc.isPinned ? 'true' : 'false'; btn.classList.toggle('active', Boolean(isActive));
-    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeWrapEl = btn.querySelector('[data-role="tab-close-wrap"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
+    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), extBadge = btn.querySelector('[data-role="tab-ext-badge"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeWrapEl = btn.querySelector('[data-role="tab-close-wrap"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
+    if (extBadge) { const showExt = Boolean(sc.isTerminal && sc.isExternal); extBadge.className = showExt ? 'term-external-badge' : 'term-external-badge hidden'; if (showExt && !extBadge.innerHTML) { extBadge.innerHTML = ns.iconSvg('open_in_new', 11); extBadge.title = 'Opened outside Hangar (shared with Antigravity)'; } }
     if (pinEl) { pinEl.className = sc.isPinned ? 'hub-tab-pin' : 'hub-tab-pin hidden'; if (sc.isPinned && !pinEl.innerHTML) { pinEl.innerHTML = ns.iconSvg('keep', 16); pinEl.title = 'Unpin Tab'; } }
     if (closeWrapEl && closeEl) { const showClose = Boolean(sc.canClose && !sc.isPinned); closeWrapEl.className = showClose ? 'hub-tab-close-wrap' : 'hub-tab-close-wrap hidden'; if (showClose) { if (!closeEl.innerHTML) closeEl.innerHTML = ns.iconSvg('close', 14); closeEl.title = ((sc.isSideChat && !sc.sideChatId) || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab'; } }
     if (sc.isTerminal) {
-      btn.title = `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${pinSuffix}`;
+      const extSuffix = sc.isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : '';
+      btn.title = `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${extSuffix}${pinSuffix}`;
       if (iconSlot && iconSlot.dataset.icon !== 'terminal') { iconSlot.dataset.icon = 'terminal'; iconSlot.innerHTML = ns.iconSvg('terminal', 16); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
       if (dot) dot.className = 'status-dot hidden'; return;
@@ -108,11 +112,11 @@
   }
 
   function createSidecarTabButton(sc, isActive, opts = {}) {
-    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), dot = document.createElement('span'), pinEl = document.createElement('span'), closeWrapEl = document.createElement('span'), closeEl = document.createElement('span');
+    const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), extBadge = document.createElement('span'), dot = document.createElement('span'), pinEl = document.createElement('span'), closeWrapEl = document.createElement('span'), closeEl = document.createElement('span');
     btn.type = 'button'; btn.className = 'hub-tab'; btn.dataset.sidecarId = sc.sidecarId;
-    iconSlot.className = 'hub-tab-icon-slot'; label.className = 'hub-tab-label'; label.dataset.role = 'tab-label'; dot.dataset.role = 'tab-dot'; pinEl.dataset.role = 'tab-pin'; closeWrapEl.dataset.role = 'tab-close-wrap'; closeEl.className = 'hub-tab-close'; closeEl.dataset.role = 'tab-close';
+    iconSlot.className = 'hub-tab-icon-slot'; label.className = 'hub-tab-label'; label.dataset.role = 'tab-label'; extBadge.dataset.role = 'tab-ext-badge'; dot.dataset.role = 'tab-dot'; pinEl.dataset.role = 'tab-pin'; closeWrapEl.dataset.role = 'tab-close-wrap'; closeEl.className = 'hub-tab-close'; closeEl.dataset.role = 'tab-close';
     closeWrapEl.appendChild(closeEl);
-    btn.append(iconSlot, label, dot, pinEl, closeWrapEl);
+    btn.append(iconSlot, label, extBadge, dot, pinEl, closeWrapEl);
     updateSidecarTabButton(btn, sc, isActive, opts);
     pinEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: btn._sc?.sidecarId || sc.sidecarId }); });
     closeEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); });

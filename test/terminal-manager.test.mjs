@@ -33,13 +33,18 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       return {
         terminals: [
           { terminalId: 't-match', pid: 1234, title: 'pwsh', projectId: 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'hangar:conv-1' },
+          { terminalId: 't-ext', pid: 2222, title: 'pwsh-ext', projectId: 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'conv-1' },
           { terminalId: 't-other', pid: 5678, title: 'bash', projectId: 'file:///c:/other/project', cwd: 'C:\\other\\project' },
         ],
       };
     };
     const list = await listWorkspaceTerminals({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', rpcFn: mockRpc });
-    assert.equal(list.length, 1); assert.equal(list[0].terminalId, 't-match'); assert.equal(list[0].pid, 1234);
+    assert.equal(list.length, 2);
+    assert.equal(list[0].terminalId, 't-match'); assert.equal(list[0].pid, 1234); assert.equal(list[0].isExternal, false);
     assert.equal(list[0].conversationId, 'conv-1'); assert.equal(list[0].workspaceUri, 'file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
+    assert.equal(list[1].terminalId, 't-ext'); assert.equal(list[1].isExternal, true);
+    const hangarOnlyList = await listWorkspaceTerminals({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', showExternalTerminals: false, rpcFn: mockRpc });
+    assert.deepEqual(hangarOnlyList.map((t) => t.terminalId), ['t-match']);
   });
 
   it('creates a terminal, streams 5-byte Connect output, chains inputOffset acks, renames, and closes cleanly', async () => {
@@ -437,7 +442,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       onRefreshState: async () => {
         windowObj.Hangar.renderTerminalSlots({
           topTermEl: topTermSlot, bottomTermEl: makeEl(), topSlotId: '__terminal__', bottomSlotId: '', splitEnabled: false,
-          terminals: [...curTerms, { terminalId: 't-spawned-new', title: 'pwsh-new' }], conversationId: 'conv-host-1',
+          terminals: [...curTerms, { terminalId: 't-spawned-new', title: 'pwsh-new', isExternal: false }, { terminalId: 't-ext-tab', title: 'pwsh-ext', isExternal: true }], conversationId: 'conv-host-1',
         });
       },
     });
@@ -447,6 +452,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(windowObj.Hangar.getActiveGroupId('__terminal__'), 't-spawned-new');
     const activePills = children.filter((c) => c.className === 'term-session-pill active');
     assert.equal(activePills.at(-1)?.dataset?.termTid, 't-spawned-new');
+    assert.equal(activePills.at(-1)?.innerHTML.includes('term-external-badge'), false);
+    const extPill = children.filter((c) => c.dataset?.termTid === 't-ext-tab').at(-1);
+    assert.ok(extPill?.innerHTML.includes('term-external-badge'));
+    const hiddenExtPart = windowObj.Hangar.partitionSplitTabs([], { showExternalTerminals: false }, [{ terminalId: 'term-popped-1', title: 'ext-popped', isExternal: true }]);
+    assert.equal(hiddenExtPart.workspaceTabs.some((t) => t.sidecarId === 'terminal__term-popped-1'), false);
 
     windowObj.Hangar.saveCustomTermTitle('t-spawned-new', 'persisted-term');
     const savedTermState = windowObj.Hangar.serializeTerminalState();
