@@ -586,6 +586,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.ok(chatHtml.includes('[data-testid="conversation-view"]') && chatHtml.includes('z-index: 10 !important') && chatHtml.includes('PatchedWorker'));
       assert.ok(chatHtml.includes('StreamAgentStateUpdates') && chatHtml.includes('hangar-inject-terminal-quote') && chatHtml.includes('hangar-sidechat-switch-cascade'));
       assert.ok(chatHtml.includes('data-hangar-overview="open"') && chatHtml.includes('hangar-sidechat-toggle-overview'));
+      assert.ok(chatHtml.includes('div.shrink-0:has(> .\\@container\\/titlebar)'));
       assert.ok(chatHtml.includes('overview-panel-row-terminal') && chatHtml.includes('hangar-sidechat-open-terminal'));
       const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1], chatWinListeners = {}, chatPosted = [];
       let panelVisible = true;
