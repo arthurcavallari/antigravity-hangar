@@ -234,7 +234,10 @@
     }
 
     const bottomIds = new Set(bottomTabs.map((s) => s.sidecarId));
-    if (splitEnabled && (!state.bottomActiveTabId || !bottomIds.has(state.bottomActiveTabId))) {
+    const isSpecialBottom =
+      (state.layout?.terminalDisplayMode === 'button' && state.bottomActiveTabId === ns.TERMINAL_TAB_ID && (typeof ns.isMainTerminalOpen === 'function' ? ns.isMainTerminalOpen() : true)) ||
+      (state.layout?.extensionsDisplayMode === 'button' && state.bottomActiveTabId === ns.EXTENSIONS_TAB_ID);
+    if (splitEnabled && (!state.bottomActiveTabId || (!bottomIds.has(state.bottomActiveTabId) && !isSpecialBottom))) {
       state.bottomActiveTabId = bottomTabs[0]?.sidecarId || '';
     }
 

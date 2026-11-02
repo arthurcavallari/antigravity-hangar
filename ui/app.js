@@ -466,7 +466,11 @@
       const wsChanged = Boolean(prevWsKey && nextWsKey && prevWsKey !== nextWsKey);
       if (wsChanged) { lastNonExtTabId = ''; state.bottomActiveTabId = ''; }
       if (data.hangar) state.hangar = data.hangar;
-      state.sidecars = data.sidecars || []; state.terminals = data.terminals || [];
+      state.sidecars = data.sidecars || [];
+      const incomingTerms = data.terminals || [];
+      state.terminals = (seq === layoutSeq || wsChanged)
+        ? incomingTerms
+        : [...incomingTerms, ...state.terminals.filter((t) => t?.terminalId && !incomingTerms.some((x) => x.terminalId === t.terminalId) && !ns.isTerminalClosing?.(t.terminalId))];
       state.plugins = data.plugins || []; state.suggestions = data.suggestions || [];
       const wsPath = state.activeWorkspace?.workspacePath || '';
       if (data.layout && (seq === layoutSeq || wsChanged)) {
@@ -502,25 +506,40 @@
       return removedId && removedId !== repTo ? next.filter((id) => id !== removedId) : next;
     };
     if (scState?.openTerminal) {
-      const pane = scState.pane || 'top';
+      const sourcePane = scState.pane || 'top';
+      const targetPane = sourcePane === 'bottom' ? 'top' : 'bottom';
+      const sourceTabId = scState.sourceTabId || ns.SIDECHAT_TAB_ID;
       if ((ns.getInstanceTerminals?.(state.terminals, '') || []).length === 0) {
-        await handleTabContextAction({ action: 'new-terminal', pane, sidecarId: scState.sourceTabId || ns.SIDECHAT_TAB_ID });
-        return;
+        const wsPath = state.activeWorkspace?.workspacePath || '';
+        try {
+          const created = await ns.apiCall?.('/api/terminal/create', { workspacePath: wsPath, conversationId: hangarConversationId });
+          if (created?.terminalId) {
+            created.title = ns.formatTermTitle?.(created.title || 'pwsh') || created.title || 'pwsh';
+            state.terminals = [...state.terminals.filter((t) => t.terminalId !== created.terminalId), created];
+            ns.setActiveGroupId?.(ns.TERMINAL_TAB_ID, created.terminalId);
+          }
+        } catch { /* fallback to empty terminal stage */ }
       }
       ++layoutSeq;
       ns.setMainTerminalOpen?.(true);
-      state.layout.closedTabIds = (state.layout.closedTabIds || []).filter((id) => id !== ns.TERMINAL_TAB_ID);
-      if (state.layout.splitViewEnabled && pane === 'bottom') {
-        state.layout.topSplitTabIds = (state.layout.topSplitTabIds || []).filter((id) => id !== ns.TERMINAL_TAB_ID);
+      state.layout.splitViewEnabled = true;
+      state.layout.closedTabIds = (state.layout.closedTabIds || []).filter((id) => id !== ns.TERMINAL_TAB_ID && id !== sourceTabId);
+      const topSet = new Set(Array.isArray(state.layout.topSplitTabIds) ? state.layout.topSplitTabIds : (state.layout.pinnedTopSidecarId ? [state.layout.pinnedTopSidecarId] : []));
+      if (targetPane === 'bottom') {
+        topSet.add(sourceTabId);
+        topSet.delete(ns.TERMINAL_TAB_ID);
+        state.layout.pinnedTopSidecarId = sourceTabId;
         state.bottomActiveTabId = ns.TERMINAL_TAB_ID;
       } else {
-        if (state.layout.splitViewEnabled && !state.layout.topSplitTabIds?.includes(ns.TERMINAL_TAB_ID)) {
-          state.layout.topSplitTabIds = [...(state.layout.topSplitTabIds || []), ns.TERMINAL_TAB_ID];
-        }
+        topSet.delete(sourceTabId);
+        topSet.add(ns.TERMINAL_TAB_ID);
         state.layout.pinnedTopSidecarId = ns.TERMINAL_TAB_ID;
+        state.bottomActiveTabId = sourceTabId;
       }
+      state.layout.topSplitTabIds = [...topSet];
       renderAll();
       await saveLayoutUpdate({
+        splitViewEnabled: true,
         closedTabIds: state.layout.closedTabIds,
         topSplitTabIds: state.layout.topSplitTabIds,
         pinnedTopSidecarId: state.layout.pinnedTopSidecarId,

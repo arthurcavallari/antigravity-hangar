@@ -118,6 +118,15 @@ describe('Hangar UI polling load', () => {
     assert.equal(btnMode.activeSingleId, '__extensions__');
     const termBtnActive = ns.partitionSplitTabs(state.sidecars, { pinnedTopSidecarId: '__terminal__', terminalDisplayMode: 'button' });
     assert.equal(termBtnActive.activeSingleId, '__terminal__');
+
+    // When terminalDisplayMode is 'button' and Split View is active, reconcileIframeDeck preserves bottomActiveTabId === '__terminal__'
+    const splitBtnState = {
+      sidecars: [sidecar('context-monitor', 51001)],
+      layout: { pinnedTopSidecarId: 'context-monitor', topSplitTabIds: ['context-monitor'], splitViewEnabled: true, terminalDisplayMode: 'button' },
+      bottomActiveTabId: '__terminal__',
+    };
+    ns.reconcileIframeDeck({ state: splitBtnState, els });
+    assert.equal(splitBtnState.bottomActiveTabId, '__terminal__');
   });
 
   it('asks for no conversation when Antigravity frames it without an id, and guesses only in a plain tab', async () => {
@@ -702,6 +711,230 @@ describe('Hangar UI polling load', () => {
     window.AgyUI.showToast('Sent to Side Chat', { container: hostContainer });
     assert.equal(customContainerChildren.length, 1);
     assert.equal(docBodyChildren.length, 0);
+  });
+
+  it('opens Terminal in the opposite Top/Bottom Split Pane and auto-enables Split View when triggered from Side Chat', async () => {
+    const sharedSession = new Map();
+    const sessionStorage = {
+      getItem: (k) => sharedSession.get(k) || '',
+      setItem: (k, v) => sharedSession.set(k, String(v)),
+      removeItem: (k) => sharedSession.delete(k),
+    };
+    let sharedLayout = { pinnedTopSidecarId: '__sidechat__', topSplitTabIds: ['__sidechat__'], closedTabIds: ['__terminal__'], tabOrder: [], splitViewEnabled: false };
+    let liveTerminals = [];
+    let mainTermOpen = false;
+    let sideChatDockCb = null;
+    let lastTabBarProps = null;
+    let lastTermSlotsProps = null;
+    let lastSideChatSlotProps = null;
+    const layoutUpdates = [];
+
+    const window = {
+      location: { search: '?conversationId=conv-split-term' },
+      addEventListener() {},
+      Hangar: {
+        EXTENSIONS_TAB_ID: '__extensions__',
+        TERMINAL_TAB_ID: '__terminal__',
+        SIDECHAT_TAB_ID: '__sidechat__',
+        SIDECHAT_TAB_PREFIX: 'sidechat__',
+        isMainTerminalOpen: () => mainTermOpen,
+        setMainTerminalOpen: (v) => { mainTermOpen = Boolean(v); },
+        getInstanceTerminals: (terms) => terms || [],
+        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        serializeTerminalState: () => ({ mainTerminalOpen: mainTermOpen }),
+        setSideChatDockCallback: (cb) => { sideChatDockCb = cb; },
+        renderTerminalSlots: (props) => { lastTermSlotsProps = props; },
+        renderSideChatSlot: (props) => { lastSideChatSlotProps = props; },
+        apiCall: async (path, body) => {
+          if (path === '/api/state') {
+            return {
+              activeWorkspace: { workspacePath: 'C:\\Proj\\One', workspaceName: 'One' },
+              sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+              terminals: [...liveTerminals],
+              layout: JSON.parse(JSON.stringify(sharedLayout)),
+            };
+          }
+          if (path === '/api/terminal/create') {
+            const created = { terminalId: 'term-created-1', title: 'pwsh' };
+            liveTerminals = [...liveTerminals, created];
+            return created;
+          }
+          if (path === '/api/layout/update') {
+            layoutUpdates.push(body);
+            const prevWsLayouts = sharedLayout.workspaceLayouts || {};
+            sharedLayout = { ...sharedLayout, ...body };
+            if (body.workspaceLayouts) sharedLayout.workspaceLayouts = { ...prevWsLayouts, ...body.workspaceLayouts };
+            return { ok: true, layout: sharedLayout };
+          }
+          return {};
+        },
+      },
+    };
+    window.parent = {};
+    const document = { hidden: false, getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] };
+    const ctx = vm.createContext({
+      window,
+      document,
+      URLSearchParams,
+      sessionStorage,
+      console,
+      Date,
+      setTimeout,
+      setInterval: () => 0,
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'components/tab-bar.js'), 'utf8'), ctx, { filename: 'tab-bar.js' });
+    window.Hangar.renderTabBar = (props) => { lastTabBarProps = props; };
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    // Case 1: Side Chat in Single View (top pane) with no existing terminals -> creates terminal, enables Split View, keeps Side Chat in top pane, opens Terminal in bottom pane
+    assert.equal(lastTabBarProps.layout.splitViewEnabled, false);
+    await sideChatDockCb({ openTerminal: true, pane: 'top', sourceTabId: '__sidechat__' });
+    await flush();
+    assert.equal(mainTermOpen, true);
+    assert.equal(liveTerminals.length, 1);
+    assert.equal(lastTabBarProps.layout.splitViewEnabled, true);
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__sidechat__');
+    assert.ok(lastTabBarProps.layout.topSplitTabIds.includes('__sidechat__'));
+    assert.equal(lastTabBarProps.layout.topSplitTabIds.includes('__terminal__'), false);
+    assert.equal(lastTabBarProps.layout.closedTabIds.includes('__terminal__'), false);
+    assert.equal(lastTabBarProps.bottomActiveTabId, '__terminal__');
+    assert.equal(lastTermSlotsProps.topSlotId, '__sidechat__');
+    assert.equal(lastTermSlotsProps.bottomSlotId, '__terminal__');
+    assert.equal(lastSideChatSlotProps.topSlotId, '__sidechat__');
+    assert.equal(lastSideChatSlotProps.bottomSlotId, '__terminal__');
+
+    // Case 2: Side Chat in Bottom Pane with existing terminal -> keeps Side Chat in bottom pane and activates Terminal in top pane
+    await sideChatDockCb({ openTerminal: true, pane: 'bottom', sourceTabId: '__sidechat__' });
+    await flush();
+    assert.equal(liveTerminals.length, 1);
+    assert.equal(lastTabBarProps.layout.splitViewEnabled, true);
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__terminal__');
+    assert.ok(lastTabBarProps.layout.topSplitTabIds.includes('__terminal__'));
+    assert.equal(lastTabBarProps.layout.topSplitTabIds.includes('__sidechat__'), false);
+    assert.equal(lastTabBarProps.bottomActiveTabId, '__sidechat__');
+    assert.equal(lastTermSlotsProps.topSlotId, '__terminal__');
+    assert.equal(lastTermSlotsProps.bottomSlotId, '__sidechat__');
+    assert.equal(lastSideChatSlotProps.topSlotId, '__terminal__');
+    assert.equal(lastSideChatSlotProps.bottomSlotId, '__sidechat__');
+    assert.equal(layoutUpdates.at(-1).splitViewEnabled, true);
+  });
+
+  it('prevents an in-flight /api/state poll during /api/terminal/create from clobbering the new terminal or split layout', async () => {
+    const sharedSession = new Map();
+    const sessionStorage = {
+      getItem: (k) => sharedSession.get(k) || '',
+      setItem: (k, v) => sharedSession.set(k, String(v)),
+      removeItem: (k) => sharedSession.delete(k),
+    };
+    let sharedLayout = { pinnedTopSidecarId: '__sidechat__', topSplitTabIds: ['__sidechat__'], closedTabIds: [], tabOrder: [], splitViewEnabled: false };
+    let mainTermOpen = false;
+    let sideChatDockCb = null;
+    let lastTabBarProps = null;
+    let intervalTick = null;
+    let now = 0;
+    let pendingCreateResolve = null;
+    let pendingStateResolve = null;
+
+    const window = {
+      location: { search: '?conversationId=conv-race-term' },
+      addEventListener() {},
+      Hangar: {
+        EXTENSIONS_TAB_ID: '__extensions__',
+        TERMINAL_TAB_ID: '__terminal__',
+        SIDECHAT_TAB_ID: '__sidechat__',
+        SIDECHAT_TAB_PREFIX: 'sidechat__',
+        isMainTerminalOpen: () => mainTermOpen,
+        setMainTerminalOpen: (v) => { mainTermOpen = Boolean(v); },
+        getInstanceTerminals: (terms) => terms || [],
+        hydrateTerminalStateFromLayout: (layout, terms) => {
+          const closed = new Set(layout?.closedTabIds || []);
+          mainTermOpen = !closed.has('__terminal__') && (terms || []).length > 0;
+        },
+        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        serializeTerminalState: () => ({ mainTerminalOpen: mainTermOpen }),
+        setSideChatDockCallback: (cb) => { sideChatDockCb = cb; },
+        apiCall: (path, body) => {
+          if (path === '/api/state') {
+            const snapLayout = JSON.parse(JSON.stringify(sharedLayout));
+            if (pendingCreateResolve && !pendingStateResolve) {
+              return new Promise((r) => {
+                pendingStateResolve = () => r({
+                  activeWorkspace: { workspacePath: 'C:\\Proj\\One', workspaceName: 'One' },
+                  sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+                  terminals: [],
+                  layout: snapLayout,
+                });
+              });
+            }
+            return Promise.resolve({
+              activeWorkspace: { workspacePath: 'C:\\Proj\\One', workspaceName: 'One' },
+              sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+              terminals: [],
+              layout: snapLayout,
+            });
+          }
+          if (path === '/api/terminal/create') {
+            return new Promise((r) => { pendingCreateResolve = r; });
+          }
+          if (path === '/api/layout/update') {
+            const prevWsLayouts = sharedLayout.workspaceLayouts || {};
+            sharedLayout = { ...sharedLayout, ...body };
+            if (body.workspaceLayouts) sharedLayout.workspaceLayouts = { ...prevWsLayouts, ...body.workspaceLayouts };
+            return Promise.resolve({ ok: true, layout: sharedLayout });
+          }
+          return Promise.resolve({});
+        },
+      },
+    };
+    window.parent = {};
+    const document = { hidden: false, getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] };
+    const ctx = vm.createContext({
+      window,
+      document,
+      URLSearchParams,
+      sessionStorage,
+      console,
+      Date: { now: () => now },
+      setTimeout,
+      setInterval: (fn) => {
+        intervalTick ??= fn;
+        return 0;
+      },
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'components/tab-bar.js'), 'utf8'), ctx, { filename: 'tab-bar.js' });
+    window.Hangar.renderTabBar = (props) => { lastTabBarProps = props; };
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    // Start openTerminal -> pauses at /api/terminal/create
+    const openProm = sideChatDockCb({ openTerminal: true, pane: 'top', sourceTabId: '__sidechat__' });
+    await flush();
+    assert.ok(pendingCreateResolve);
+
+    // A 3s /api/state poll starts while /api/terminal/create is still in flight
+    now += 3000;
+    intervalTick();
+    await flush();
+    assert.ok(pendingStateResolve);
+
+    // /api/terminal/create resolves first, updating layoutSeq and state.terminals
+    pendingCreateResolve({ terminalId: 'term-race-1', title: 'pwsh' });
+    await openProm;
+    await flush();
+    assert.equal(lastTabBarProps.layout.splitViewEnabled, true);
+    assert.equal(lastTabBarProps.bottomActiveTabId, '__terminal__');
+
+    // Now the stale /api/state poll (with terminals: [] and splitViewEnabled: false) resolves
+    pendingStateResolve();
+    await flush();
+    assert.equal(mainTermOpen, true);
+    assert.equal(lastTabBarProps.layout.splitViewEnabled, true);
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__sidechat__');
+    assert.equal(lastTabBarProps.bottomActiveTabId, '__terminal__');
+    assert.deepEqual(Array.from(lastTabBarProps.terminals, (t) => t.terminalId), ['term-race-1']);
   });
 });
 

@@ -413,13 +413,19 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
     composer._els.overviewBtn.emit('click', { stopPropagation() {} });
     assert.equal(composer._els.overviewBtn.classList.contains('active'), true);
-    composer._els.overviewBtn.emit('click', { stopPropagation() {} });
-    assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
     let lastScDockEvt = null;
     windowObj.Hangar.setSideChatDockCallback((evt) => { lastScDockEvt = evt; });
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+    assert.equal(composer._overviewOpen, false);
+    assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
     assert.equal(lastScDockEvt?.openTerminal, true);
+    assert.equal(lastScDockEvt?.pane, 'top');
     assert.equal(lastScDockEvt?.sourceTabId, '__sidechat__');
+    windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: 'context-monitor', bottomSlotId: '__sidechat__', splitEnabled: true });
+    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+    assert.equal(lastScDockEvt?.pane, 'bottom');
+    assert.equal(lastScDockEvt?.sourceTabId, '__sidechat__');
+    windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: '__sidechat__', bottomSlotId: '', splitEnabled: false });
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Chat #1');
     miniComposer._setTargetCascadeId(windowObj.Hangar.getSideChatState().threads[0].cascadeId);
@@ -454,6 +460,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(poppedBox._els.chatFrame.classList.contains('hidden'), false);
     const poppedScTabs = windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs;
     assert.ok(poppedScTabs.some((t) => t.sidecarId === `sidechat__${secondCid}` && t.displayName === 'Bug Triage Chat'));
+    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: secondCid } } });
+    assert.equal(lastScDockEvt?.sourceTabId, `sidechat__${secondCid}`);
     assert.equal(windowObj.Hangar.demoteSideChatTabIntoInstance(`sidechat__${secondCid}`, { targetInstanceTabId: '__sidechat__', zone: 'strip', index: 0 }), true);
     assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), false);
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].cascadeId, secondCid);
@@ -579,6 +587,47 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.ok(chatHtml.includes('StreamAgentStateUpdates') && chatHtml.includes('hangar-inject-terminal-quote') && chatHtml.includes('hangar-sidechat-switch-cascade'));
       assert.ok(chatHtml.includes('data-hangar-overview="open"') && chatHtml.includes('hangar-sidechat-toggle-overview'));
       assert.ok(chatHtml.includes('overview-panel-row-terminal') && chatHtml.includes('hangar-sidechat-open-terminal'));
+      const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1], chatWinListeners = {}, chatPosted = [];
+      let panelVisible = true;
+      const ovHostEl = {
+        __reactFiber$chat: {
+          memoizedProps: {
+            value: {
+              breakpoint: 'large',
+              get isPanelVisible() { return panelVisible; },
+              togglePanel() { panelVisible = !panelVisible; },
+            },
+          },
+          return: null,
+        },
+      };
+      const docAttrs = new Map();
+      const chatWin = {
+        navigator: { userAgent: 'Windows' }, localStorage: { setItem() {} }, history: { replaceState() {}, pushState() {} }, customElements: { get: () => false, define() {} },
+        requestAnimationFrame: () => 1, cancelAnimationFrame() {}, fetch: async () => ({ json: async () => ({}) }),
+        location: { origin: 'http://localhost:54824', pathname: '/c/side-cascade-101' }, parent: { postMessage: (msg) => chatPosted.push(msg) },
+        addEventListener: (ev, fn) => { (chatWinListeners[ev] = chatWinListeners[ev] || []).push(fn); },
+      };
+      const chatDoc = {
+        documentElement: {
+          style: { setProperty() {} },
+          setAttribute: (k, v) => docAttrs.set(k, v),
+          removeAttribute: (k) => docAttrs.delete(k),
+        },
+        querySelector: (sel) => (sel === '[data-testid="overview-panel-host"]' ? ovHostEl : null),
+        addEventListener() {}, removeEventListener() {},
+      };
+      vm.runInContext(chatScript, vm.createContext({ window: chatWin, document: chatDoc, navigator: chatWin.navigator, localStorage: chatWin.localStorage, history: chatWin.history, URL, TextEncoder, TextDecoder, Uint8Array, DataView, ReadableStream, JSON, Math, Object, String, Boolean, Number, Map, Date, encodeURIComponent, setTimeout, clearTimeout }));
+      for (const fn of chatWinListeners.message || []) fn({ data: { type: 'hangar-sidechat-toggle-overview', open: true } });
+      assert.equal(docAttrs.get('data-hangar-overview'), 'open');
+      const termRowTarget = { getAttribute: () => null, closest: (s) => (s === '[data-testid="overview-panel-row-terminal"]' ? {} : null) };
+      for (const fn of chatWinListeners.click || []) fn({ target: { parentElement: termRowTarget }, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+      assert.equal(docAttrs.has('data-hangar-overview'), false);
+      assert.equal(panelVisible, false);
+      assert.deepEqual(JSON.parse(JSON.stringify(chatPosted.slice(-2))), [
+        { type: 'hangar-sidechat-overview-state', payload: { cascadeId: 'side-cascade-101', open: false } },
+        { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: 'side-cascade-101' } },
+      ]);
     } finally {
       if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS; else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
       if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN; else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;

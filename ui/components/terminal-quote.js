@@ -1053,7 +1053,8 @@
     const existingTarget = opts.targetCascadeId ? sideChatThreads.find((t) => t.cascadeId === opts.targetCascadeId) : null;
     if (existingTarget) {
       const existingCid = existingTarget.cascadeId;
-      const rootId = poppedSideChatIds.has(existingCid) ? existingCid : (sideChatGroupMap[existingCid] || '');
+      const mappedRoot = sideChatGroupMap[existingCid];
+      const rootId = poppedSideChatIds.has(existingCid) ? existingCid : (mappedRoot && poppedSideChatIds.has(mappedRoot) ? mappedRoot : '');
       const targetTabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
       const targetBox = ensureSideChatBox(targetTabId, root);
       if (hostEl && hostEl !== root) hostEl._hangarQuoteComposer = targetBox;
@@ -1280,7 +1281,7 @@
       const isVisible = inTop || inBot;
       if (viewportEl && !viewportEl.contains?.(box)) viewportEl.appendChild?.(box);
       box.dataset.dockMode = 'docked';
-      box.dataset.slot = inTop ? 'top' : 'bottom';
+      box.dataset.slot = inBot ? 'bottom' : 'top';
       box.classList?.toggle?.('slot-top', inTop);
       box.classList?.toggle?.('slot-bottom', inBot);
       box.classList?.toggle?.('hidden', !isVisible);
@@ -1375,9 +1376,14 @@
       }
     } else if (e.data?.type === 'hangar-sidechat-open-terminal') {
       const cid = e.data.payload?.cascadeId;
-      const rootId = cid && poppedSideChatIds.has(cid) ? cid : ((cid && sideChatGroupMap[cid]) || '');
+      const mappedRoot = cid ? sideChatGroupMap[cid] : '';
+      const rootId = cid && poppedSideChatIds.has(cid) ? cid : (mappedRoot && poppedSideChatIds.has(mappedRoot) ? mappedRoot : '');
       const tabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
       const box = sideChatBoxes.get(tabId);
+      if (box) {
+        box._overviewOpen = false;
+        box._els?.overviewBtn?.classList?.remove?.('active');
+      }
       const pane = box?.dataset?.slot === 'bottom' ? 'bottom' : 'top';
       onSideChatStateChange?.({ ...ns.getSideChatState(), openTerminal: true, pane, sourceTabId: tabId });
     } else if (e.data?.type === 'hangar-sidechat-overview-state') {
@@ -1399,7 +1405,8 @@
       const targetCid = e.data.payload?.cascadeId;
       const th = sideChatThreads.find((t) => t.cascadeId === targetCid);
       if (th) {
-        const rootId = poppedSideChatIds.has(targetCid) ? targetCid : (sideChatGroupMap[targetCid] || '');
+        const mappedRoot = sideChatGroupMap[targetCid];
+        const rootId = poppedSideChatIds.has(targetCid) ? targetCid : (mappedRoot && poppedSideChatIds.has(mappedRoot) ? mappedRoot : '');
         const tabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
         ns.setActiveSideChatId(tabId, targetCid);
         sideChatBoxes.get(tabId)?._syncThreadsUi?.(targetCid, null);
