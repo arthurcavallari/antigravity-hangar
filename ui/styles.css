@@ -128,7 +128,8 @@ html, body {
   background: var(--hub-secondary); color: var(--hub-fg);
 }
 .agy-context-menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
-.agy-context-menu-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agy-context-menu-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agy-context-menu-check { margin-left: 6px; color: var(--hub-primary); }
 .agy-context-menu-sep { height: 1px; margin: 3px 4px; background: var(--hub-border); }
 
 .status-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--hub-muted); flex-shrink: 0; }

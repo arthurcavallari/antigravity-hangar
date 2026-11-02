@@ -68,7 +68,7 @@
       if (sc.customTitles && typeof sc.customTitles === 'object') {
         try { localStorage.setItem(CUSTOM_TITLES_KEY, JSON.stringify({ ...sc.customTitles, ...ns.readCustomSideChatTitles() })); } catch {}
       }
-      if (Array.isArray(sc.threads) && !sideChatThreads.length) {
+      if (Array.isArray(sc.threads)) {
         sideChatThreads = sc.threads
           .filter((t) => t && t.cascadeId)
           .map((t) => ({
@@ -228,7 +228,7 @@
   function buildChatFrameSrc(cascadeId) {
     const isLight = Boolean(document.body?.classList?.contains?.('theme-light'));
     const uiTok = new URLSearchParams(window.location?.search || '').get('token') || '';
-    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=5${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=7${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
   }
 
   const resolveSideChatTitle = (t) => (t ? (ns.readCustomSideChatTitles()[t.cascadeId] || t.title || 'Side Chat') : 'Side Chat');
@@ -539,10 +539,11 @@
     const mainToggleBtn = document.createElement('button'); mainToggleBtn.type = 'button'; mainToggleBtn.className = 'agy-btn agy-btn-outline term-sidechat-main-btn hidden'; if (!mainToggleBtn.dataset) mainToggleBtn.dataset = {}; mainToggleBtn.dataset.role = 'sidechat-main-toggle'; mainToggleBtn.title = 'Send quoted output to the Main Conversation instead'; mainToggleBtn.textContent = 'Send to Main Chat';
     const newThreadBtn = document.createElement('button'); newThreadBtn.type = 'button'; newThreadBtn.className = 'chrome-icon-btn hidden'; if (!newThreadBtn.dataset) newThreadBtn.dataset = {}; newThreadBtn.dataset.action = 'new'; newThreadBtn.dataset.role = 'sidechat-new'; newThreadBtn.title = 'New Side Chat'; newThreadBtn.innerHTML = ns.iconSvg?.('add', 16) || '+';
     const deleteBtn = document.createElement('button'); deleteBtn.type = 'button'; deleteBtn.className = 'chrome-icon-btn hidden'; if (!deleteBtn.dataset) deleteBtn.dataset = {}; deleteBtn.dataset.action = 'kill'; deleteBtn.dataset.role = 'sidechat-delete'; deleteBtn.title = 'Delete Side Chat'; deleteBtn.innerHTML = ns.iconSvg?.('delete', 15) || '🗑';
+    const overviewBtn = document.createElement('button'); overviewBtn.type = 'button'; overviewBtn.className = 'chrome-icon-btn'; if (!overviewBtn.dataset) overviewBtn.dataset = {}; overviewBtn.dataset.action = 'overview'; overviewBtn.dataset.role = 'sidechat-overview'; overviewBtn.title = 'Toggle Overview Panel'; overviewBtn.innerHTML = ns.iconSvg?.('overview', 15) || '☰';
     const popoutBtn = document.createElement('button'); popoutBtn.type = 'button'; popoutBtn.className = 'chrome-icon-btn'; if (!popoutBtn.dataset) popoutBtn.dataset = {}; popoutBtn.dataset.action = 'popout'; popoutBtn.dataset.role = 'sidechat-popout'; popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar'; popoutBtn.innerHTML = ns.iconSvg?.('dock_to_right', 14) || '⧉';
     const dockBtn = document.createElement('button'); dockBtn.type = 'button'; dockBtn.className = 'chrome-icon-btn term-sidechat-btn hidden'; if (!dockBtn.dataset) dockBtn.dataset = {}; dockBtn.dataset.role = 'sidechat-dock';
     const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.className = 'term-quote-composer-close hidden'; closeBtn.textContent = '×';
-    actionsEl.append?.(badge, backBtn, mainToggleBtn, newThreadBtn, deleteBtn, popoutBtn, threadSelect, hint, dockBtn, closeBtn);
+    actionsEl.append?.(badge, backBtn, mainToggleBtn, newThreadBtn, deleteBtn, overviewBtn, popoutBtn, threadSelect, hint, dockBtn, closeBtn);
     hdr.append?.(sessionsEl, actionsEl);
 
     const mainBar = document.createElement('div'); mainBar.className = 'term-sidechat-main-bar hidden';
@@ -566,6 +567,9 @@
       f.addEventListener?.('load', () => {
         const te = ns.getLatestThemeEvent?.();
         if (te) try { f.contentWindow?.postMessage(te, '*'); } catch {}
+        if (box._overviewOpen) {
+          try { f.contentWindow?.postMessage({ type: 'hangar-sidechat-toggle-overview', open: true }, '*'); } catch {}
+        }
         if (box._pendingQuote && f.dataset?.loadedCascadeId === ns.getActiveSideChatId(curTabId)) {
           const pq = box._pendingQuote;
           try { f.contentWindow?.postMessage({ type: 'hangar-inject-terminal-quote', payload: pq }, '*'); } catch {}
@@ -578,7 +582,8 @@
 
     box.append?.(hdr, mainBar, chatFrame);
     root?.appendChild?.(box);
-    box._els = { badge, preview, input, sendBtn, closeBtn, threadSelect, newThreadBtn, backBtn, mainToggleBtn, dockBtn, deleteBtn, popoutBtn, sessionsEl, chatFrame, initialFrame: chatFrame, mainBar, hint };
+    box._overviewOpen = false;
+    box._els = { badge, preview, input, sendBtn, closeBtn, threadSelect, newThreadBtn, backBtn, mainToggleBtn, dockBtn, deleteBtn, overviewBtn, popoutBtn, sessionsEl, chatFrame, initialFrame: chatFrame, mainBar, hint };
     box._setInstance = (nextTabId, nextRootId) => {
       curTabId = nextTabId;
       curRootId = nextRootId;
@@ -842,6 +847,12 @@
       ns.setSideChatDocked(!isSideChatDocked, true);
     });
     newThreadBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); spawnNewInInstance(); });
+    overviewBtn.addEventListener?.('click', (e) => {
+      e.stopPropagation?.();
+      box._overviewOpen = !box._overviewOpen;
+      overviewBtn.classList?.toggle?.('active', box._overviewOpen);
+      try { box._els.chatFrame?.contentWindow?.postMessage({ type: 'hangar-sidechat-toggle-overview', open: box._overviewOpen }, '*'); } catch {}
+    });
     popoutBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); handlePopoutOrMerge(); });
     threadSelect.addEventListener?.('change', (e) => {
       e.stopPropagation?.();
@@ -936,11 +947,14 @@
       if (prevLoaded !== targetCascadeId) {
         if (targetFrame.dataset) targetFrame.dataset.loadedCascadeId = targetCascadeId;
         targetFrame.src = buildChatFrameSrc(targetCascadeId);
-      } else if (box._pendingQuote) {
-        try {
-          targetFrame.contentWindow?.postMessage({ type: 'hangar-sidechat-quote-injected-req', payload: box._pendingQuote }, '*');
-          targetFrame.contentWindow?.postMessage({ type: 'hangar-inject-terminal-quote', payload: box._pendingQuote }, '*');
-        } catch {}
+      } else {
+        try { targetFrame.contentWindow?.postMessage({ type: 'hangar-sidechat-toggle-overview', open: Boolean(box._overviewOpen) }, '*'); } catch {}
+        if (box._pendingQuote) {
+          try {
+            targetFrame.contentWindow?.postMessage({ type: 'hangar-sidechat-quote-injected-req', payload: box._pendingQuote }, '*');
+            targetFrame.contentWindow?.postMessage({ type: 'hangar-inject-terminal-quote', payload: box._pendingQuote }, '*');
+          } catch {}
+        }
       }
     };
 
@@ -1074,6 +1088,9 @@
       const syncSideChatBtn = () => {
         const th = mini._targetCascadeId ? sideChatThreads.find((t) => t.cascadeId === mini._targetCascadeId) : null;
         if (!th) mini._targetCascadeId = '';
+        const hasThreads = sideChatThreads.length > 0;
+        sideChatPickBtn.classList?.toggle?.('hidden', !hasThreads);
+        sideChatBtn.classList?.toggle?.('has-picker', hasThreads);
         const targetLabel = th ? `Ask in ${resolveSideChatTitle(th)}` : 'Ask in Side Chat';
         sideChatBtn.title = `${targetLabel} (${isMac ? '⌘+Enter' : 'Ctrl+Enter'})`;
         sideChatBtn.innerHTML = `<span>${ns.escHtml?.(targetLabel) || targetLabel}</span><span class="term-mini-kbd">${isMac ? '⌘↵' : 'Ctrl+↵'}</span>`;
@@ -1130,7 +1147,8 @@
           {
             id: 'new-sidechat-target',
             icon: 'add',
-            label: `+ New Side Chat${!mini._targetCascadeId ? ' ✓' : ''}`,
+            label: 'New Side Chat',
+            checked: !mini._targetCascadeId,
             onClick: () => mini._setTargetCascadeId(''),
           },
         ];
@@ -1141,7 +1159,8 @@
             items.push({
               id: `target-${t.cascadeId}`,
               icon: 'chat',
-              label: `${ttl}${mini._targetCascadeId === t.cascadeId ? ' ✓' : ''}`,
+              label: ttl,
+              checked: mini._targetCascadeId === t.cascadeId,
               onClick: () => mini._setTargetCascadeId(t.cascadeId),
             });
           }
@@ -1279,6 +1298,21 @@
       if (th) th.hasActivity = true;
       for (const box of sideChatBoxes.values()) {
         if (box._pendingQuote) box._pendingQuote = null;
+      }
+    } else if (e.data?.type === 'hangar-sidechat-open-terminal') {
+      const cid = e.data.payload?.cascadeId;
+      const rootId = cid && poppedSideChatIds.has(cid) ? cid : ((cid && sideChatGroupMap[cid]) || '');
+      const tabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
+      const box = sideChatBoxes.get(tabId);
+      const pane = box?.dataset?.slot === 'bottom' ? 'bottom' : 'top';
+      onSideChatStateChange?.({ ...ns.getSideChatState(), openTerminal: true, pane, sourceTabId: tabId });
+    } else if (e.data?.type === 'hangar-sidechat-overview-state') {
+      const cid = e.data.payload?.cascadeId;
+      for (const [tabId, box] of sideChatBoxes.entries()) {
+        if (!cid || ns.getActiveSideChatId(tabId) === cid) {
+          box._overviewOpen = Boolean(e.data.payload?.open);
+          box._els?.overviewBtn?.classList?.toggle?.('active', box._overviewOpen);
+        }
       }
     } else if (e.data?.type === 'hangar-sidechat-foreign-nav') {
       const expected = e.data.payload?.expectedCascadeId;

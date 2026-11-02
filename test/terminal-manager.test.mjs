@@ -410,6 +410,16 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(composer._els.mainToggleBtn.classList.contains('hidden'), true);
     assert.ok(composer._els.newThreadBtn.className.includes('hidden'));
     assert.ok(composer._els.deleteBtn.className.includes('hidden'));
+    assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
+    composer._els.overviewBtn.emit('click', { stopPropagation() {} });
+    assert.equal(composer._els.overviewBtn.classList.contains('active'), true);
+    composer._els.overviewBtn.emit('click', { stopPropagation() {} });
+    assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
+    let lastScDockEvt = null;
+    windowObj.Hangar.setSideChatDockCallback((evt) => { lastScDockEvt = evt; });
+    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+    assert.equal(lastScDockEvt?.openTerminal, true);
+    assert.equal(lastScDockEvt?.sourceTabId, '__sidechat__');
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Chat #1');
     miniComposer._setTargetCascadeId(windowObj.Hangar.getSideChatState().threads[0].cascadeId);
@@ -515,6 +525,13 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(freshWin.Hangar.getPoppedSideChatIds().has(secondCid), true);
     assert.equal(freshWin.Hangar.getPoppedSideChatIds().has('sc-popped-9'), true);
     assert.equal(freshWin.Hangar.readCustomSideChatTitles()[secondCid], 'Bug Triage Chat');
+
+    freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, []);
+    freshWin.Hangar.hydrateSideChatStateFromLayout({ sideChatState: savedSideChatState, sideChatStateByWorkspace: { 'c:/users/arthu/ideaprojects/antigravity-hangar': savedSideChatState }, tabOrder: ['__sidechat__', `sidechat__${secondCid}`] }, 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-kit');
+    assert.equal(freshWin.Hangar.isMainTerminalOpen(), false);
+    assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
+    const otherProjPart = freshWin.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { tabOrder: ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__sidechat__'] }, []);
+    assert.deepEqual(Array.from(otherProjPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__extensions__']);
   });
 
   it('forks tool-enabled SIDE_QUESTION cascades, streams AgentStateUpdates, and injects @terminal mentions into jetbox-chat', async () => {
@@ -525,13 +542,6 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       rpcCalls.push({ method, body });
       if (method === 'StartCascade') return { cascadeId: 'side-cascade-101' };
       if (method === 'DeleteCascadeTrajectory') return {};
-
-    freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, []);
-    freshWin.Hangar.hydrateSideChatStateFromLayout({ sideChatState: savedSideChatState, sideChatStateByWorkspace: { 'c:/users/arthu/ideaprojects/antigravity-hangar': savedSideChatState }, tabOrder: ['__sidechat__', `sidechat__${secondCid}`] }, 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-kit');
-    assert.equal(freshWin.Hangar.isMainTerminalOpen(), false);
-    assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
-    const otherProjPart = freshWin.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { tabOrder: ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__sidechat__'] }, []);
-    assert.deepEqual(Array.from(otherProjPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__extensions__']);
       return {};
     };
     const streamFrames = Buffer.concat([
@@ -567,6 +577,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       const chatHtml = buildJetboxChatHtml({ cascadeId: 'side-cascade-101', hostTheme: 'dark', csrfToken: 'csrf-123', uiToken: 'tok-abc' });
       assert.ok(chatHtml.includes('[data-testid="conversation-view"]') && chatHtml.includes('z-index: 10 !important') && chatHtml.includes('PatchedWorker'));
       assert.ok(chatHtml.includes('StreamAgentStateUpdates') && chatHtml.includes('hangar-inject-terminal-quote') && chatHtml.includes('hangar-sidechat-switch-cascade'));
+      assert.ok(chatHtml.includes('data-hangar-overview="open"') && chatHtml.includes('hangar-sidechat-toggle-overview'));
+      assert.ok(chatHtml.includes('overview-panel-row-terminal') && chatHtml.includes('hangar-sidechat-open-terminal'));
     } finally {
       if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS; else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
       if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN; else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;

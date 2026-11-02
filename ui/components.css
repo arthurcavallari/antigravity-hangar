@@ -180,7 +180,8 @@ body.resizing-split .term-jetbox-frame, body.dragging-tab .term-jetbox-frame, bo
 .term-mini-hint { color: var(--hub-muted); font-size: 11px; user-select: none; }
 .term-mini-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .term-mini-sidechat-split { display: inline-flex; align-items: stretch; }
-.term-mini-sidechat-btn { height: 26px; padding: 0 8px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.term-mini-sidechat-btn { height: 26px; padding: 0 8px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; }
+.term-mini-sidechat-btn.has-picker { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .term-mini-sidechat-pick { height: 26px; width: 22px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
 .term-mini-send-btn { height: 26px; padding: 0 10px; font-size: 11.5px; }
 .term-mini-kbd { opacity: 0.6; font-size: 10.5px; font-family: var(--hub-font-sans); }

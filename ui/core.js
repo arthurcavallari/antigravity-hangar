@@ -57,6 +57,10 @@
       'M240-400h320v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z',
     open_in_new:
       'M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z',
+    expand_more:
+      'M480-345 240-585l56-56 184 183 184-183 56 56-240 240Z',
+    overview:
+      'M290-290H550v-60H290v60Zm0-160H670v-60H290v60Zm0-160H670v-60H290v60ZM212.31-140Q182-140 161-161t-21-51.31V-747.69Q140-778 161-799t51.31-21H747.69Q778-820 799-799t21,51.31v535.38Q820-182 799-161t-51.31,21H212.31Zm0-60H747.69q4.62,0 8.46-3.85t3.85-8.46V-747.69q0-4.62-3.85-8.46T747.69-760H212.31q-4.62,0-8.46,3.85T200-747.69v535.38q0,4.62 3.85,8.46t8.46,3.85Z',
   };
 
   ns.apiCall = async function apiCall(path, body = {}) {
@@ -155,7 +159,8 @@
       if (item.id) btn.dataset.menuId = item.id;
       btn.disabled = Boolean(item.disabled);
       const iconHtml = item.icon ? `<span class="hub-tab-icon-slot">${ns.iconSvg(item.icon, 15)}</span>` : '';
-      btn.innerHTML = `${iconHtml}<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>`;
+      const checkHtml = item.checked ? `<span class="hub-tab-icon-slot agy-context-menu-check">${ns.iconSvg('check', 14)}</span>` : '';
+      btn.innerHTML = `${iconHtml}<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>${checkHtml}`;
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (btn.disabled) return;

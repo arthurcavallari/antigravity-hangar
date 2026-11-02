@@ -501,6 +501,34 @@
       const next = repFrom && repTo ? arr.filter((id) => id !== repTo).map((id) => (id === repFrom ? repTo : id)) : [...arr];
       return removedId && removedId !== repTo ? next.filter((id) => id !== removedId) : next;
     };
+    if (scState?.openTerminal) {
+      const pane = scState.pane || 'top';
+      if ((ns.getInstanceTerminals?.(state.terminals, '') || []).length === 0) {
+        await handleTabContextAction({ action: 'new-terminal', pane, sidecarId: scState.sourceTabId || ns.SIDECHAT_TAB_ID });
+        return;
+      }
+      ++layoutSeq;
+      ns.setMainTerminalOpen?.(true);
+      state.layout.closedTabIds = (state.layout.closedTabIds || []).filter((id) => id !== ns.TERMINAL_TAB_ID);
+      if (state.layout.splitViewEnabled && pane === 'bottom') {
+        state.layout.topSplitTabIds = (state.layout.topSplitTabIds || []).filter((id) => id !== ns.TERMINAL_TAB_ID);
+        state.bottomActiveTabId = ns.TERMINAL_TAB_ID;
+      } else {
+        if (state.layout.splitViewEnabled && !state.layout.topSplitTabIds?.includes(ns.TERMINAL_TAB_ID)) {
+          state.layout.topSplitTabIds = [...(state.layout.topSplitTabIds || []), ns.TERMINAL_TAB_ID];
+        }
+        state.layout.pinnedTopSidecarId = ns.TERMINAL_TAB_ID;
+      }
+      renderAll();
+      await saveLayoutUpdate({
+        closedTabIds: state.layout.closedTabIds,
+        topSplitTabIds: state.layout.topSplitTabIds,
+        pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
+        terminalState: ns.serializeTerminalState?.(),
+        ...scPatch,
+      });
+      return;
+    }
     if (scState?.activateTab) {
       ++layoutSeq;
       state.layout.closedTabIds = (state.layout.closedTabIds || []).filter((id) => id !== targetTabId && id !== removedId);
@@ -548,6 +576,10 @@
   });
 
   const toggleTopChromeBtn = (targetTabId) => async () => {
+    if (targetTabId === ns.TERMINAL_TAB_ID && (ns.getInstanceTerminals?.(state.terminals, '') || []).length === 0) {
+      await handleTabContextAction({ action: 'new-terminal', pane: 'top' });
+      return;
+    }
     ++layoutSeq;
     if (targetTabId === ns.TERMINAL_TAB_ID) ns.setMainTerminalOpen?.(true);
     const { workspaceTabs, topTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
@@ -571,15 +603,14 @@
     if (nextSplit && activeSingleId && !topSet.has(activeSingleId)) {
       topSet.add(activeSingleId); patch.topSplitTabIds = [...topSet]; patch.pinnedTopSidecarId = activeSingleId;
     } else if (!nextSplit && activeTopId) patch.pinnedTopSidecarId = activeTopId;
+    state.layout.splitViewEnabled = nextSplit;
+    if (patch.topSplitTabIds) state.layout.topSplitTabIds = patch.topSplitTabIds;
+    if (patch.pinnedTopSidecarId) state.layout.pinnedTopSidecarId = patch.pinnedTopSidecarId;
     rememberWindowActiveTab(patch.pinnedTopSidecarId);
     await saveLayoutUpdate(patch);
     await refreshHangarState();
   });
 
-    if (targetTabId === ns.TERMINAL_TAB_ID && (ns.getInstanceTerminals?.(state.terminals, '') || []).length === 0) {
-      await handleTabContextAction({ action: 'new-terminal', pane: 'top' });
-      return;
-    }
   if (window.sidecar?.onWorkspaceChange) {
     window.sidecar.onWorkspaceChange((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshHangarState(); });
   }
@@ -603,9 +634,6 @@
   document.addEventListener('visibilitychange', () => {
     if (!isHidden()) refreshHangarState();
   });
-    state.layout.splitViewEnabled = nextSplit;
-    if (patch.topSplitTabIds) state.layout.topSplitTabIds = patch.topSplitTabIds;
-    if (patch.pinnedTopSidecarId) state.layout.pinnedTopSidecarId = patch.pinnedTopSidecarId;
 
   refreshRegistry();
   refreshHangarState();
