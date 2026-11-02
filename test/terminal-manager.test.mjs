@@ -267,7 +267,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.deepEqual(Array.from(defaultPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', 'terminal__term-popped-1', '__extensions__']);
     windowObj.Hangar.setMainTerminalOpen(true);
     const partitioned = windowObj.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { pinnedTopSidecarId: 'terminal__term-popped-1' }, allTerms);
-    assert.deepEqual(Array.from(partitioned.workspaceTabs, (t) => t.sidecarId), ['context-monitor', 'terminal__term-popped-1', '__terminal__', '__extensions__']);
+    assert.deepEqual(Array.from(partitioned.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__extensions__']);
     assert.equal(partitioned.workspaceTabs.find((t) => t.sidecarId === 'terminal__term-popped-1')?.displayName, 'Terminal 2');
     windowObj.Hangar.saveCustomTermTitle('term-popped-1', 'dev-server');
     assert.equal(windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs.find((t) => t.sidecarId === 'terminal__term-popped-1')?.displayName, 'dev-server');
@@ -403,6 +403,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs.some((t) => t.sidecarId === '__sidechat__'), false);
     windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: '__sidechat__', bottomSlotId: '', splitEnabled: false });
     assert.equal(composer.classList.contains('hidden'), true);
+    windowObj.Hangar.closeSideChatDrawer({ deleteAll: true, notify: false });
     windowObj.Hangar.openTerminalQuoteComposer(vpEl, {}, { conversationId: 'conv-host-1' });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(composer._els.badge.classList.contains('hidden'), true);

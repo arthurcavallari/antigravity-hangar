@@ -43,29 +43,47 @@
   // The active tab belongs to this window: hangar.json is shared by every Antigravity window, so its
   // pinnedTopSidecarId only seeds a window that hasn't picked a tab yet. sessionStorage is per window.
   const ACTIVE_TAB_KEY = 'hangar.activeTabId';
-  let layoutSeq = 0, lastNonExtTabId = '';
+  let layoutSeq = 0, lastNonExtTabId = '', lastRenderedSingleIds = [], lastRenderedTopIds = [], lastRenderedBottomIds = [];
+  function pickNextTabAfterClose(beforeList = [], afterList = [], curActiveId = '', removedIds = []) {
+    const beforeIds = beforeList.map((t) => (typeof t === 'string' ? t : t.sidecarId)).filter(Boolean);
+    const afterIds = afterList.map((t) => (typeof t === 'string' ? t : t.sidecarId)).filter(Boolean);
+    if (!afterIds.length) return '';
+    const afterSet = new Set(afterIds), rmSet = new Set(removedIds);
+    if (curActiveId && afterSet.has(curActiveId) && !rmSet.has(curActiveId)) return curActiveId;
+    const pivot = (curActiveId && beforeIds.includes(curActiveId)) ? curActiveId : beforeIds.find((id) => rmSet.has(id) || !afterSet.has(id));
+    const idx = pivot ? beforeIds.indexOf(pivot) : -1;
+    if (idx >= 0) return beforeIds.slice(idx + 1).find((id) => afterSet.has(id)) || afterIds[afterIds.length - 1] || '';
+    return afterIds[0] || '';
+  }
   const isTabValidForWindow = (id) => Boolean(
     id
     && (id !== ns.SIDECHAT_TAB_ID || ns.getSideChatState?.()?.isOpen)
     && (!String(id).startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__') || ns.getPoppedSideChatIds?.()?.has(String(id).slice((ns.SIDECHAT_TAB_PREFIX || 'sidechat__').length)))
+    && (!String(id).startsWith(ns.TERMINAL_TAB_PREFIX || 'terminal__') || ns.getPoppedTerminalIds?.()?.has(String(id).slice((ns.TERMINAL_TAB_PREFIX || 'terminal__').length)))
     && (id !== ns.TERMINAL_TAB_ID || ns.isMainTerminalOpen?.()),
   );
   function readWindowActiveTab() { try { return sessionStorage.getItem(ACTIVE_TAB_KEY) || ''; } catch { return ''; } }
-  function rememberWindowActiveTab(sidecarId) { try { if (isTabValidForWindow(sidecarId)) sessionStorage.setItem(ACTIVE_TAB_KEY, sidecarId); else if (!sidecarId) sessionStorage.removeItem(ACTIVE_TAB_KEY); } catch {} }
+  function rememberWindowActiveTab(sidecarId) { try { if (isTabValidForWindow(sidecarId)) sessionStorage.setItem(ACTIVE_TAB_KEY, sidecarId); else sessionStorage.removeItem(ACTIVE_TAB_KEY); } catch {} }
   function withWindowActiveTab(layout) { const w = readWindowActiveTab(); return isTabValidForWindow(w) ? { ...layout, pinnedTopSidecarId: w } : layout; }
 
-  async function handleDropTab({ sidecarId, replacedSidecarId, targetPane, beforeTabId }) {
+  function insertTabIntoOrder(sidecarId, { beforeTabId = '', afterTabId = '' } = {}) {
+    const { workspaceTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    const currentIds = workspaceTabs.map((t) => t.sidecarId), existingOrder = Array.isArray(state.layout.tabOrder) ? state.layout.tabOrder : [];
+    const baseOrder = [...currentIds, ...existingOrder.filter((id) => !currentIds.includes(id))].filter((id) => id !== sidecarId);
+    if (beforeTabId && baseOrder.includes(beforeTabId)) baseOrder.splice(baseOrder.indexOf(beforeTabId), 0, sidecarId);
+    else if (afterTabId && baseOrder.includes(afterTabId)) baseOrder.splice(baseOrder.indexOf(afterTabId) + 1, 0, sidecarId);
+    else baseOrder.push(sidecarId);
+    state.layout.tabOrder = baseOrder;
+  }
+
+  async function handleDropTab({ sidecarId, replacedSidecarId, targetPane, beforeTabId, afterTabId }) {
     ++layoutSeq;
     if (replacedSidecarId?.from && replacedSidecarId?.to) {
       if (Array.isArray(state.layout.tabOrder)) state.layout.tabOrder = state.layout.tabOrder.map((id) => (id === replacedSidecarId.from ? replacedSidecarId.to : id));
       if (Array.isArray(state.layout.topSplitTabIds)) state.layout.topSplitTabIds = state.layout.topSplitTabIds.map((id) => (id === replacedSidecarId.from ? replacedSidecarId.to : id));
     }
-    const { workspaceTabs, topSet } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
-    const currentIds = workspaceTabs.map((t) => t.sidecarId), existingOrder = Array.isArray(state.layout.tabOrder) ? state.layout.tabOrder : [];
-    const baseOrder = [...currentIds, ...existingOrder.filter((id) => !currentIds.includes(id))].filter((id) => id !== sidecarId);
-    if (beforeTabId && baseOrder.includes(beforeTabId)) baseOrder.splice(baseOrder.indexOf(beforeTabId), 0, sidecarId);
-    else baseOrder.push(sidecarId);
-    state.layout.tabOrder = baseOrder;
+    const { topSet } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    insertTabIntoOrder(sidecarId, { beforeTabId, afterTabId });
     if (state.layout.splitViewEnabled) {
       if (targetPane === 'top') { topSet.add(sidecarId); state.layout.pinnedTopSidecarId = sidecarId; }
       else if (targetPane === 'bottom') { topSet.delete(sidecarId); state.bottomActiveTabId = sidecarId; }
@@ -92,20 +110,33 @@
       return removedSidecarId && removedSidecarId !== to ? next.filter((id) => id !== removedSidecarId) : next;
     };
     state.layout.tabOrder = clean(curOrder); state.layout.topSplitTabIds = clean(curTop);
+    if (targetInstanceTabId && Array.isArray(state.layout.closedTabIds)) {
+      state.layout.closedTabIds = state.layout.closedTabIds.filter((id) => id !== targetInstanceTabId);
+    }
     if (from && to) {
       if (state.layout.pinnedTopSidecarId === from) state.layout.pinnedTopSidecarId = to;
       if (state.bottomActiveTabId === from) state.bottomActiveTabId = to;
     }
+    const { workspaceTabs, topTabs, bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    const isBottom = state.layout.splitViewEnabled && targetPane === 'bottom';
+    const beforeList = isBottom ? lastRenderedBottomIds : (state.layout.splitViewEnabled ? lastRenderedTopIds : lastRenderedSingleIds);
+    const afterList = isBottom ? bottomTabs : (state.layout.splitViewEnabled ? topTabs : workspaceTabs);
+    const curAct = isBottom ? state.bottomActiveTabId : (state.layout.pinnedTopSidecarId || removedSidecarId || '');
+    const fallbackTarget = removedSidecarId
+      ? pickNextTabAfterClose(beforeList, afterList, curAct, [removedSidecarId])
+      : (isBottom ? (bottomTabs[0]?.sidecarId || '') : (state.layout.splitViewEnabled ? activeTopId : activeSingleId));
+    const resolvedTarget = targetInstanceTabId || fallbackTarget;
     if (state.layout.splitViewEnabled && targetPane === 'bottom') {
-      state.layout.topSplitTabIds = state.layout.topSplitTabIds.filter((id) => id !== targetInstanceTabId);
-      state.bottomActiveTabId = targetInstanceTabId;
+      if (resolvedTarget) state.layout.topSplitTabIds = state.layout.topSplitTabIds.filter((id) => id !== resolvedTarget);
+      state.bottomActiveTabId = resolvedTarget;
     } else {
-      if (state.layout.splitViewEnabled && targetPane === 'top' && !state.layout.topSplitTabIds.includes(targetInstanceTabId)) state.layout.topSplitTabIds.push(targetInstanceTabId);
-      state.layout.pinnedTopSidecarId = targetInstanceTabId;
+      if (state.layout.splitViewEnabled && targetPane === 'top' && resolvedTarget && !state.layout.topSplitTabIds.includes(resolvedTarget)) state.layout.topSplitTabIds.push(resolvedTarget);
+      state.layout.pinnedTopSidecarId = resolvedTarget;
     }
     if (state.layout.splitViewEnabled) state.layout.pinnedTopSidecarId = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals).activeTopId;
     renderAll();
     await ns.apiCall?.('/api/layout/update', {
+      closedTabIds: state.layout.closedTabIds,
       tabOrder: state.layout.tabOrder,
       topSplitTabIds: state.layout.topSplitTabIds,
       pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
@@ -185,6 +216,7 @@
       }
       closed.delete(targetTabId);
       state.layout.closedTabIds = [...closed];
+      if (targetTabId !== ns.TERMINAL_TAB_ID) insertTabIntoOrder(targetTabId, { afterTabId: sidecarId || ns.TERMINAL_TAB_ID });
       if (state.layout.splitViewEnabled && pane === 'bottom') {
         state.layout.topSplitTabIds = (state.layout.topSplitTabIds || []).filter((id) => id !== targetTabId);
         state.bottomActiveTabId = targetTabId;
@@ -197,6 +229,7 @@
       renderAll();
       await ns.apiCall?.('/api/layout/update', {
         closedTabIds: state.layout.closedTabIds,
+        tabOrder: state.layout.tabOrder,
         topSplitTabIds: state.layout.topSplitTabIds,
         pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
         terminalState: ns.serializeTerminalState?.(),
@@ -206,6 +239,11 @@
     }
     if (action !== 'close') return;
     const ids = targetIds.filter((id) => id && !pinned.has(id)); if (!ids.length) return;
+    const beforePart = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    const beforeTopIds = (state.layout.splitViewEnabled ? beforePart.topTabs : beforePart.workspaceTabs).map((t) => t.sidecarId);
+    const beforeBottomIds = beforePart.bottomTabs.map((t) => t.sidecarId);
+    const prevTopAct = state.layout.splitViewEnabled ? beforePart.activeTopId : beforePart.activeSingleId;
+    const prevBottomAct = state.bottomActiveTabId;
     let closedTerm = false;
     for (const id of ids) {
       if (id === ns.SIDECHAT_TAB_ID) { ns.closeSideChatDrawer?.({ deleteAll: false, notify: false }); closed.add(id); }
@@ -219,12 +257,25 @@
       else closed.add(id);
     }
     state.layout.closedTabIds = [...closed];
-    const { activeSingleId, activeTopId, bottomTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
-    if (pane === 'bottom' && state.layout.splitViewEnabled) state.bottomActiveTabId = keepSidecarId && !closed.has(keepSidecarId) ? keepSidecarId : (bottomTabs[0]?.sidecarId || '');
-    else state.layout.pinnedTopSidecarId = keepSidecarId && !closed.has(keepSidecarId) ? keepSidecarId : (state.layout.splitViewEnabled ? activeTopId : activeSingleId);
+    const removedPopped = new Set(ids.filter((id) => id.startsWith('terminal__') || id.startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__')));
+    if (removedPopped.size && Array.isArray(state.layout.tabOrder)) state.layout.tabOrder = state.layout.tabOrder.filter((id) => !removedPopped.has(id));
+    if (Array.isArray(state.layout.topSplitTabIds)) state.layout.topSplitTabIds = state.layout.topSplitTabIds.filter((id) => !removedPopped.has(id) && !ids.includes(id));
+    const { workspaceTabs, topTabs, bottomTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    if (pane === 'bottom' && state.layout.splitViewEnabled) {
+      state.bottomActiveTabId = keepSidecarId && !closed.has(keepSidecarId)
+        ? keepSidecarId
+        : pickNextTabAfterClose(beforeBottomIds, bottomTabs, prevBottomAct, ids);
+    } else {
+      const afterTopList = state.layout.splitViewEnabled ? topTabs : workspaceTabs;
+      state.layout.pinnedTopSidecarId = keepSidecarId && !closed.has(keepSidecarId)
+        ? keepSidecarId
+        : pickNextTabAfterClose(beforeTopIds, afterTopList, prevTopAct, ids);
+    }
     renderAll();
     await ns.apiCall?.('/api/layout/update', {
       closedTabIds: state.layout.closedTabIds,
+      tabOrder: state.layout.tabOrder,
+      topSplitTabIds: state.layout.topSplitTabIds,
       pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
       terminalState: ns.serializeTerminalState?.(),
       sideChatState: ns.serializeSideChatState?.(),
@@ -236,7 +287,11 @@
     const { apiCall } = ns;
     rememberWindowActiveTab(state.layout.pinnedTopSidecarId);
     ns.reconcileIframeDeck?.({ state, els });
-    const { activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+    const visibleTerminals = state.layout.showExternalTerminals === false ? state.terminals.filter((t) => !t?.isExternal) : state.terminals;
+    const { workspaceTabs, topTabs, bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars, state.layout, visibleTerminals);
+    lastRenderedSingleIds = workspaceTabs.map((t) => t.sidecarId);
+    lastRenderedTopIds = topTabs.map((t) => t.sidecarId);
+    lastRenderedBottomIds = bottomTabs.map((t) => t.sidecarId);
     const topSlotId = state.layout.splitViewEnabled ? activeTopId : activeSingleId;
     if (topSlotId && topSlotId !== ns.EXTENSIONS_TAB_ID && !ns.isSideChatTabId?.(topSlotId) && !(state.layout.terminalDisplayMode === 'button' && topSlotId === ns.TERMINAL_TAB_ID)) lastNonExtTabId = topSlotId;
     const selectSlotTab = async (tabId, slotKey) => {
@@ -245,9 +300,9 @@
       else { state.layout.pinnedTopSidecarId = tabId; renderAll(); await apiCall?.('/api/layout/update', { pinnedTopSidecarId: tabId }); }
     };
     const termProps = {
-      splitEnabled: Boolean(state.layout.splitViewEnabled), terminals: state.terminals,
+      splitEnabled: Boolean(state.layout.splitViewEnabled), terminals: visibleTerminals,
       workspacePath: state.activeWorkspace?.workspacePath || '', conversationId: hangarConversationId,
-      onRefreshState: () => refreshHangarState(), onSelectTab: selectSlotTab, onCrossInstanceMerge: applyTerminalMergeLayout, onSessionChange: () => renderAll(),
+      onRefreshState: () => refreshHangarState(), onSelectTab: selectSlotTab, onPromoteToHangarTab: handleDropTab, onCrossInstanceMerge: applyTerminalMergeLayout, onSessionChange: () => renderAll(),
     };
     const onPreviewTerminalSlot = (previewTabId, pane) => {
       if (!previewTabId) { renderAll(); return; }
@@ -263,7 +318,7 @@
     ns.renderTabBar?.({
       tabStripEl: els.tabStrip, topOverflowBtnEl: els.topOverflowBtn, bottomTabBarEl: els.bottomTabBar, bottomTabStripEl: els.bottomTabStrip,
       bottomOverflowBtnEl: els.bottomOverflowBtn, tabOverflowPopoverEl: els.tabOverflowPopover, terminalBtnEl: els.terminalToggleBtn, extensionsBtnEl: els.extensionsToggleBtn, splitBtnEl: els.splitToggleBtn,
-      sidecars: state.sidecars, terminals: state.terminals, registryPackages: state.registryPackages, hangar: state.hangar,
+      sidecars: state.sidecars, terminals: visibleTerminals, registryPackages: state.registryPackages, hangar: state.hangar,
       bottomActiveTabId: state.bottomActiveTabId, layout: state.layout, hasActiveWorkspace: Boolean(state.activeWorkspace?.workspacePath),
       onSelectTopSplitTab: (sidecarId) => selectSlotTab(sidecarId, 'top'), onSelectBottomSplitTab: (sidecarId) => selectSlotTab(sidecarId, 'bottom'),
       onDropTab: handleDropTab, onPreviewTerminalSlot, onContextAction: handleTabContextAction,
@@ -361,9 +416,13 @@
       if (data.hangar) state.hangar = data.hangar;
       state.sidecars = data.sidecars || []; state.terminals = data.terminals || [];
       state.plugins = data.plugins || []; state.suggestions = data.suggestions || [];
-      ns.hydrateTerminalStateFromLayout?.(data.layout, state.terminals);
-      ns.hydrateSideChatStateFromLayout?.(data.layout);
-      if (data.layout && seq === layoutSeq) state.layout = withWindowActiveTab(data.layout);
+      if (data.layout && seq === layoutSeq) {
+        ns.hydrateTerminalStateFromLayout?.(data.layout, state.terminals);
+        ns.hydrateSideChatStateFromLayout?.(data.layout);
+        state.layout = withWindowActiveTab(data.layout);
+      } else {
+        ns.hydrateTerminalStateFromLayout?.(state.layout, state.terminals);
+      }
       renderAll();
     } catch (err) {
       console.error('[hangar] Failed to refresh state:', err);
@@ -373,6 +432,7 @@
   ns.bindSplitResizeHandle?.({ state, els, onSaveHeight: (pinnedTopHeightPx) => ns.apiCall('/api/layout/update', { pinnedTopHeightPx }) });
   ns.bindHangarChromeDropZone?.({ chromeBarEl: document.getElementById('chrome-bar'), bottomBarEl: els.bottomTabBar, onPromoteToHangarTab: handleDropTab, onMergeIntoTerminalTab: applyTerminalMergeLayout });
   ns.setTerminalPersistCallback?.((terminalState) => {
+    ++layoutSeq;
     state.layout.terminalState = terminalState;
     ns.apiCall?.('/api/layout/update', { terminalState });
   });
@@ -391,6 +451,7 @@
       ++layoutSeq;
       state.layout.closedTabIds = (state.layout.closedTabIds || []).filter((id) => id !== targetTabId && id !== removedId);
       if (Array.isArray(state.layout.tabOrder)) state.layout.tabOrder = cleanArr(state.layout.tabOrder);
+      if (scState.afterTabId) insertTabIntoOrder(targetTabId, { afterTabId: scState.afterTabId });
       if (Array.isArray(state.layout.topSplitTabIds)) state.layout.topSplitTabIds = cleanArr(state.layout.topSplitTabIds);
       if (state.layout.splitViewEnabled) {
         if (scState.pane === 'top') {
@@ -417,15 +478,12 @@
       if (Array.isArray(state.layout.topSplitTabIds)) {
         state.layout.topSplitTabIds = state.layout.topSplitTabIds.filter((id) => id !== closingId);
       }
-      if (state.layout.pinnedTopSidecarId === closingId) {
-        state.layout.pinnedTopSidecarId = lastNonExtTabId && lastNonExtTabId !== closingId ? lastNonExtTabId : '';
-      }
-      const { activeSingleId, activeTopId, bottomTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
-      if (!state.layout.pinnedTopSidecarId || state.layout.pinnedTopSidecarId === closingId) {
-        state.layout.pinnedTopSidecarId = state.layout.splitViewEnabled ? activeTopId : activeSingleId;
-      }
+      const { workspaceTabs, topTabs, bottomTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
+      const beforeTopList = state.layout.splitViewEnabled ? lastRenderedTopIds : lastRenderedSingleIds;
+      const afterTopList = state.layout.splitViewEnabled ? topTabs : workspaceTabs;
+      state.layout.pinnedTopSidecarId = pickNextTabAfterClose(beforeTopList, afterTopList, state.layout.pinnedTopSidecarId || closingId, [closingId]);
       if (state.bottomActiveTabId === closingId) {
-        state.bottomActiveTabId = bottomTabs[0]?.sidecarId || '';
+        state.bottomActiveTabId = pickNextTabAfterClose(lastRenderedBottomIds, bottomTabs, closingId, [closingId]);
       }
       renderAll();
       await ns.apiCall?.('/api/layout/update', { tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, topSplitTabIds: state.layout.topSplitTabIds, pinnedTopSidecarId: state.layout.pinnedTopSidecarId, sideChatState });

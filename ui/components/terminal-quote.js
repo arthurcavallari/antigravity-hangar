@@ -287,8 +287,11 @@
       disposeThreadFrame(cid);
       ns.apiCall?.('/api/terminal/sidechat/delete', { cascadeId: cid })?.catch?.(() => {});
     }
+    const prevIds = ns.getInstanceSideChats(sideChatThreads, rootId).map((t) => t.cascadeId), prevAct = ns.getActiveSideChatId(instanceTabId) || prevIds[0] || '';
     sideChatThreads = sideChatThreads.filter((t) => !rmSet.has(t.cascadeId));
     const rem = ns.getInstanceSideChats(sideChatThreads, rootId);
+    const remIds = rem.map((t) => t.cascadeId), remSet = new Set(remIds), pIdx = prevIds.indexOf(prevAct);
+    const nextAct = remSet.has(prevAct) ? prevAct : ((pIdx >= 0 ? prevIds.slice(pIdx + 1).find((id) => remSet.has(id)) : '') || remIds[remIds.length - 1] || '');
     if (rootId) {
       if (!rem.length) {
         poppedSideChatIds.delete(rootId);
@@ -616,7 +619,7 @@
       } else {
         const res = ns.promoteSideChatToHangarBar({ cascadeId: actCid, instanceTabId: curTabId });
         if (res?.newSidecarId) {
-          onSideChatStateChange?.({ ...ns.getSideChatState(), activateTab: true, targetTabId: res.newSidecarId, replacedSidecarId: res.replacedSidecarId, pane: box.dataset?.slot || '' });
+          onSideChatStateChange?.({ ...ns.getSideChatState(), activateTab: true, targetTabId: res.newSidecarId, replacedSidecarId: res.replacedSidecarId, afterTabId: curTabId, pane: box.dataset?.slot || '' });
         }
       }
     };

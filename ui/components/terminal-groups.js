@@ -69,7 +69,9 @@
         if (typeof ts.mainTerminalOpen === 'boolean') mainTerminalOpen = ts.mainTerminalOpen;
         lastTermStateJson = JSON.stringify(ns.serializeTerminalState());
       }
-      const liveIds = new Set((Array.isArray(liveTerminals) ? liveTerminals : []).map((t) => t?.terminalId).filter(Boolean));
+      const showExt = layout?.showExternalTerminals !== false;
+      const activeLive = (Array.isArray(liveTerminals) ? liveTerminals : []).filter((t) => t?.terminalId && (showExt || !t.isExternal) && !ns.isTerminalClosing?.(t.terminalId));
+      const liveIds = new Set(activeLive.map((t) => t.terminalId));
       const closed = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds : []);
       if (liveIds.size > 0) {
         const popped = ns.getPoppedTerminalIds(); let poppedChanged = false;
@@ -81,8 +83,8 @@
         }
         if (poppedChanged) try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify([...popped])); } catch {}
       }
-      const unpopped = ns.getInstanceTerminals(Array.isArray(liveTerminals) ? liveTerminals : [], '');
-      if (!closed.has(ns.TERMINAL_TAB_ID) && (unpopped.length > 0 || layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID || (layout?.topSplitTabIds || []).includes(ns.TERMINAL_TAB_ID))) {
+      const unpopped = ns.getInstanceTerminals(activeLive, '');
+      if (!closed.has(ns.TERMINAL_TAB_ID) && unpopped.length > 0) {
         mainTerminalOpen = true;
       }
     } finally { isHydratingTerm = false; }
@@ -96,7 +98,13 @@
       const sg = (typeof item === 'object' && item?.splitGroupId) || (effSplitMap instanceof Map ? effSplitMap.get(tid) : effSplitMap?.[tid]); if (sg) splitByTid.set(tid, String(sg));
     }
     const validSet = new Set(validTerminalIds), seen = new Set(), next = []; let consumedPending = false;
-    for (const g of Array.isArray(groups) ? groups : []) { const paneIds = (g?.paneIds || []).filter((tid) => validSet.has(tid) && !seen.has(tid) && seen.add(tid)); if (paneIds.length) next.push({ groupId: String(g.groupId || paneIds[0]), paneIds, focusedPaneId: paneIds.includes(g.focusedPaneId) ? g.focusedPaneId : paneIds[0], ...(g.pinned ? { pinned: true } : {}) }); }
+    for (const g of Array.isArray(groups) ? groups : []) {
+      const oldPanes = g?.paneIds || [], paneIds = oldPanes.filter((tid) => validSet.has(tid) && !seen.has(tid) && seen.add(tid));
+      if (paneIds.length) {
+        const fIdx = oldPanes.indexOf(g?.focusedPaneId), focusedPaneId = paneIds.includes(g.focusedPaneId) ? g.focusedPaneId : ((fIdx >= 0 ? oldPanes.slice(fIdx + 1).find((id) => paneIds.includes(id)) : '') || paneIds[fIdx >= 0 ? paneIds.length - 1 : 0]);
+        next.push({ groupId: String(g.groupId || paneIds[0]), paneIds, focusedPaneId, ...(g.pinned ? { pinned: true } : {}) });
+      }
+    }
     for (const tid of validTerminalIds) {
       if (seen.has(tid)) continue; seen.add(tid);
       const sg = splitByTid.get(tid) || '', pTarget = effPending && !consumedPending ? next.find((g) => g.groupId === effPending.groupId || g.paneIds.includes(effPending.afterPaneId)) : null;
@@ -179,6 +187,7 @@
     const allSourcePanes = [...groupedPanes, ...mapPanes.filter((id) => !groupedPanes.includes(id))], srcSet = new Set(allSourcePanes);
     popped.delete(rootId);
     if (targetInstanceTabId === ns.TERMINAL_TAB_ID) {
+      mainTerminalOpen = true;
       for (const tid of allSourcePanes) delete groupMap[tid];
       for (const [k, v] of Object.entries(groupMap)) { if (v === rootId) delete groupMap[k]; }
     } else if (targetInstanceTabId.startsWith(ns.TERMINAL_TAB_PREFIX)) {

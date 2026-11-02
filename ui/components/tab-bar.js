@@ -37,8 +37,8 @@
     const unpoppedSc = ns.getInstanceSideChats ? ns.getInstanceSideChats(allScThreads, '') : allScThreads;
     const hasSideChat = Boolean((scState?.isOpen || closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedSet.has(ns.SIDECHAT_TAB_ID) || unpoppedSc.length > 0) && (unpoppedSc.length > 0 || !poppedScTabs.length));
     const hasMainTerm = typeof ns.isMainTerminalOpen === 'function' ? Boolean(ns.isMainTerminalOpen() || closedSet.has(ns.TERMINAL_TAB_ID) || pinnedSet.has(ns.TERMINAL_TAB_ID)) : true;
-    const virtualTabs = [...(!isTermBtn && hasMainTerm ? [TERMINAL_TAB] : []), ...(hasSideChat ? [SIDECHAT_TAB] : []), ...(isExtBtn ? [] : [EXTENSIONS_TAB])];
-    const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...poppedTabs, ...poppedScTabs, ...virtualTabs].map((sc) => ({ ...sc, isPinned: pinnedSet.has(sc.sidecarId), canClose: Boolean(sc.terminalId || sc.sideChatId || sc.isTerminal || sc.isSideChat) }));
+    const virtualTabs = [...(!isTermBtn && hasMainTerm ? [TERMINAL_TAB] : []), ...poppedTabs, ...(hasSideChat ? [SIDECHAT_TAB] : []), ...poppedScTabs, ...(isExtBtn ? [] : [EXTENSIONS_TAB])];
+    const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...virtualTabs].map((sc) => ({ ...sc, isPinned: pinnedSet.has(sc.sidecarId), canClose: Boolean(sc.terminalId || sc.sideChatId || sc.isTerminal || sc.isSideChat) }));
     const tabOrder = Array.isArray(layout?.tabOrder) ? layout.tabOrder : [], orderIndex = new Map(tabOrder.map((id, idx) => [id, idx]));
     if (tabOrder.length > 0) allTabs.sort((a, b) => (orderIndex.get(a.sidecarId) ?? 9999) - (orderIndex.get(b.sidecarId) ?? 9999));
     const openTabs = allTabs.filter((sc) => !closedSet.has(sc.sidecarId)), closedTabs = allTabs.filter((sc) => closedSet.has(sc.sidecarId));
