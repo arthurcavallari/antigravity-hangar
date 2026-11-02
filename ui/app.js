@@ -40,9 +40,11 @@
     } catch { /* keep existing registryPackages */ }
   }
 
-  // The active tab belongs to this window: hangar.json is shared by every Antigravity window, so its
-  // pinnedTopSidecarId only seeds a window that hasn't picked a tab yet. sessionStorage is per window.
+  // The active tab belongs to this project/window: hangar.json is shared by every Antigravity window, so
+  // per-workspace layout and per-workspace sessionStorage keep tab selection isolated across projects.
   const ACTIVE_TAB_KEY = 'hangar.activeTabId';
+  const WS_LAYOUT_DEFAULTS = { pinnedTopSidecarId: 'context-monitor', topSplitTabIds: ['context-monitor'], tabOrder: [], closedTabIds: [], pinnedTabIds: [], splitViewEnabled: false };
+  const WS_LAYOUT_KEYS = Object.keys(WS_LAYOUT_DEFAULTS);
   let layoutSeq = 0, lastNonExtTabId = '', lastRenderedSingleIds = [], lastRenderedTopIds = [], lastRenderedBottomIds = [];
   function pickNextTabAfterClose(beforeList = [], afterList = [], curActiveId = '', removedIds = []) {
     const beforeIds = beforeList.map((t) => (typeof t === 'string' ? t : t.sidecarId)).filter(Boolean);
@@ -55,16 +57,62 @@
     if (idx >= 0) return beforeIds.slice(idx + 1).find((id) => afterSet.has(id)) || afterIds[afterIds.length - 1] || '';
     return afterIds[0] || '';
   }
+  const getWsStateKey = (wsPath = state.activeWorkspace?.workspacePath) => String(wsPath || '').trim().replace(/\\/g, '/').toLowerCase();
+  const getActiveTabStorageKey = (wsKey = getWsStateKey()) => (wsKey ? `${ACTIVE_TAB_KEY}:${wsKey}` : (hangarConversationId ? `${ACTIVE_TAB_KEY}:conv:${hangarConversationId}` : ACTIVE_TAB_KEY));
+  const buildSideChatLayoutPatch = (scStateObj) => {
+    const sideChatState = scStateObj || ns.serializeSideChatState?.();
+    const wsKey = getWsStateKey();
+    const sideChatStateByWorkspace = { ...(state.layout.sideChatStateByWorkspace || {}) };
+    if (wsKey) sideChatStateByWorkspace[wsKey] = sideChatState;
+    state.layout.sideChatState = sideChatState;
+    state.layout.sideChatStateByWorkspace = sideChatStateByWorkspace;
+    return { sideChatState, sideChatStateByWorkspace };
+  };
+  function saveLayoutUpdate(patch = {}) {
+    const wsKey = getWsStateKey();
+    let finalPatch = { ...patch };
+    if (wsKey && WS_LAYOUT_KEYS.some((k) => patch[k] !== undefined)) {
+      const prevMap = state.layout.workspaceLayouts && typeof state.layout.workspaceLayouts === 'object' ? state.layout.workspaceLayouts : {};
+      const prevWs = prevMap[wsKey] && typeof prevMap[wsKey] === 'object' ? prevMap[wsKey] : {};
+      const wsEntryPatch = {};
+      for (const k of WS_LAYOUT_KEYS) if (patch[k] !== undefined) wsEntryPatch[k] = patch[k];
+      const nextWs = {
+        ...WS_LAYOUT_DEFAULTS,
+        pinnedTopSidecarId: state.layout.pinnedTopSidecarId || 'context-monitor',
+        topSplitTabIds: Array.isArray(state.layout.topSplitTabIds) ? state.layout.topSplitTabIds : ['context-monitor'],
+        tabOrder: Array.isArray(state.layout.tabOrder) ? state.layout.tabOrder : [],
+        closedTabIds: Array.isArray(state.layout.closedTabIds) ? state.layout.closedTabIds : [],
+        pinnedTabIds: Array.isArray(state.layout.pinnedTabIds) ? state.layout.pinnedTabIds : [],
+        splitViewEnabled: Boolean(state.layout.splitViewEnabled),
+        ...prevWs,
+        ...wsEntryPatch,
+      };
+      const workspaceLayouts = { ...prevMap, [wsKey]: nextWs };
+      state.layout.workspaceLayouts = workspaceLayouts;
+      finalPatch = { ...finalPatch, workspaceLayouts };
+    }
+    return ns.apiCall?.('/api/layout/update', finalPatch);
+  }
   const isTabValidForWindow = (id) => Boolean(
     id
     && (id !== ns.SIDECHAT_TAB_ID || ns.getSideChatState?.()?.isOpen)
     && (!String(id).startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__') || ns.getPoppedSideChatIds?.()?.has(String(id).slice((ns.SIDECHAT_TAB_PREFIX || 'sidechat__').length)))
-    && (!String(id).startsWith(ns.TERMINAL_TAB_PREFIX || 'terminal__') || ns.getPoppedTerminalIds?.()?.has(String(id).slice((ns.TERMINAL_TAB_PREFIX || 'terminal__').length)))
+    && (!String(id).startsWith(ns.TERMINAL_TAB_PREFIX || 'terminal__') || (ns.getPoppedTerminalIds?.()?.has(String(id).slice((ns.TERMINAL_TAB_PREFIX || 'terminal__').length)) && state.terminals.some((t) => t.terminalId === String(id).slice((ns.TERMINAL_TAB_PREFIX || 'terminal__').length))))
     && (id !== ns.TERMINAL_TAB_ID || ns.isMainTerminalOpen?.()),
   );
-  function readWindowActiveTab() { try { return sessionStorage.getItem(ACTIVE_TAB_KEY) || ''; } catch { return ''; } }
-  function rememberWindowActiveTab(sidecarId) { try { if (isTabValidForWindow(sidecarId)) sessionStorage.setItem(ACTIVE_TAB_KEY, sidecarId); else sessionStorage.removeItem(ACTIVE_TAB_KEY); } catch {} }
-  function withWindowActiveTab(layout) { const w = readWindowActiveTab(); return isTabValidForWindow(w) ? { ...layout, pinnedTopSidecarId: w } : layout; }
+  function readWindowActiveTab(wsKey = getWsStateKey()) { try { return sessionStorage.getItem(getActiveTabStorageKey(wsKey)) || ''; } catch { return ''; } }
+  function rememberWindowActiveTab(sidecarId, wsKey = getWsStateKey()) { if (!sidecarId) return; try { const k = getActiveTabStorageKey(wsKey); if (isTabValidForWindow(sidecarId)) sessionStorage.setItem(k, sidecarId); else sessionStorage.removeItem(k); } catch {} }
+  function applyWorkspaceLayout(rawLayout = {}, wsKey = getWsStateKey()) {
+    if (!wsKey) return { ...rawLayout };
+    const wsEntry = rawLayout?.workspaceLayouts?.[wsKey];
+    return wsEntry && typeof wsEntry === 'object' ? { ...rawLayout, ...WS_LAYOUT_DEFAULTS, ...wsEntry } : { ...rawLayout, ...WS_LAYOUT_DEFAULTS };
+  }
+  function withWindowActiveTab(layout, wsKey = getWsStateKey()) {
+    const w = readWindowActiveTab(wsKey);
+    if (isTabValidForWindow(w)) return { ...layout, pinnedTopSidecarId: w };
+    if (layout?.pinnedTopSidecarId && !isTabValidForWindow(layout.pinnedTopSidecarId)) return { ...layout, pinnedTopSidecarId: 'context-monitor' };
+    return layout;
+  }
 
   function insertTabIntoOrder(sidecarId, { beforeTabId = '', afterTabId = '' } = {}) {
     const { workspaceTabs } = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
@@ -91,12 +139,12 @@
       state.layout.pinnedTopSidecarId = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals).activeTopId;
     } else state.layout.pinnedTopSidecarId = sidecarId;
     renderAll();
-    await ns.apiCall?.('/api/layout/update', {
+    await saveLayoutUpdate({
       tabOrder: state.layout.tabOrder,
       topSplitTabIds: state.layout.topSplitTabIds,
       pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
       terminalState: ns.serializeTerminalState?.(),
-      sideChatState: ns.serializeSideChatState?.(),
+      ...buildSideChatLayoutPatch(),
     });
   }
 
@@ -135,18 +183,18 @@
     }
     if (state.layout.splitViewEnabled) state.layout.pinnedTopSidecarId = ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals).activeTopId;
     renderAll();
-    await ns.apiCall?.('/api/layout/update', {
+    await saveLayoutUpdate({
       closedTabIds: state.layout.closedTabIds,
       tabOrder: state.layout.tabOrder,
       topSplitTabIds: state.layout.topSplitTabIds,
       pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
       terminalState: ns.serializeTerminalState?.(),
-      sideChatState: ns.serializeSideChatState?.(),
+      ...buildSideChatLayoutPatch(),
     });
   }
 
   const reopenClosed = async (id) => {
-    if (state.layout.closedTabIds?.includes(id)) { state.layout.closedTabIds = state.layout.closedTabIds.filter((x) => x !== id); await ns.apiCall?.('/api/layout/update', { closedTabIds: state.layout.closedTabIds }); }
+    if (state.layout.closedTabIds?.includes(id)) { state.layout.closedTabIds = state.layout.closedTabIds.filter((x) => x !== id); await saveLayoutUpdate({ closedTabIds: state.layout.closedTabIds }); }
   };
 
   async function handleTabContextAction({ action, sidecarId, targetIds = [], keepSidecarId = '', pane = 'single' }) {
@@ -155,7 +203,7 @@
     if (action === 'toggle-pin') {
       if (pinned.has(sidecarId)) pinned.delete(sidecarId); else { pinned.add(sidecarId); closed.delete(sidecarId); }
       state.layout.pinnedTabIds = [...pinned]; state.layout.closedTabIds = [...closed]; renderAll();
-      await ns.apiCall?.('/api/layout/update', { pinnedTabIds: state.layout.pinnedTabIds, closedTabIds: state.layout.closedTabIds }); return;
+      await saveLayoutUpdate({ pinnedTabIds: state.layout.pinnedTabIds, closedTabIds: state.layout.closedTabIds }); return;
     }
     if (action === 'toggle-global') {
       const sc = state.sidecars.find((s) => s.sidecarId === sidecarId); if (!sc) return;
@@ -172,7 +220,7 @@
         ns.openTerminalQuoteComposer?.(els.mainViewport, {}, { conversationId: hangarConversationId !== '_new' ? hangarConversationId : '', skipActivate: true });
       }
       renderAll();
-      await ns.apiCall?.('/api/layout/update', { closedTabIds: state.layout.closedTabIds, pinnedTopSidecarId: sidecarId }); return;
+      await saveLayoutUpdate({ closedTabIds: state.layout.closedTabIds, pinnedTopSidecarId: sidecarId }); return;
     }
     if (action === 'delete-sidechat') {
       ns.closeSideChatDrawer?.({ deleteAll: true, notify: true });
@@ -227,7 +275,7 @@
         state.layout.pinnedTopSidecarId = targetTabId;
       }
       renderAll();
-      await ns.apiCall?.('/api/layout/update', {
+      await saveLayoutUpdate({
         closedTabIds: state.layout.closedTabIds,
         tabOrder: state.layout.tabOrder,
         topSplitTabIds: state.layout.topSplitTabIds,
@@ -272,13 +320,13 @@
         : pickNextTabAfterClose(beforeTopIds, afterTopList, prevTopAct, ids);
     }
     renderAll();
-    await ns.apiCall?.('/api/layout/update', {
+    await saveLayoutUpdate({
       closedTabIds: state.layout.closedTabIds,
       tabOrder: state.layout.tabOrder,
       topSplitTabIds: state.layout.topSplitTabIds,
       pinnedTopSidecarId: state.layout.pinnedTopSidecarId,
       terminalState: ns.serializeTerminalState?.(),
-      sideChatState: ns.serializeSideChatState?.(),
+      ...buildSideChatLayoutPatch(),
     });
     if (closedTerm) await refreshHangarState();
   }
@@ -297,7 +345,7 @@
     const selectSlotTab = async (tabId, slotKey) => {
       ++layoutSeq;
       if (slotKey === 'bottom' && state.layout.splitViewEnabled) { state.bottomActiveTabId = tabId; renderAll(); }
-      else { state.layout.pinnedTopSidecarId = tabId; renderAll(); await apiCall?.('/api/layout/update', { pinnedTopSidecarId: tabId }); }
+      else { state.layout.pinnedTopSidecarId = tabId; renderAll(); await saveLayoutUpdate({ pinnedTopSidecarId: tabId }); }
     };
     const termProps = {
       splitEnabled: Boolean(state.layout.splitViewEnabled), terminals: visibleTerminals,
@@ -360,7 +408,7 @@
             state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
             patch = { ...patch, pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID };
           }
-          await apiCall('/api/layout/update', patch);
+          await saveLayoutUpdate(patch);
           if (patch?.autoUpdate) await refreshRegistry();
           await refreshHangarState();
         },
@@ -412,16 +460,23 @@
       if (data.bootId) { if (knownBootId && knownBootId !== data.bootId) { window.location?.reload?.(); return; } knownBootId = data.bootId; }
       if (ns.isPointerOnTab || ns.activeTermDrag || state.isResizingSplit) return;
       if (data.theme) ns.applyThemePayload?.(data.theme, false);
+      const prevWsKey = getWsStateKey();
       state.activeWorkspace = data.activeWorkspace || state.activeWorkspace;
+      const nextWsKey = getWsStateKey();
+      const wsChanged = Boolean(prevWsKey && nextWsKey && prevWsKey !== nextWsKey);
+      if (wsChanged) { lastNonExtTabId = ''; state.bottomActiveTabId = ''; }
       if (data.hangar) state.hangar = data.hangar;
       state.sidecars = data.sidecars || []; state.terminals = data.terminals || [];
       state.plugins = data.plugins || []; state.suggestions = data.suggestions || [];
-      if (data.layout && seq === layoutSeq) {
-        ns.hydrateTerminalStateFromLayout?.(data.layout, state.terminals);
-        ns.hydrateSideChatStateFromLayout?.(data.layout);
-        state.layout = withWindowActiveTab(data.layout);
+      const wsPath = state.activeWorkspace?.workspacePath || '';
+      if (data.layout && (seq === layoutSeq || wsChanged)) {
+        const wsLayout = applyWorkspaceLayout(data.layout, nextWsKey);
+        ns.hydrateTerminalStateFromLayout?.(wsLayout, state.terminals, wsPath);
+        ns.hydrateSideChatStateFromLayout?.(wsLayout, wsPath);
+        state.layout = withWindowActiveTab(wsLayout, nextWsKey);
       } else {
-        ns.hydrateTerminalStateFromLayout?.(state.layout, state.terminals);
+        ns.hydrateTerminalStateFromLayout?.(state.layout, state.terminals, wsPath);
+        ns.hydrateSideChatStateFromLayout?.(state.layout, wsPath);
       }
       renderAll();
     } catch (err) {
@@ -429,16 +484,15 @@
     }
   }
 
-  ns.bindSplitResizeHandle?.({ state, els, onSaveHeight: (pinnedTopHeightPx) => ns.apiCall('/api/layout/update', { pinnedTopHeightPx }) });
+  ns.bindSplitResizeHandle?.({ state, els, onSaveHeight: (pinnedTopHeightPx) => saveLayoutUpdate({ pinnedTopHeightPx }) });
   ns.bindHangarChromeDropZone?.({ chromeBarEl: document.getElementById('chrome-bar'), bottomBarEl: els.bottomTabBar, onPromoteToHangarTab: handleDropTab, onMergeIntoTerminalTab: applyTerminalMergeLayout });
   ns.setTerminalPersistCallback?.((terminalState) => {
     ++layoutSeq;
     state.layout.terminalState = terminalState;
-    ns.apiCall?.('/api/layout/update', { terminalState });
+    saveLayoutUpdate({ terminalState });
   });
   ns.setSideChatDockCallback?.(async (scState) => {
-    const sideChatState = scState?.sideChatState || ns.serializeSideChatState?.();
-    state.layout.sideChatState = sideChatState;
+    const scPatch = buildSideChatLayoutPatch(scState?.sideChatState);
     const targetTabId = scState?.targetTabId || ns.SIDECHAT_TAB_ID;
     const removedId = scState?.removedSidecarId || scState?.closedSidecarId || '';
     const { from: repFrom, to: repTo } = scState?.replacedSidecarId || {};
@@ -464,11 +518,11 @@
           state.bottomActiveTabId = targetTabId;
         }
         renderAll();
-        await ns.apiCall?.('/api/layout/update', { tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, topSplitTabIds: state.layout.topSplitTabIds, pinnedTopSidecarId: state.layout.pinnedTopSidecarId, sideChatState });
+        await saveLayoutUpdate({ tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, topSplitTabIds: state.layout.topSplitTabIds, pinnedTopSidecarId: state.layout.pinnedTopSidecarId, ...scPatch });
       } else {
         state.layout.pinnedTopSidecarId = targetTabId;
         renderAll();
-        await ns.apiCall?.('/api/layout/update', { tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, pinnedTopSidecarId: targetTabId, sideChatState });
+        await saveLayoutUpdate({ tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, pinnedTopSidecarId: targetTabId, ...scPatch });
       }
     } else if (scState?.closedTab || scState?.closedSidecarId || !scState?.isOpen) {
       ++layoutSeq;
@@ -486,10 +540,10 @@
         state.bottomActiveTabId = pickNextTabAfterClose(lastRenderedBottomIds, bottomTabs, closingId, [closingId]);
       }
       renderAll();
-      await ns.apiCall?.('/api/layout/update', { tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, topSplitTabIds: state.layout.topSplitTabIds, pinnedTopSidecarId: state.layout.pinnedTopSidecarId, sideChatState });
+      await saveLayoutUpdate({ tabOrder: state.layout.tabOrder, closedTabIds: state.layout.closedTabIds, topSplitTabIds: state.layout.topSplitTabIds, pinnedTopSidecarId: state.layout.pinnedTopSidecarId, ...scPatch });
     } else {
       renderAll();
-      await ns.apiCall?.('/api/layout/update', { sideChatState });
+      await saveLayoutUpdate(scPatch);
     }
   });
 
@@ -504,7 +558,7 @@
       : targetTabId;
     state.layout.pinnedTopSidecarId = nextId;
     renderAll();
-    await ns.apiCall('/api/layout/update', { pinnedTopSidecarId: nextId });
+    await saveLayoutUpdate({ pinnedTopSidecarId: nextId });
   };
   els.terminalToggleBtn?.addEventListener('click', toggleTopChromeBtn(ns.TERMINAL_TAB_ID));
   els.extensionsToggleBtn?.addEventListener('click', toggleTopChromeBtn(ns.EXTENSIONS_TAB_ID));
@@ -518,10 +572,14 @@
       topSet.add(activeSingleId); patch.topSplitTabIds = [...topSet]; patch.pinnedTopSidecarId = activeSingleId;
     } else if (!nextSplit && activeTopId) patch.pinnedTopSidecarId = activeTopId;
     rememberWindowActiveTab(patch.pinnedTopSidecarId);
-    await ns.apiCall('/api/layout/update', patch);
+    await saveLayoutUpdate(patch);
     await refreshHangarState();
   });
 
+    if (targetTabId === ns.TERMINAL_TAB_ID && (ns.getInstanceTerminals?.(state.terminals, '') || []).length === 0) {
+      await handleTabContextAction({ action: 'new-terminal', pane: 'top' });
+      return;
+    }
   if (window.sidecar?.onWorkspaceChange) {
     window.sidecar.onWorkspaceChange((uris) => { state.workspaceUris = Array.isArray(uris) ? uris : []; refreshHangarState(); });
   }
@@ -545,6 +603,9 @@
   document.addEventListener('visibilitychange', () => {
     if (!isHidden()) refreshHangarState();
   });
+    state.layout.splitViewEnabled = nextSplit;
+    if (patch.topSplitTabIds) state.layout.topSplitTabIds = patch.topSplitTabIds;
+    if (patch.pinnedTopSidecarId) state.layout.pinnedTopSidecarId = patch.pinnedTopSidecarId;
 
   refreshRegistry();
   refreshHangarState();

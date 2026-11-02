@@ -16,7 +16,7 @@
   ns.readCustomSideChatTitles = () => { try { const r = JSON.parse(localStorage.getItem(CUSTOM_TITLES_KEY) || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
   ns.saveCustomSideChatTitle = (cid, title) => { try { const m = ns.readCustomSideChatTitles(); if (title) m[cid] = title; else delete m[cid]; localStorage.setItem(CUSTOM_TITLES_KEY, JSON.stringify(m)); } catch {} };
 
-  let sideChatThreads = [], activeSideChatId = '', sideChatCounter = 0, sideChatGeneration = 0, hydratedFromLayout = false;
+  let sideChatThreads = [], activeSideChatId = '', sideChatCounter = 0, sideChatGeneration = 0, hydratedFromLayout = false, hydratedSideChatWsKey = null;
   let isSideChatOpen = false, isSideChatDocked = true, onSideChatStateChange = null, startInFlight = null;
   const poppedSideChatIds = new Set(), sideChatGroupMap = {}, activeSideChatByInstance = new Map(), sideChatBoxes = new Map(), framesByCascadeId = new Map();
 
@@ -51,10 +51,19 @@
     customTitles: ns.readCustomSideChatTitles(),
   });
 
-  ns.hydrateSideChatStateFromLayout = (layout = {}) => {
-    if (hydratedFromLayout) return;
+  ns.hydrateSideChatStateFromLayout = (layout = {}, workspacePath = '') => {
+    const wsKey = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
+    if (hydratedFromLayout && hydratedSideChatWsKey === wsKey) return;
     hydratedFromLayout = true;
-    const sc = layout?.sideChatState;
+    hydratedSideChatWsKey = wsKey;
+    sideChatThreads = [];
+    activeSideChatId = '';
+    sideChatCounter = 0;
+    isSideChatOpen = false;
+    poppedSideChatIds.clear();
+    for (const k of Object.keys(sideChatGroupMap)) delete sideChatGroupMap[k];
+    activeSideChatByInstance.clear();
+    const sc = wsKey ? layout?.sideChatStateByWorkspace?.[wsKey] : layout?.sideChatState;
     if (sc && typeof sc === 'object') {
       if (sc.customTitles && typeof sc.customTitles === 'object') {
         try { localStorage.setItem(CUSTOM_TITLES_KEY, JSON.stringify({ ...sc.customTitles, ...ns.readCustomSideChatTitles() })); } catch {}
@@ -83,17 +92,19 @@
       if (typeof sc.isOpen === 'boolean') isSideChatOpen = sc.isOpen;
     }
     const closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds : []);
-    const refTabs = [...(Array.isArray(layout?.tabOrder) ? layout.tabOrder : []), ...(Array.isArray(layout?.topSplitTabIds) ? layout.topSplitTabIds : []), layout?.pinnedTopSidecarId || ''];
-    for (const tabId of refTabs) {
-      if (String(tabId).startsWith(ns.SIDECHAT_TAB_PREFIX) && !closedSet.has(tabId)) {
-        const cid = String(tabId).slice(ns.SIDECHAT_TAB_PREFIX.length);
-        if (!cid) continue;
-        poppedSideChatIds.add(cid);
-        if (!sideChatThreads.some((t) => t.cascadeId === cid)) {
-          const idx = ++sideChatCounter;
-          sideChatThreads.push({ cascadeId: cid, title: `Side Chat #${idx}`, parentConversationId: '', hasActivity: false, pinned: false, quotePayload: null });
+    if (!wsKey) {
+      const refTabs = [...(Array.isArray(layout?.tabOrder) ? layout.tabOrder : []), ...(Array.isArray(layout?.topSplitTabIds) ? layout.topSplitTabIds : []), layout?.pinnedTopSidecarId || ''];
+      for (const tabId of refTabs) {
+        if (String(tabId).startsWith(ns.SIDECHAT_TAB_PREFIX) && !closedSet.has(tabId)) {
+          const cid = String(tabId).slice(ns.SIDECHAT_TAB_PREFIX.length);
+          if (!cid) continue;
+          poppedSideChatIds.add(cid);
+          if (!sideChatThreads.some((t) => t.cascadeId === cid)) {
+            const idx = ++sideChatCounter;
+            sideChatThreads.push({ cascadeId: cid, title: `Side Chat #${idx}`, parentConversationId: '', hasActivity: false, pinned: false, quotePayload: null });
+          }
+          if (!activeSideChatByInstance.has(tabId)) activeSideChatByInstance.set(tabId, cid);
         }
-        if (!activeSideChatByInstance.has(tabId)) activeSideChatByInstance.set(tabId, cid);
       }
     }
     if (ns.getInstanceSideChats(sideChatThreads, '').length > 0 && !closedSet.has(ns.SIDECHAT_TAB_ID)) {

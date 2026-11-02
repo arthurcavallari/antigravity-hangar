@@ -8,13 +8,14 @@
   const EXTENSIONS_TAB = { sidecarId: ns.EXTENSIONS_TAB_ID, displayName: 'Extensions', statusBadge: 'MANAGER', isVirtual: true, matchesWorkspace: true };
   const SIDECHAT_TAB = { sidecarId: ns.SIDECHAT_TAB_ID, displayName: 'Side Chat', statusBadge: 'RUNNING', isVirtual: true, isSideChat: true, matchesWorkspace: true };
 
-  ns.partitionSplitTabs = function partitionSplitTabs(sidecars = [], layout = {}, terminals = []) {
+  ns.partitionSplitTabs = function partitionSplitTabs(sidecars = [], layout = {}, terminals = null) {
     const popped = ns.getPoppedTerminalIds?.() || new Set(), customTitles = ns.readCustomTermTitles?.() || {}, grpMap = ns.readGroupMap?.() || {};
     const poppedSc = ns.getPoppedSideChatIds?.() || new Set(), customScTitles = ns.readCustomSideChatTitles?.() || {}, scGrpMap = ns.getSideChatGroupMap?.() || {};
     const pinnedSet = new Set(Array.isArray(layout?.pinnedTabIds) ? layout.pinnedTabIds : []), closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds.filter((id) => !pinnedSet.has(id)) : []);
-    const visibleTerminals = layout?.showExternalTerminals === false ? (terminals || []).filter((t) => !t?.isExternal) : (terminals || []);
+    const hasTermsList = Array.isArray(terminals);
+    const visibleTerminals = hasTermsList ? (layout?.showExternalTerminals === false ? terminals.filter((t) => !t?.isExternal) : terminals) : [];
     const termById = new Map(visibleTerminals.map((t) => [t.terminalId, t]));
-    const poppedList = (terminals || []).length ? [...popped].filter((id) => termById.has(id)).map((id) => termById.get(id)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
+    const poppedList = hasTermsList ? [...popped].filter((id) => termById.has(id)).map((id) => termById.get(id)) : [...popped].map((terminalId) => ({ terminalId, title: 'Terminal' }));
     const poppedTabs = poppedList.map((t, idx) => {
       const sidecarId = `terminal__${t.terminalId}`, grps = ns.readTabGroups?.(sidecarId) || [], actGid = ns.getActiveGroupId?.(sidecarId) || '';
       const actGrp = grps.find((g) => g.groupId === actGid) || grps[0] || null, focTid = actGrp?.focusedPaneId || actGrp?.paneIds?.[0] || t.terminalId;
@@ -45,7 +46,7 @@
     const workspaceTabs = [...openTabs.filter((sc) => sc.isPinned), ...openTabs.filter((sc) => !sc.isPinned)];
     const rawTopIds = Array.isArray(layout?.topSplitTabIds) ? layout.topSplitTabIds : layout?.pinnedTopSidecarId ? [layout.pinnedTopSidecarId] : workspaceTabs[0] ? [workspaceTabs[0].sidecarId] : [];
     const topSet = new Set(rawTopIds), topTabs = workspaceTabs.filter((sc) => topSet.has(sc.sidecarId)), bottomTabs = workspaceTabs.filter((sc) => !topSet.has(sc.sidecarId));
-    const specialBtnId = (isExtBtn && layout?.pinnedTopSidecarId === ns.EXTENSIONS_TAB_ID) || (isTermBtn && layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID) ? layout.pinnedTopSidecarId : '';
+    const specialBtnId = (isExtBtn && layout?.pinnedTopSidecarId === ns.EXTENSIONS_TAB_ID) || (isTermBtn && hasMainTerm && layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID) ? layout.pinnedTopSidecarId : '';
     const activeSingleId = specialBtnId || workspaceTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || workspaceTabs[0]?.sidecarId || '';
     const activeTopId = specialBtnId || topTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId || topTabs[0]?.sidecarId || '';
     return { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId, topSet, pinnedSet, closedSet };

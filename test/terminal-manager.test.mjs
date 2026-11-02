@@ -525,6 +525,13 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       rpcCalls.push({ method, body });
       if (method === 'StartCascade') return { cascadeId: 'side-cascade-101' };
       if (method === 'DeleteCascadeTrajectory') return {};
+
+    freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, []);
+    freshWin.Hangar.hydrateSideChatStateFromLayout({ sideChatState: savedSideChatState, sideChatStateByWorkspace: { 'c:/users/arthu/ideaprojects/antigravity-hangar': savedSideChatState }, tabOrder: ['__sidechat__', `sidechat__${secondCid}`] }, 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-kit');
+    assert.equal(freshWin.Hangar.isMainTerminalOpen(), false);
+    assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
+    const otherProjPart = freshWin.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { tabOrder: ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__sidechat__'] }, []);
+    assert.deepEqual(Array.from(otherProjPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__extensions__']);
       return {};
     };
     const streamFrames = Buffer.concat([

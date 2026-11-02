@@ -536,4 +536,82 @@ describe('Hangar UI polling load', () => {
     assert.equal(settingsPane.classList.contains('hidden'), true);
     assert.equal(storeViewEl.querySelector('[data-role="pane-installed"]').classList.contains('hidden'), false);
   });
+
+  it('scopes the selected tab and workspace layout per project so selecting Extensions in project1 does not select it in project2', async () => {
+    const sharedSession = new Map();
+    const sessionStorage = {
+      getItem: (k) => sharedSession.get(k) || '',
+      setItem: (k, v) => sharedSession.set(k, String(v)),
+      removeItem: (k) => sharedSession.delete(k),
+    };
+    let sharedLayout = { pinnedTopSidecarId: 'context-monitor', topSplitTabIds: ['context-monitor'], tabOrder: [], splitViewEnabled: false };
+    let currentWsPath = 'C:\\Proj\\One';
+    let onWorkspaceChange = null;
+    let lastTabBarProps = null;
+
+    const window = {
+      location: { search: '?conversationId=conv-proj-1' },
+      addEventListener() {},
+      sidecar: { onWorkspaceChange: (cb) => { onWorkspaceChange = cb; } },
+      Hangar: {
+        EXTENSIONS_TAB_ID: '__extensions__',
+        TERMINAL_TAB_ID: '__terminal__',
+        SIDECHAT_TAB_ID: '__sidechat__',
+        renderTabBar: (props) => { lastTabBarProps = props; },
+        apiCall: async (path, body) => {
+          if (path === '/api/state') {
+            return {
+              activeWorkspace: { workspacePath: currentWsPath, workspaceName: currentWsPath.split('\\').pop() },
+              sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+              terminals: [],
+              layout: JSON.parse(JSON.stringify(sharedLayout)),
+            };
+          }
+          if (path === '/api/layout/update') {
+            const prevWsLayouts = sharedLayout.workspaceLayouts || {};
+            sharedLayout = { ...sharedLayout, ...body };
+            if (body.workspaceLayouts) sharedLayout.workspaceLayouts = { ...prevWsLayouts, ...body.workspaceLayouts };
+            return { ok: true, layout: sharedLayout };
+          }
+          return {};
+        },
+      },
+    };
+    window.parent = {};
+    const document = { hidden: false, getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] };
+    const ctx = vm.createContext({
+      window,
+      document,
+      URLSearchParams,
+      sessionStorage,
+      console,
+      Date,
+      setTimeout,
+      setInterval: () => 0,
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'components/tab-bar.js'), 'utf8'), ctx, { filename: 'tab-bar.js' });
+    window.Hangar.renderTabBar = (props) => { lastTabBarProps = props; };
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    // Project 1 starts on context-monitor, then user clicks Extensions
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
+    await lastTabBarProps.onSelectTopSplitTab('__extensions__');
+    await flush();
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__extensions__');
+    assert.equal(sharedLayout.workspaceLayouts['c:/proj/one'].pinnedTopSidecarId, '__extensions__');
+    assert.equal(sharedSession.get('hangar.activeTabId:c:/proj/one'), '__extensions__');
+
+    // Switching to Project 2 must NOT inherit Project 1's selected Extensions tab
+    currentWsPath = 'C:\\Proj\\Two';
+    onWorkspaceChange(['file:///c%3A/Proj/Two']);
+    await flush();
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
+
+    // Switching back to Project 1 restores Project 1's selected Extensions tab
+    currentWsPath = 'C:\\Proj\\One';
+    onWorkspaceChange(['file:///c%3A/Proj/One']);
+    await flush();
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__extensions__');
+  });
 });

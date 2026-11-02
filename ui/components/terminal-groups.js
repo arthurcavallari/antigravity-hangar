@@ -3,8 +3,9 @@
   const ns = (window.Hangar = window.Hangar || {});
   ns.TERMINAL_TAB_ID = '__terminal__'; ns.TERMINAL_TAB_PREFIX = 'terminal__';
   ns.isTerminalTabId = (tabId = '') => tabId === ns.TERMINAL_TAB_ID || String(tabId || '').startsWith(ns.TERMINAL_TAB_PREFIX);
-  let mainTerminalOpen = false, hydratedTermState = false, isHydratingTerm = false, lastTermStateJson = '', onPersistTermState = null;
+  let mainTerminalOpen = false, hydratedTermState = false, isHydratingTerm = false, lastTermStateJson = '', onPersistTermState = null, activeTermWsKey = '';
   const ENGINE_STORAGE_KEY = 'hangar.terminalEngine.v2', POPPED_STORAGE_KEY = 'hangar.poppedTerminalIds', GROUP_STORAGE_KEY = 'hangar.terminalGroupMap', TAB_GROUPS_STORAGE_KEY = 'hangar.terminalTabGroups';
+  const resolveInstKey = (id = '__terminal__') => (id === ns.TERMINAL_TAB_ID && activeTermWsKey) ? `${ns.TERMINAL_TAB_ID}@${activeTermWsKey}` : id;
   const readAllStoredGroups = () => { try { const r = JSON.parse(localStorage.getItem(TAB_GROUPS_STORAGE_KEY) || '{}'); return r && typeof r === 'object' ? r : {}; } catch { return {}; } };
   const writeAllStoredGroups = (all) => { try { localStorage.setItem(TAB_GROUPS_STORAGE_KEY, JSON.stringify(all)); } catch {} };
   const activeGroupByInstance = new Map();
@@ -39,21 +40,22 @@
     const target = dash ? dash[1].trim() : s, m = target.match(/^[A-Za-z]:\\.+\\([^\\]+)$/i) || target.match(/^\/.+\/([^/]+)$/);
     return m ? m[1] : target;
   };
-  ns.getActiveGroupId = (instanceTabId = '__terminal__') => activeGroupByInstance.get(instanceTabId) || '';
-  ns.setActiveGroupId = (instanceTabId = '__terminal__', groupId = '') => { const prev = activeGroupByInstance.get(instanceTabId) || ''; if (groupId) activeGroupByInstance.set(instanceTabId, groupId); else activeGroupByInstance.delete(instanceTabId); if (prev !== (groupId || '')) notifyTermPersist(); };
-  ns.readTabGroups = (instanceTabId = '__terminal__') => { const list = readAllStoredGroups()[instanceTabId]; return Array.isArray(list) ? list.filter((g) => g && Array.isArray(g.paneIds) && g.paneIds.length > 0) : []; };
-  ns.saveTabGroups = (instanceTabId = '__terminal__', groups = []) => { const all = readAllStoredGroups(); if (!groups || !groups.length) delete all[instanceTabId]; else all[instanceTabId] = groups.map((g) => ({ groupId: g.groupId, paneIds: [...g.paneIds], focusedPaneId: g.focusedPaneId, ...(g.pinned ? { pinned: true } : {}) })); writeAllStoredGroups(all); notifyTermPersist(); };
+  ns.getActiveGroupId = (instanceTabId = '__terminal__') => activeGroupByInstance.get(resolveInstKey(instanceTabId)) || activeGroupByInstance.get(instanceTabId) || '';
+  ns.setActiveGroupId = (instanceTabId = '__terminal__', groupId = '') => { const k = resolveInstKey(instanceTabId), prev = activeGroupByInstance.get(k) || ''; if (groupId) { activeGroupByInstance.set(k, groupId); if (!activeTermWsKey) activeGroupByInstance.set(instanceTabId, groupId); } else { activeGroupByInstance.delete(k); if (!activeTermWsKey) activeGroupByInstance.delete(instanceTabId); } if (prev !== (groupId || '')) notifyTermPersist(); };
+  ns.readTabGroups = (instanceTabId = '__terminal__') => { const all = readAllStoredGroups(), list = all[resolveInstKey(instanceTabId)] || all[instanceTabId]; return Array.isArray(list) ? list.filter((g) => g && Array.isArray(g.paneIds) && g.paneIds.length > 0) : []; };
+  ns.saveTabGroups = (instanceTabId = '__terminal__', groups = []) => { const all = readAllStoredGroups(), k = resolveInstKey(instanceTabId); if (!groups || !groups.length) delete all[k]; else all[k] = groups.map((g) => ({ groupId: g.groupId, paneIds: [...g.paneIds], focusedPaneId: g.focusedPaneId, ...(g.pinned ? { pinned: true } : {}) })); writeAllStoredGroups(all); notifyTermPersist(); };
   ns.migrateTabGroups = function migrateTabGroups(fromTabId, toTabId, paneIdSet) {
-    const all = readAllStoredGroups(), fromList = Array.isArray(all[fromTabId]) ? all[fromTabId] : [], toList = Array.isArray(all[toTabId]) ? all[toTabId] : [], moving = [], staying = [];
+    const all = readAllStoredGroups(), fk = resolveInstKey(fromTabId), tk = resolveInstKey(toTabId), fromList = Array.isArray(all[fk] || all[fromTabId]) ? (all[fk] || all[fromTabId]) : [], toList = Array.isArray(all[tk] || all[toTabId]) ? (all[tk] || all[toTabId]) : [], moving = [], staying = [];
     for (const g of fromList) {
       const moved = (g?.paneIds || []).filter((id) => paneIdSet.has(id)), kept = (g?.paneIds || []).filter((id) => !paneIdSet.has(id));
       if (moved.length) moving.push({ groupId: g.groupId || moved[0], paneIds: moved, focusedPaneId: moved.includes(g.focusedPaneId) ? g.focusedPaneId : moved[0], ...(g.pinned ? { pinned: true } : {}) });
       if (kept.length) staying.push({ groupId: g.groupId || kept[0], paneIds: kept, focusedPaneId: kept.includes(g.focusedPaneId) ? g.focusedPaneId : kept[0], ...(g.pinned ? { pinned: true } : {}) });
     }
-    if (!staying.length) delete all[fromTabId]; else all[fromTabId] = staying; all[toTabId] = [...toList, ...moving]; writeAllStoredGroups(all); notifyTermPersist();
+    if (!staying.length) delete all[fk]; else all[fk] = staying; all[tk] = [...toList, ...moving]; writeAllStoredGroups(all); notifyTermPersist();
   };
-  ns.hydrateTerminalStateFromLayout = function hydrateTerminalStateFromLayout(layout = {}, liveTerminals = []) {
+  ns.hydrateTerminalStateFromLayout = function hydrateTerminalStateFromLayout(layout = {}, liveTerminals = [], workspacePath = '') {
     isHydratingTerm = true;
+    activeTermWsKey = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
     try {
       const ts = layout?.terminalState;
       if (!hydratedTermState && ts && typeof ts === 'object') {
@@ -66,7 +68,6 @@
         if (ts.activeGroupByInstance && typeof ts.activeGroupByInstance === 'object') {
           for (const [k, v] of Object.entries(ts.activeGroupByInstance)) if (v) activeGroupByInstance.set(k, String(v));
         }
-        if (typeof ts.mainTerminalOpen === 'boolean') mainTerminalOpen = ts.mainTerminalOpen;
         lastTermStateJson = JSON.stringify(ns.serializeTerminalState());
       }
       const showExt = layout?.showExternalTerminals !== false;
@@ -84,9 +85,7 @@
         if (poppedChanged) try { localStorage.setItem(POPPED_STORAGE_KEY, JSON.stringify([...popped])); } catch {}
       }
       const unpopped = ns.getInstanceTerminals(activeLive, '');
-      if (!closed.has(ns.TERMINAL_TAB_ID) && unpopped.length > 0) {
-        mainTerminalOpen = true;
-      }
+      mainTerminalOpen = !closed.has(ns.TERMINAL_TAB_ID) && unpopped.length > 0;
     } finally { isHydratingTerm = false; }
     notifyTermPersist();
   };
