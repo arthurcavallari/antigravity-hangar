@@ -5,15 +5,52 @@
   ns.isTerminalTabId = ns.isTerminalTabId || ((tabId = '') => tabId === ns.TERMINAL_TAB_ID || String(tabId || '').startsWith(ns.TERMINAL_TAB_PREFIX));
   const instanceControllers = new Map(), sharedPanes = new Map(), closingIds = new Set();
   ns.isTerminalClosing = (tid) => closingIds.has(tid);
+  ns.startInlineRename = function startInlineRename(pillEl, labelEl, opts = {}) {
+    if (window.AgyUI?.startInlineRename) {
+      return window.AgyUI.startInlineRename(pillEl, labelEl, opts);
+    }
+    if (!pillEl) return null;
+    if (labelEl && typeof labelEl === 'object' && !(labelEl.tagName || labelEl.nodeType || typeof labelEl.replaceWith === 'function' || labelEl.classList || labelEl.textContent !== undefined)) {
+      opts = labelEl;
+      labelEl = pillEl.querySelector?.('.agy-tab-label');
+    }
+    if (!labelEl) return null;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = opts.inputClassName || 'agy-rename-input';
+    inp.value = opts.initialValue ?? labelEl.textContent ?? '';
+    let done = false;
+    pillEl._isRenaming = true;
+    const finish = (commit) => {
+      if (done) return;
+      done = true;
+      pillEl._isRenaming = false;
+      try { inp.replaceWith?.(labelEl); } catch {}
+      try { inp.remove?.(); } catch {}
+      if (commit) opts.onCommit?.(inp.value);
+      else opts.onCancel?.();
+    };
+    inp.addEventListener('keydown', (e) => {
+      e.stopPropagation?.();
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    inp.addEventListener('blur', () => finish(true));
+    ['pointerdown', 'click', 'dblclick'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation?.()));
+    labelEl.replaceWith?.(inp);
+    inp.focus?.();
+    inp.select?.();
+    return inp;
+  };
 
   function createInstanceController(instanceTabId, rootId = '') {
     let tabGroups = ns.readTabGroups(instanceTabId), activeGroupId = tabGroups[0]?.groupId || rootId || '', pendingSplit = null, engineMode = ns.readEngineMode();
     let terminals = [], workspacePath = '', conversationId = '', callbacks = {}, pollBusy = false, isInstanceVisible = false, pendingFocus = false, currentSlotKey = 'top', isRenaming = false;
     const panes = sharedPanes, rootEl = document.createElement('div');
     rootEl.className = 'term-shell'; rootEl.dataset.instanceTabId = instanceTabId;
-    rootEl.innerHTML = `<div class="term-toolbar"><div class="term-session-strip" data-role="sessions"></div><div class="term-toolbar-actions">
-      <button type="button" class="chrome-icon-btn" data-action="split" data-testid="terminal-split-button" title="Split Terminal">${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
-      <button type="button" class="chrome-icon-btn" data-action="popout" title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}">${ns.iconSvg('dock_to_right', 14)}</button>
+    rootEl.innerHTML = `<div class="term-toolbar"><div class="agy-tab-strip" data-role="sessions"></div><div class="term-toolbar-actions">
+      <button type="button" class="agy-icon-btn" data-action="split" data-testid="terminal-split-button" title="Split Terminal">${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
+      <button type="button" class="agy-icon-btn" data-action="popout" title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}">${ns.iconSvg('dock_to_right', 14)}</button>
     </div></div><div class="term-stage" data-role="stage"></div>`;
     const toolbarEl = rootEl.querySelector('.term-toolbar'), actionsEl = rootEl.querySelector('.term-toolbar-actions'), sessionsEl = rootEl.querySelector('[data-role="sessions"]'), stageEl = rootEl.querySelector('[data-role="stage"]');
     const popoutBtn = rootEl.querySelector('[data-action="popout"]'), splitBtn = rootEl.querySelector('[data-action="split"]');
@@ -93,17 +130,27 @@
     const resolveTitle = (tid, fallback = 'pwsh') => ns.readCustomTermTitles?.()?.[tid] || ns.formatTermTitle(panes.get(tid)?.title || terminals.find((x) => x.terminalId === tid)?.title || fallback);
     function startInlineRename(pill, tid) {
       if (isRenaming) return;
-      const livePill = pill?.isConnected === false ? Array.from(sessionsEl.children || []).find((c) => c.dataset?.termTid === tid) : pill;
-      const lbl = livePill?.isConnected !== false ? livePill?.querySelector?.('.term-session-label') : null; if (!lbl) return;
-      const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'term-rename-input'; inp.value = resolveTitle(tid);
-      let committed = false; isRenaming = true;
-      const commit = (save) => {
-        if (committed) return; committed = true; isRenaming = false;
-        if (save) { const next = inp.value.trim(); ns.saveCustomTermTitle?.(tid, next); ns.apiCall?.('/api/terminal/rename', { terminalId: tid, title: next })?.catch?.(() => {}); }
-        lbl.textContent = resolveTitle(tid); inp.replaceWith?.(lbl); renderToolbar(); renderStage(); if (save && rootId) callbacks.onSessionChange?.();
-      };
-      inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') commit(true); else if (e.key === 'Escape') commit(false); });
-      inp.addEventListener('blur', () => commit(true)); ['pointerdown', 'click', 'dblclick'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation())); lbl.replaceWith?.(inp); inp.focus?.(); inp.select?.();
+      const livePill = pill?.isConnected === false ? Array.from(sessionsEl.children || sessionsEl.childNodes || []).find((c) => c.dataset?.termTid === tid) : pill;
+      const lbl = livePill?.isConnected !== false ? (livePill?._slots?.labelEl || livePill?.querySelector?.('.agy-tab-label')) : null;
+      if (!lbl) return;
+      isRenaming = true;
+      ns.startInlineRename(livePill, lbl, {
+        initialValue: resolveTitle(tid),
+        inputClassName: 'agy-rename-input',
+        onCommit: (rawNext) => {
+          isRenaming = false;
+          const next = String(rawNext || '').trim();
+          ns.saveCustomTermTitle?.(tid, next);
+          ns.apiCall?.('/api/terminal/rename', { terminalId: tid, title: next })?.catch?.(() => {});
+          lbl.textContent = resolveTitle(tid);
+          renderToolbar(); renderStage(); if (rootId) callbacks.onSessionChange?.();
+        },
+        onCancel: () => {
+          isRenaming = false;
+          lbl.textContent = resolveTitle(tid);
+          renderToolbar(); renderStage();
+        },
+      });
     }
     function ensureDirectPane(tid) {
       const bindHost = (pane) => {
@@ -141,39 +188,96 @@
       const activeGrp = getActiveGroup(), visibleIds = getVisibleIds(), hasSessions = tabGroups.length > 0;
       toolbarEl?.classList.toggle('hidden', !hasSessions); actionsEl?.classList.toggle('hidden', !hasSessions);
       popoutBtn?.classList.toggle('active', Boolean(rootId)); splitBtn?.classList.toggle('active', visibleIds.length > 1);
-      sessionsEl.innerHTML = '';
-      if (!hasSessions) return;
       const togglePin = (grp) => { grp.pinned = !grp.pinned; tabGroups = [...tabGroups.filter((g) => g.pinned), ...tabGroups.filter((g) => !g.pinned)]; ns.saveTabGroups(instanceTabId, tabGroups); renderToolbar(); };
+      const openPillContextMenu = (e, pill, grp, gIdx) => {
+        const focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
+        const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
+        const others = tabGroups.filter((g) => g.groupId !== grp.groupId && !g.pinned), right = tabGroups.slice(gIdx + 1).filter((g) => !g.pinned);
+        ns.openTabContextMenu?.(e, [
+          { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(grp) },
+          { id: 'rename-tab', label: 'Rename Terminal…', onClick: () => startInlineRename(pill, focTid) },
+          { id: 'split-tab', label: 'Split Terminal Right', onClick: () => spawnTerminal(focTid) },
+          { id: 'quote-tab', label: 'Quote Terminal in Chat', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.showTerminalQuoteToast?.(rootEl, `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`); } },
+          { id: 'quote-ask-tab', label: 'Quote & Ask Agent…', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.openTerminalQuoteComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || '') }); } },
+          { id: 'toggle-engine', label: engineMode === 'jetbox' ? 'Switch to Direct VT100 Engine' : 'Switch to Native Terminal Engine', onClick: () => { ns.saveEngineMode(engineMode === 'jetbox' ? 'direct' : 'jetbox'); renderToolbar(); renderStage(); } },
+          { separator: true },
+          { id: 'close-tab', label: 'Close Tab', disabled: isPinned, onClick: () => closeTerminalsByIds(grp.paneIds) },
+          { id: 'close-other-tabs', label: 'Close Other Tabs', disabled: !others.length, onClick: () => { activeGroupId = grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); closeTerminalsByIds(others.flatMap((g) => g.paneIds)); } },
+          { id: 'close-tabs-to-the-right', label: 'Close Tabs to the Right', disabled: !right.length, onClick: () => closeTerminalsByIds(right.flatMap((g) => g.paneIds)) },
+        ]);
+      };
+      if (window.AgyUI?.reconcileTabStrip) {
+        const stripItems = tabGroups.map((grp, gIdx) => {
+          const isCurrent = grp.groupId === activeGrp?.groupId, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
+          const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
+          const isExternal = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal);
+          return {
+            id: focTid,
+            grp,
+            gIdx,
+            label: cleanTitle,
+            icon: 'terminal',
+            iconSize: 16,
+            active: isCurrent,
+            pinned: isPinned,
+            closable: !isPinned,
+            renamable: true,
+            badgeText: grp.paneIds.length > 1 ? `(${grp.paneIds.length})` : '',
+            externalBadge: isExternal,
+            title: `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`,
+            dataset: { termTid: focTid, pinned: isPinned ? 'true' : 'false', external: isExternal ? 'true' : 'false', testid: `terminal-tab-${focTid}` },
+          };
+        });
+        window.AgyUI.reconcileTabStrip(sessionsEl, stripItems, {
+          idDatasetKey: 'termTid',
+          emptyHint: 'Drop a terminal tab here',
+          addButton: hasSessions
+            ? { role: 'term-add-tab', testId: 'aux-pane-new-tab-button', title: 'New Terminal Tab', onClick: (e) => { e?.stopPropagation?.(); spawnTerminal(''); } }
+            : null,
+          onClose: (_id, item) => closeTerminalsByIds(item.grp.paneIds),
+          onUnpin: (_id, item) => togglePin(item.grp),
+          onRenameStart: () => { isRenaming = true; },
+          onRenameCancel: () => { isRenaming = false; },
+          onRename: (id, rawNext) => {
+            isRenaming = false;
+            const next = String(rawNext || '').trim();
+            ns.saveCustomTermTitle?.(id, next);
+            ns.apiCall?.('/api/terminal/rename', { terminalId: id, title: next })?.catch?.(() => {});
+            renderToolbar(); renderStage(); if (rootId) callbacks.onSessionChange?.();
+          },
+          onContextMenu: (_id, item, e, pill) => openPillContextMenu(e, pill, item.grp, item.gIdx),
+          bindDrag: (pill, item) => {
+            ns.bindTermPointerDrag?.(pill, {
+              kind: 'tab', groupId: () => item.grp.groupId, terminalId: item.id, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => currentSlotKey,
+              onClick: () => { if (activeGroupId !== item.grp.groupId) { activeGroupId = item.grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); for (const c of Array.from(sessionsEl.children || sessionsEl.childNodes || [])) c.classList?.toggle?.('active', c === pill); renderStage(); if (rootId) callbacks.onSessionChange?.(); } focusPane(getActiveTerminalId()); pollVisiblePanes(); }, onSameInstanceDrop: applyDropResult,
+            });
+          },
+        });
+        return;
+      }
+      ns.clear(sessionsEl);
+      if (Array.isArray(sessionsEl.childNodes)) sessionsEl.childNodes.length = 0;
+      if (!hasSessions) {
+        const hint = document.createElement('span'); hint.className = 'agy-tab-drop-hint'; hint.textContent = 'Drop a terminal tab here';
+        sessionsEl.appendChild(hint);
+        return;
+      }
       tabGroups.forEach((grp, gIdx) => {
         const isCurrent = grp.groupId === activeGrp?.groupId, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
         const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
         const isExternal = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal);
         const pill = document.createElement('button');
-        pill.type = 'button'; pill.className = `term-session-pill${isCurrent ? ' active' : ''}`; pill.dataset.pinned = isPinned ? 'true' : 'false'; pill.dataset.termTid = focTid; pill.dataset.external = isExternal ? 'true' : 'false';
+        pill.type = 'button'; pill.className = `agy-tab${isCurrent ? ' active' : ''}`; pill.dataset.pinned = isPinned ? 'true' : 'false'; pill.dataset.termTid = focTid; pill.dataset.external = isExternal ? 'true' : 'false'; pill.dataset.testid = `terminal-tab-${focTid}`;
         pill.title = `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`;
-        const badgeHtml = grp.paneIds.length > 1 ? `<span class="term-split-badge">(${grp.paneIds.length})</span>` : '';
-        const extBadgeHtml = isExternal ? `<span class="term-external-badge" title="Opened outside Hangar (shared with Antigravity)">${ns.iconSvg('open_in_new', 11)}</span>` : '';
-        const trailHtml = isPinned ? `<span class="term-session-pin" data-pin-gid="${ns.escHtml(grp.groupId)}" title="Unpin Tab">${ns.iconSvg('keep', 16)}</span>` : `<span class="term-session-close-wrap"><span class="term-session-close" data-close-gid="${ns.escHtml(grp.groupId)}" title="Close Tab">${ns.iconSvg('close', 14)}</span></span>`;
-        pill.innerHTML = `${ns.iconSvg('terminal', 16)}<span class="term-session-label">${ns.escHtml(cleanTitle)}</span>${badgeHtml}${extBadgeHtml}${trailHtml}`;
+        const badgeHtml = grp.paneIds.length > 1 ? `<span class="agy-tab-badge">(${grp.paneIds.length})</span>` : '';
+        const extBadgeHtml = isExternal ? `<span class="agy-tab-ext-badge" title="Opened outside Hangar (shared with Antigravity)">${ns.iconSvg('open_in_new', 11)}</span>` : '';
+        const trailHtml = isPinned ? `<span class="agy-tab-pin" data-pin-gid="${ns.escHtml(grp.groupId)}" title="Unpin Tab">${ns.iconSvg('keep', 16)}</span>` : `<span class="agy-tab-close-wrap"><span class="agy-tab-close" data-close-gid="${ns.escHtml(grp.groupId)}" title="Close Tab">${ns.iconSvg('close', 14)}</span></span>`;
+        pill.innerHTML = `<span class="agy-tab-icon">${ns.iconSvg('terminal', 16)}</span><span class="agy-tab-label">${ns.escHtml(cleanTitle)}</span>${badgeHtml}${extBadgeHtml}${trailHtml}`;
         pill.querySelector('[data-close-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); closeTerminalsByIds(grp.paneIds); });
         pill.querySelector('[data-pin-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); togglePin(grp); });
         pill.addEventListener('dblclick', (e) => { e.stopPropagation(); startInlineRename(pill, focTid); });
         pill.addEventListener('auxclick', (e) => { if (e.button === 1 && !isPinned) { e.preventDefault(); e.stopPropagation(); closeTerminalsByIds(grp.paneIds); } });
-        pill.addEventListener('contextmenu', (e) => {
-          const others = tabGroups.filter((g) => g.groupId !== grp.groupId && !g.pinned), right = tabGroups.slice(gIdx + 1).filter((g) => !g.pinned);
-          ns.openTabContextMenu?.(e, [
-            { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(grp) },
-            { id: 'rename-tab', label: 'Rename Terminal…', onClick: () => startInlineRename(pill, focTid) },
-            { id: 'split-tab', label: 'Split Terminal Right', onClick: () => spawnTerminal(focTid) },
-            { id: 'quote-tab', label: 'Quote Terminal in Chat', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.showTerminalQuoteToast?.(rootEl, `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`); } },
-            { id: 'quote-ask-tab', label: 'Quote & Ask Agent…', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.openTerminalQuoteComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || '') }); } },
-            { id: 'toggle-engine', label: engineMode === 'jetbox' ? 'Switch to Direct VT100 Engine' : 'Switch to Native Terminal Engine', onClick: () => { ns.saveEngineMode(engineMode === 'jetbox' ? 'direct' : 'jetbox'); renderToolbar(); renderStage(); } },
-            { separator: true },
-            { id: 'close-tab', label: 'Close Tab', disabled: isPinned, onClick: () => closeTerminalsByIds(grp.paneIds) },
-            { id: 'close-other-tabs', label: 'Close Other Tabs', disabled: !others.length, onClick: () => { activeGroupId = grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); closeTerminalsByIds(others.flatMap((g) => g.paneIds)); } },
-            { id: 'close-tabs-to-the-right', label: 'Close Tabs to the Right', disabled: !right.length, onClick: () => closeTerminalsByIds(right.flatMap((g) => g.paneIds)) },
-          ]);
-        });
+        pill.addEventListener('contextmenu', (e) => openPillContextMenu(e, pill, grp, gIdx));
         ns.bindTermPointerDrag?.(pill, {
           kind: 'tab', groupId: grp.groupId, terminalId: focTid, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => currentSlotKey,
           onClick: () => { if (activeGroupId !== grp.groupId) { activeGroupId = grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); for (const c of Array.from(sessionsEl.children || [])) c.classList?.toggle('active', c === pill); renderStage(); if (rootId) callbacks.onSessionChange?.(); } focusPane(getActiveTerminalId()); pollVisiblePanes(); }, onSameInstanceDrop: applyDropResult,
@@ -181,7 +285,7 @@
         sessionsEl.appendChild(pill);
       });
       const addTabBtn = document.createElement('button');
-      addTabBtn.type = 'button'; addTabBtn.className = 'chrome-icon-btn term-strip-add-btn'; addTabBtn.dataset.testid = 'aux-pane-new-tab-button'; addTabBtn.title = 'New Terminal Tab';
+      addTabBtn.type = 'button'; addTabBtn.className = 'agy-icon-btn agy-tab-add-btn'; addTabBtn.dataset.testid = 'aux-pane-new-tab-button'; addTabBtn.title = 'New Terminal Tab';
       addTabBtn.innerHTML = ns.iconSvg('add', 16); addTabBtn.addEventListener('click', (e) => { e.stopPropagation(); spawnTerminal(''); });
       sessionsEl.appendChild(addTabBtn);
     }
@@ -200,7 +304,7 @@
         if (!cid || !instanceIds.has(cid)) { ch._mountedParent = null; ch.remove?.(); }
         else if (!visSet.has(cid)) { ch.classList.add('hidden'); ch.classList.remove('is-split-secondary', 'is-focused-pane'); ch.dataset.active = 'false'; }
       }
-      stageEl.querySelectorAll('.empty-split-zone').forEach((el) => el.remove());
+      stageEl.querySelectorAll('.empty-split-zone, .agy-empty-state').forEach((el) => el.remove());
       visibleIds.forEach((tid, idx) => {
         const p = ensureDirectPane(tid), t = terminals.find((x) => x.terminalId === tid), cleanTitle = resolveTitle(tid, p.title || t?.title || 'pwsh'), isFoc = tid === activeTid;
         const wasHidden = p.wrap.classList.contains('hidden');

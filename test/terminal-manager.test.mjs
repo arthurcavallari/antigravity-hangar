@@ -313,8 +313,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
     let menuClicked = false;
     windowObj.Hangar.openTabContextMenu({ clientX: 40, clientY: 20, preventDefault() {}, stopPropagation() {} }, [{ id: 'pin-tab', label: 'Pin Tab', onClick: () => { menuClicked = true; } }, { separator: true }, { id: 'toggle-global', label: 'Show in All Workspaces (Global)' }]);
-    assert.ok(windowObj.Hangar.iconSvg('globe', 15).includes('M480-80') && windowObj.Hangar.iconSvg('terminal', 16).includes('viewBox="0 0 24 24"') && children.some((c) => c.className === 'agy-context-menu-sep'));
-    children.find((c) => c.className === 'agy-context-menu-item')?.emit('click', { stopPropagation() {} });
+    assert.ok(windowObj.Hangar.iconSvg('globe', 15).includes('M480-80') && windowObj.Hangar.iconSvg('terminal', 16).includes('viewBox="0 0 24 24"') && children.some((c) => c.className?.includes('context-menu-sep')));
+    children.find((c) => c.className?.includes('context-menu-item'))?.emit('click', { stopPropagation() {} });
     assert.equal(menuClicked, true);
 
     const p1 = makeEl({ left: 0, right: 60, top: 4, bottom: 26, width: 60, height: 22 }), p2 = makeEl({ left: 64, right: 124, top: 4, bottom: 26, width: 60, height: 22 });
@@ -334,14 +334,14 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     windowObj.Hangar.renderTerminalSlots({ topTermEl: makeEl(), bottomTermEl: makeEl(), topSlotId: '__terminal__', bottomSlotId: '', splitEnabled: false, terminals: [{ terminalId: 't1', title: 'pwsh-1', splitGroupId: 'sg-native', conversationId: 'conv-host-1' }, { terminalId: 't2', title: 'pwsh-2', splitGroupId: 'sg-native' }], conversationId: 'conv-host-1' });
     assert.deepEqual(children.filter((c) => c.className === 'term-jetbox-frame').map((c) => c.src.includes('terminalId=t1') ? 't1' : 't2'), ['t1', 't2']);
     assert.ok(children.some((c) => c.dataset?.testid === 'aux-pane-new-tab-button'));
-    const sessionPill = children.find((c) => c.className?.includes('term-session-pill'));
+    const sessionPill = children.find((c) => c.dataset?.termTid === 't1');
     sessionPill.emit('dblclick', { stopPropagation() {} });
-    const escInp = children.filter((c) => c.className === 'term-rename-input').at(-1);
+    const escInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
     escInp.value = 'cancelled-name'; escInp.emit('keydown', { key: 'Escape', stopPropagation() {} }); escInp.emit('blur', {});
     assert.equal(windowObj.Hangar.readCustomTermTitles().t1, 'build-watcher');
     assert.equal(apiCalls.filter((c) => c.path === '/api/terminal/rename').length, 0);
-    children.filter((c) => c.className?.includes('term-session-pill')).at(-1).emit('dblclick', { stopPropagation() {} });
-    const okInp = children.filter((c) => c.className === 'term-rename-input').at(-1);
+    children.find((c) => c.dataset?.termTid === 't1').emit('dblclick', { stopPropagation() {} });
+    const okInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
     okInp.value = 'committed-name'; okInp.emit('keydown', { key: 'Enter', stopPropagation() {} }); okInp.emit('blur', {});
     assert.equal(windowObj.Hangar.readCustomTermTitles().t1, 'committed-name');
     assert.deepEqual(JSON.parse(JSON.stringify(apiCalls.filter((c) => c.path === '/api/terminal/rename'))), [{ path: '/api/terminal/rename', body: { terminalId: 't1', title: 'committed-name' } }]);
@@ -355,7 +355,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     windowObj.Hangar.notifyAgent = async (msg, cid, title) => { notified.push({ msg, cid, title }); return { ok: true }; };
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-title-changed', payload: { terminalId: 't1', title: 'zsh-osc' } } });
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-quote-clicked', payload: { terminalId: 't1', title: 'pwsh-1', selectionContent: 'ERR_TEST', copied: true, askAgent: false } } });
-    assert.ok(children.some((c) => c.className === 'term-quote-toast' && c.textContent.includes('Quoted selection from "committed-name"')));
+    assert.ok(children.some((c) => c.className?.includes('agy-toast') && c.textContent.includes('Quoted selection from "committed-name"')));
     assert.equal(children.find((c) => c.className === 'term-quote-composer'), undefined);
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-quote-clicked', payload: { terminalId: 't1', title: 'pwsh-1', selectionContent: 'ERR_TEST', copied: true, askAgent: true } } });
     const miniComposer = children.find((c) => c.className === 'term-mini-composer');
@@ -433,10 +433,10 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 2);
     assert.equal(windowObj.Hangar.getSideChatState().threads[1].title, 'Side Chat #2');
     assert.ok(composer._els.chatFrame.src.includes(encodeURIComponent(windowObj.Hangar.getSideChatState().threads[1].cascadeId)));
-    const scPills = children.filter((c) => c.className?.includes('sidechat-session-pill')).slice(-2);
+    const scPills = children.filter((c) => c.className?.includes('agy-tab') && c.dataset?.cascadeId).slice(-2);
     assert.equal(scPills.length, 2);
     scPills.at(-1).emit('dblclick', { stopPropagation() {} });
-    const scRenameInp = children.filter((c) => c.className === 'term-rename-input').at(-1);
+    const scRenameInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
     scRenameInp.value = 'Bug Triage Chat';
     scRenameInp.emit('keydown', { key: 'Enter', stopPropagation() {} });
     scRenameInp.emit('blur', {});
@@ -445,7 +445,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     composer._els.popoutBtn.emit('click', { stopPropagation() {} });
     assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), true);
     const savedSideChatState = windowObj.Hangar.serializeSideChatState();
-    const remainingMainPills = composer._els.sessionsEl.childNodes.filter((c) => c.className?.includes('sidechat-session-pill'));
+    const remainingMainPills = composer._els.sessionsEl.childNodes.filter((c) => c.className?.includes('agy-tab') && c.dataset?.cascadeId);
     assert.equal(remainingMainPills.length, 1);
     assert.notEqual(remainingMainPills[0].dataset.cascadeId, secondCid);
     const poppedBox = children.find((c) => c.dataset?.instanceTabId === `sidechat__${secondCid}`);
@@ -462,11 +462,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     await windowObj.Hangar.closeSideChatInstance(`sidechat__${secondCid}`);
     assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), false);
     windowObj.Hangar.closeSideChatDrawer({ deleteAll: true, notify: false });
-    children.filter((c) => c.className?.includes('term-session-pill')).at(-1).emit('dblclick', { stopPropagation() {} });
-    const clrInp = children.filter((c) => c.className === 'term-rename-input').at(-1);
+    children.filter((c) => c.className?.includes('agy-tab') && c.dataset?.termTid).at(-1).emit('dblclick', { stopPropagation() {} });
+    const clrInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
     clrInp.value = '   '; clrInp.emit('keydown', { key: 'Enter', stopPropagation() {} });
     assert.equal(windowObj.Hangar.readCustomTermTitles().t1, undefined);
-    assert.ok(children.filter((c) => c.className?.includes('term-session-pill')).at(-1).innerHTML.includes('zsh-osc'));
+    assert.ok(children.filter((c) => c.className?.includes('agy-tab') && c.dataset?.termTid).at(-1).innerHTML.includes('zsh-osc'));
     windowObj.Hangar.apiCall = async (path, body) => {
       apiCalls.push({ path, body });
       if (path === '/api/terminal/create') return { terminalId: 't-spawned-new', title: 'pwsh-new' };
@@ -488,11 +488,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     newTabBtn.emit('click', { stopPropagation() {} });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(windowObj.Hangar.getActiveGroupId('__terminal__'), 't-spawned-new');
-    const activePills = children.filter((c) => c.className === 'term-session-pill active');
+    const activePills = children.filter((c) => c.className?.includes('agy-tab') && c.className?.includes('active'));
     assert.equal(activePills.at(-1)?.dataset?.termTid, 't-spawned-new');
-    assert.equal(activePills.at(-1)?.innerHTML.includes('term-external-badge'), false);
+    assert.equal(activePills.at(-1)?.innerHTML.includes('agy-tab-ext-badge'), false);
     const extPill = children.filter((c) => c.dataset?.termTid === 't-ext-tab').at(-1);
-    assert.ok(extPill?.innerHTML.includes('term-external-badge'));
+    assert.ok(extPill?.innerHTML.includes('agy-tab-ext-badge'));
     const hiddenExtPart = windowObj.Hangar.partitionSplitTabs([], { showExternalTerminals: false }, [{ terminalId: 'term-popped-1', title: 'ext-popped', isExternal: true }]);
     assert.equal(hiddenExtPart.workspaceTabs.some((t) => t.sidecarId === 'terminal__term-popped-1'), false);
 

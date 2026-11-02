@@ -229,15 +229,24 @@
   ns.clearAllTermDropIndicators = () => {
     ns.activeTermDrag = null; document.body?.classList?.remove('dragging-tab');
     document.querySelectorAll?.('.drop-left, .drop-right, .drop-target, .is-dragging, .merge-drop-target, .split-drop-target').forEach((el) => el.classList?.remove('drop-left', 'drop-right', 'drop-target', 'is-dragging', 'merge-drop-target', 'split-drop-target'));
-    if (!ns.isPointerOnTab) document.querySelectorAll?.('.hub-tab, .term-session-pill, .sidechat-session-pill').forEach((el) => ns.setTabShift(el, 0));
+    if (!ns.isPointerOnTab) document.querySelectorAll?.('.agy-tab').forEach((el) => ns.setTabShift(el, 0));
   };
   ns.bindHangarChromeDropZone = function bindHangarChromeDropZone(cfg = {}) { hangarDropCfg = { ...hangarDropCfg, ...cfg }; };
   ns.getHangarDropCfg = () => hangarDropCfg;
+  ns.measurePillStrip = function measurePillStrip(sourceStrip, btn, startX, startY, selector = '.agy-tab') {
+    if (window.AgyUI?.measureStrip) {
+      return window.AgyUI.measureStrip(sourceStrip, btn, startX, startY, selector);
+    }
+    return ns.measureStrip ? ns.measureStrip(sourceStrip, btn, startX, startY, selector) : null;
+  };
+  ns.bindGroupPillDrag = function bindGroupPillDrag(el, cfg = {}) {
+    return ns.bindTermPointerDrag(el, cfg);
+  };
   ns.bindTermPointerDrag = function bindTermPointerDrag(el, cfg) {
     let activePointerId = null, startX = 0, startY = 0, isDragging = false, ghostEl = null, dragMeta = null, dropAction = null, hoverTimer = null, hoverTargetId = '', previewedTargetId = '';
     const clearHover = (resetPreview, slot) => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } hoverTargetId = ''; if (resetPreview && previewedTargetId) { previewedTargetId = ''; hangarDropCfg.onPreviewTerminalSlot?.('', slot); } };
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target?.closest?.('[data-close-gid], [data-pin-gid], .term-session-close-wrap, [data-role="pane-close"], .term-rename-input')) return;
+      if (e.button !== 0 || e.target?.closest?.('[data-close-gid], [data-pin-gid], .agy-tab-pin, [data-role="tab-pin"], [data-role="tab-close"], .agy-tab-close-wrap, [data-role="pane-close"], .agy-rename-input')) return;
       ns.clearAllTermDropIndicators(); clearHover(false); previewedTargetId = ''; activePointerId = e.pointerId; ns.isPointerOnTab = true; ns.pointerTermInstanceId = cfg.instanceTabId;
       startX = e.clientX; startY = e.clientY; isDragging = false; ghostEl = null; dragMeta = null; dropAction = null; el.setPointerCapture?.(e.pointerId);
       window.addEventListener?.('pointerup', onWinPointerEnd, true); window.addEventListener?.('pointercancel', onWinPointerCancel, true);
@@ -248,20 +257,20 @@
       const curGid = typeof groupId === 'function' ? groupId() : groupId, sourceSlot = getSlotKey?.() || 'top';
       if (!isDragging && Math.hypot(e.clientX - startX, e.clientY - startY) > 4) {
         isDragging = true; ns.activeTermDrag = { kind, groupId: curGid, terminalId, instanceTabId, sourceSlot }; document.body?.classList?.add('dragging-tab');
-        dragMeta = ns.measureStrip(sessionsEl, el, startX, startY, '.term-session-pill');
+        dragMeta = ns.measurePillStrip(sessionsEl, el, startX, startY, '.agy-tab');
         if (kind === 'tab') {
-          el.classList.add('is-dragging-source'); ghostEl = el.cloneNode(true); ghostEl.className = 'term-session-pill active tab-drag-ghost';
+          el.classList.add('is-dragging-source'); ghostEl = el.cloneNode(true); ghostEl.className = 'agy-tab active agy-tab-drag-ghost';
           ghostEl.style.width = `${dragMeta.draggedWidth}px`; ghostEl.style.height = `${dragMeta.draggedHeight}px`;
         } else {
-          dragMeta.locked = false; el.classList.add('is-dragging'); ghostEl = document.createElement('div'); ghostEl.className = 'term-session-pill active tab-drag-ghost';
-          ghostEl.innerHTML = `${ns.iconSvg?.('terminal', 13) || ''}<span class="term-session-label">${ns.escHtml?.(getTitle?.() || 'pwsh') || 'pwsh'}</span>`;
+          dragMeta.locked = false; el.classList.add('is-dragging'); ghostEl = document.createElement('div'); ghostEl.className = 'agy-tab active agy-tab-drag-ghost';
+          ghostEl.innerHTML = `${ns.iconSvg?.('terminal', 13) || ''}<span class="agy-tab-label">${ns.escHtml?.(getTitle?.() || 'pwsh') || 'pwsh'}</span>`;
           dragMeta.grabOffsetX = 36; dragMeta.grabOffsetY = 11; dragMeta.draggedWidth = 96; dragMeta.draggedHeight = 22;
         }
         document.body?.appendChild(ghostEl);
       }
       if (!isDragging || !ghostEl || !dragMeta) return;
       document.querySelectorAll?.('.drop-left, .drop-right, .drop-target, .merge-drop-target, .split-drop-target').forEach((n) => n.classList?.remove('drop-left', 'drop-right', 'drop-target', 'merge-drop-target', 'split-drop-target'));
-      document.querySelectorAll?.('.hub-tab, .term-session-pill').forEach((n) => ns.setTabShift(n, 0));
+      document.querySelectorAll?.('.agy-tab').forEach((n) => ns.setTabShift(n, 0));
       const sRect = sessionsEl?.getBoundingClientRect?.() || { left: 0, right: 0, top: 0, bottom: 0 }, nextLocked = kind === 'tab' && dragMeta.draggedIndex >= 0 && e.clientY >= sRect.top - 18 && e.clientY <= sRect.bottom + 18;
       if (nextLocked !== dragMeta.locked) { dragMeta.locked = nextLocked; dragMeta.lockChangedAt = Date.now(); }
       const rawLeft = e.clientX - dragMeta.grabOffsetX, left = dragMeta.locked ? Math.min(Math.max(rawLeft, dragMeta.minLeft), dragMeta.maxLeft) : rawLeft;
@@ -315,7 +324,7 @@
       const inChrome = Boolean(cRect && cRect.height > 0 && e.clientY >= cRect.top - 14 && e.clientY <= cRect.bottom + 4), inBottomBar = Boolean(bRect && bRect.height > 0 && e.clientY >= bRect.top - 14 && e.clientY <= bRect.bottom + 4);
       const hRect = splitEnabled ? document.getElementById('split-resize-handle')?.getBoundingClientRect?.() : null, pointerSlot = !splitEnabled ? 'top' : (e.clientY < (hRect ? hRect.top + hRect.height / 2 : window.innerHeight / 2) ? 'top' : 'bottom');
       if (inChrome || inBottomBar || (splitEnabled && pointerSlot !== sourceSlot)) {
-        const pane = inChrome ? 'top' : inBottomBar ? 'bottom' : pointerSlot, tabs = Array.from(document.getElementById(pane === 'bottom' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.hub-tab[data-sidecar-id]') || []);
+        const pane = inChrome ? 'top' : inBottomBar ? 'bottom' : pointerSlot, tabs = Array.from(document.getElementById(pane === 'bottom' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.agy-tab[data-sidecar-id]') || []);
         let beforeTabId = null;
         if (inChrome || inBottomBar) {
           for (const t of tabs) { const r = ns.getUnshiftedRect(t); if (beforeTabId === null && e.clientX < r.left + r.width * (ns.isTerminalTabId(t.dataset.sidecarId) ? 0.12 : 0.5)) beforeTabId = t.dataset.sidecarId; }
@@ -334,7 +343,7 @@
       activePointerId = null; isDragging = false; dropAction = null; ns.isPointerOnTab = false; ns.pointerTermInstanceId = '';
       try { if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId); } catch {}
       if (ghostEl) { ghostEl.remove?.(); ghostEl = null; }
-      el.classList.remove('is-dragging-source', 'is-dragging'); document.querySelectorAll?.('.term-session-pill').forEach((n) => { n.classList.remove('is-dragging-source'); ns.setTabShift(n, 0); }); ns.clearAllTermDropIndicators();
+      el.classList.remove('is-dragging-source', 'is-dragging'); document.querySelectorAll?.('.agy-tab').forEach((n) => { n.classList.remove('is-dragging-source'); ns.setTabShift(n, 0); }); ns.clearAllTermDropIndicators();
       if (cancelled || !wasDragging || !finalAction) { clearHover(true, slot); if (!cancelled && !wasDragging) { el.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); cfg.onClick?.(); } return; }
       if (finalAction.type === 'same') { clearHover(true, slot); cfg.onSameInstanceDrop?.(drag, finalAction.target); }
       else if (finalAction.type === 'merge') { clearHover(false); previewedTargetId = ''; const res = ns.mergeTermDragIntoInstance(drag, finalAction.target); if (res) hangarDropCfg.onMergeIntoTerminalTab?.(res); else hangarDropCfg.onPreviewTerminalSlot?.('', slot); }
@@ -345,10 +354,14 @@
   };
   ns.inspectHangarPointerOverTerminal = function inspectHangarPointerOverTerminal(clientX, clientY, draggedSidecarId, checkShells = true) {
     document.querySelectorAll?.('.merge-drop-target, .drop-target, .drop-left, .drop-right').forEach((el) => el.classList?.remove('merge-drop-target', 'drop-target', 'drop-left', 'drop-right'));
-    document.querySelectorAll?.('.term-session-pill:not(.is-dragging-source)').forEach((el) => ns.setTabShift(el, 0));
+    for (const shell of document.querySelectorAll?.('.term-shell[data-instance-tab-id]') || []) {
+      if (shell.dataset.instanceTabId !== draggedSidecarId) {
+        shell.querySelectorAll?.('.agy-tab[data-term-tid]:not(.is-dragging-source)').forEach((el) => ns.setTabShift(el, 0));
+      }
+    }
     if (!ns.isTerminalTabId(draggedSidecarId)) return null;
-    const srcEl = document.querySelector?.(`.hub-tab[data-sidecar-id="${draggedSidecarId}"]`), srcR = srcEl ? ns.getUnshiftedRect(srcEl) : null;
-    for (const el of document.querySelectorAll?.('.hub-tab[data-sidecar-id]') || []) {
+    const srcEl = document.querySelector?.(`.agy-tab[data-sidecar-id="${draggedSidecarId}"]`), srcR = srcEl ? ns.getUnshiftedRect(srcEl) : null;
+    for (const el of document.querySelectorAll?.('.agy-tab[data-sidecar-id]') || []) {
       const sid = el.dataset.sidecarId, r = ns.getUnshiftedRect(el);
       if (!sid || sid === draggedSidecarId || !ns.isTerminalTabId(sid) || r.width <= 0 || clientY < r.top - 18 || clientY > r.bottom + (! checkShells ? 18 : 4)) continue;
       const same = srcEl && srcEl.parentElement === el.parentElement, lPad = same && srcR && srcR.left < r.left ? 0 : r.width * 0.12, rPad = same && srcR && srcR.left > r.left ? 0 : r.width * 0.12;
@@ -358,9 +371,9 @@
     for (const shell of document.querySelectorAll?.('.term-shell[data-instance-tab-id]') || []) {
       const targetInstanceTabId = shell.dataset.instanceTabId, sRect = shell.getBoundingClientRect();
       if (!targetInstanceTabId || targetInstanceTabId === draggedSidecarId || shell.closest?.('.hidden') || sRect.width === 0 || clientX < sRect.left || clientX > sRect.right || clientY < sRect.top || clientY > sRect.bottom) continue;
-      const pane = shell.closest?.('#terminal-bottom-view') ? 'bottom' : 'top', strip = shell.querySelector('.term-session-strip'), tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
+      const pane = shell.closest?.('#terminal-bottom-view') ? 'bottom' : 'top', strip = shell.querySelector('.agy-tab-strip'), tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
       shell.classList.add('drop-target'); strip?.classList.add('drop-target');
-      const pills = Array.from(strip?.querySelectorAll('.term-session-pill') || []); let index = pills.length;
+      const pills = Array.from(strip?.querySelectorAll('.agy-tab[data-term-tid]') || []); let index = pills.length;
       if (tRect && clientY <= tRect.bottom + 10) {
         for (let i = 0; i < pills.length; i++) { const pr = ns.getUnshiftedRect(pills[i]); if (clientX < pr.left + pr.width / 2) { index = i; break; } }
         pills.forEach((p, i) => ns.setTabShift(p, i >= index ? 68 : 0));

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-follow-host="true">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,9 +7,11 @@
   <script src="/preload.js"></script>
   <link rel="stylesheet" href="/compiled_tailwind.css" />
   <link rel="stylesheet" href="/shell.css" />
+  <link rel="stylesheet" href="/ui.css" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/components.css" />
-  <script defer src="/agys-client.js"></script>
+  <script defer src="/shell.js"></script>
+  <script defer src="/ui.js"></script>
   <script defer src="/core.js"></script>
   <script defer src="/components/tab-bar.js"></script>
   <script defer src="/components/marketplace-panes.js"></script>
@@ -24,13 +26,13 @@
 </head>
 <body>
   <div id="hub-shell" class="hub-shell">
-    <header id="chrome-bar" class="chrome-bar">
-      <nav id="tab-strip" class="tab-strip" aria-label="Primary or Top Pane Sidecar Tabs"></nav>
+    <header id="chrome-bar" class="agy-chrome-bar">
+      <nav id="tab-strip" class="agy-tab-strip" aria-label="Primary or Top Pane Sidecar Tabs"></nav>
 
       <button
         id="top-overflow-btn"
         type="button"
-        class="chrome-icon-btn tab-overflow-btn hidden"
+        class="agy-icon-btn agy-tab-overflow-btn hidden"
         aria-label="More tabs"
         title="More tabs"
       >
@@ -43,7 +45,7 @@
         <button
           id="terminal-toggle-btn"
           type="button"
-          class="chrome-icon-btn hidden"
+          class="agy-icon-btn hidden"
           aria-label="Interactive Terminal"
           title="Interactive Terminal"
         >
@@ -56,7 +58,7 @@
         <button
           id="extensions-toggle-btn"
           type="button"
-          class="chrome-icon-btn hidden"
+          class="agy-icon-btn hidden"
           aria-label="Extensions"
           title="Extensions"
         >
@@ -67,7 +69,7 @@
         <button
           id="split-toggle-btn"
           type="button"
-          class="chrome-icon-btn"
+          class="agy-icon-btn"
           aria-label="Toggle Split-Pane View"
           title="Toggle Split-Pane View"
         >
@@ -78,26 +80,26 @@
       </div>
     </header>
 
-    <div id="tab-overflow-popover" popover="auto" class="tab-overflow-popover"></div>
+    <div id="tab-overflow-popover" popover="auto" class="agy-tab-overflow-popover"></div>
 
     <main id="main-viewport" class="main-viewport">
       <section id="empty-top-state" class="empty-deck-state slot-top hidden"></section>
       <div id="split-divider-group" class="split-divider-group hidden">
         <div
           id="split-resize-handle"
-          class="split-resize-handle"
+          class="agy-split-sash"
           role="separator"
           aria-orientation="horizontal"
           title="Drag to resize split pane"
         >
           <div class="sash-line"></div>
         </div>
-        <div id="bottom-tab-bar" class="chrome-bar bottom-tab-bar">
-          <nav id="bottom-tab-strip" class="tab-strip" aria-label="Bottom Pane Sidecar Tabs"></nav>
+        <div id="bottom-tab-bar" class="agy-chrome-bar bottom-tab-bar">
+          <nav id="bottom-tab-strip" class="agy-tab-strip" aria-label="Bottom Pane Sidecar Tabs"></nav>
           <button
             id="bottom-overflow-btn"
             type="button"
-            class="chrome-icon-btn tab-overflow-btn hidden"
+            class="agy-icon-btn agy-tab-overflow-btn hidden"
             aria-label="More tabs"
             title="More tabs"
           >

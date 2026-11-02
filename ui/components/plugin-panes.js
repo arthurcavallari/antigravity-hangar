@@ -13,8 +13,8 @@
   ns.pluginBadgesHtml = function pluginBadgesHtml({ port, portedFrom } = {}) {
     const sources = portedFrom?.length ? portedFrom : port?.from && port.from !== 'auto' ? [port.from] : [];
     const label = sources.map((s) => SOURCE_LABELS[s] || s).join(' + ') || 'another tool';
-    const ported = port || sources.length ? `<span class="badge stopped">Ported from ${ns.escHtml(label)}</span>` : '';
-    return `<span class="badge starting">Plugin</span>${ported}`;
+    const ported = port || sources.length ? `<span class="agy-badge stopped">Ported from ${ns.escHtml(label)}</span>` : '';
+    return `<span class="agy-badge starting">Plugin</span>${ported}`;
   };
 
   function reportList(title, items) {
@@ -121,40 +121,40 @@
 
   function createPluginCard(dir) {
     const card = document.createElement('div');
-    card.className = 'manager-card';
+    card.className = 'agy-card';
     card.dataset.pluginDir = dir;
     card.innerHTML = `
-      <div class="manager-card-header">
+      <div class="agy-card-header">
         <div class="manager-card-title-group">
           <div class="manager-card-title-row">
             <span data-role="title" class="manager-card-title"></span>
             <span data-role="badges" class="badge-group"></span>
           </div>
-          <div class="manager-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div>
+          <div class="agy-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div>
         </div>
-        <div class="manager-card-actions">
+        <div class="agy-card-actions">
           <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button>
-          <button type="button" data-role="uninstall-btn" class="icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">
+          <button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">
             ${ns.iconSvg('delete', 14)}
           </button>
         </div>
       </div>
-      <div data-role="restart-note" class="sideload-banner hidden">Installed. Restart Antigravity to load it.</div>
-      <div data-role="consent-bar" class="consent-bar hidden">
+      <div data-role="restart-note" class="agy-banner hidden">Installed. Restart Antigravity to load it.</div>
+      <div data-role="consent-bar" class="agy-consent-bar hidden">
         <span data-role="consent-text" class="consent-text"></span>
         <div class="consent-actions">
           <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
           <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Update</button>
         </div>
       </div>
-      <div data-role="uninstall-confirm" class="consent-bar hidden">
+      <div data-role="uninstall-confirm" class="agy-consent-bar hidden">
         <span data-role="uninstall-confirm-text"></span>
         <div class="consent-actions">
           <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
           <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
         </div>
       </div>
-      <div data-role="card-error" class="sideload-banner err hidden" role="alert"></div>
+      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
     `;
 
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
@@ -216,10 +216,10 @@
       card.querySelector('[data-role="title"]').textContent = p.name;
       card.querySelector('[data-role="badges"]').innerHTML = [
         ns.pluginBadgesHtml(p),
-        tier ? `<span class="badge ${tier.state}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
-        p.restartRequired ? '<span class="badge hibernated">Restart to load</span>' : '',
-        p.disabled ? '<span class="badge stopped">Disabled</span>' : '',
-        p.builtin ? '<span class="badge stopped">Built-in</span>' : '',
+        tier ? `<span class="agy-badge ${tier.state}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
+        p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
+        p.disabled ? '<span class="agy-badge stopped">Disabled</span>' : '',
+        p.builtin ? '<span class="agy-badge stopped">Built-in</span>' : '',
       ].join('');
       const origin = managed ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar') : p.builtin ? 'ships with Antigravity' : 'installed outside Hangar';
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
@@ -241,7 +241,7 @@
       sectionEl.innerHTML = `
         <div class="store-header plugin-section-header">
           <div>
-            <div class="store-title"><span>Plugins</span><span data-role="plugin-count" class="count-pill"></span></div>
+            <div class="store-title"><span>Plugins</span><span data-role="plugin-count" class="agy-count-pill"></span></div>
             <div class="store-subtitle">Skills, agents, rules, hooks and MCP servers for the agent. Plugins have no panel, so they don't get a tab.</div>
           </div>
         </div>
@@ -255,7 +255,7 @@
     const seen = new Set();
     plugins.forEach((plugin, i) => {
       seen.add(plugin.dir);
-      const card = listEl.querySelector(`.manager-card[data-plugin-dir="${CSS.escape(plugin.dir)}"]`) || createPluginCard(plugin.dir);
+      const card = listEl.querySelector(`.agy-card[data-plugin-dir="${CSS.escape(plugin.dir)}"]`) || createPluginCard(plugin.dir);
       card._plugin = plugin;
       card._ctx = ctx;
       card._regPkg = plugin.pluginId ? regMap.get(plugin.pluginId) || null : null;

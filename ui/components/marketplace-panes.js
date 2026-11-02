@@ -56,34 +56,34 @@
       const tier = ns.formatCapabilityTier(pkg.capabilityTier);
       const requiresConsent = Boolean(pkg.capabilityTier && pkg.capabilityTier !== 'TIER_1_TELEMETRY');
 
-      let card = listEl.querySelector(`.manager-card[data-pkg-id="${CSS.escape(pkg.id)}"]`);
+      let card = listEl.querySelector(`.agy-card[data-pkg-id="${CSS.escape(pkg.id)}"]`);
       if (!card) {
         card = document.createElement('div');
-        card.className = 'manager-card';
+        card.className = 'agy-card';
         card.dataset.pkgId = pkg.id;
         card.innerHTML = `
-          <div class="manager-card-header">
+          <div class="agy-card-header">
             <div class="manager-card-title-group">
               <div class="manager-card-title-row">
                 <span data-role="pkg-title" class="manager-card-title"></span>
-                <span data-role="pkg-tier" class="badge" title="Capability Tier"></span>
+                <span data-role="pkg-tier" class="agy-badge" title="Capability Tier"></span>
                 <span data-role="pkg-kind" class="badge-group"></span>
               </div>
-              <div data-role="pkg-meta" class="manager-card-meta"></div>
+              <div data-role="pkg-meta" class="agy-card-meta"></div>
             </div>
-            <div class="manager-card-actions">
+            <div class="agy-card-actions">
               <button type="button" data-role="pkg-install-btn" class="agy-btn has-icon"></button>
             </div>
           </div>
           <div data-role="pkg-desc" class="manager-card-desc"></div>
-          <div data-role="consent-bar" class="consent-bar hidden">
+          <div data-role="consent-bar" class="agy-consent-bar hidden">
             <span data-role="consent-text" class="consent-text"></span>
             <div class="consent-actions">
               <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
               <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
             </div>
           </div>
-          <div data-role="card-error" class="sideload-banner err hidden" role="alert"></div>
+          <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
         `;
 
         const btn = card.querySelector('[data-role="pkg-install-btn"]');
@@ -180,7 +180,7 @@
         card.dataset.metaSig = metaSig;
         card.querySelector('[data-role="pkg-title"]').textContent = pkg.name;
         const tierEl = card.querySelector('[data-role="pkg-tier"]');
-        tierEl.className = `badge ${tier.state}`;
+        tierEl.className = `agy-badge ${tier.state}`;
         tierEl.innerHTML = `${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.label)}</span>`;
         card.querySelector('[data-role="pkg-kind"]').innerHTML = isPlugin ? ns.pluginBadgesHtml?.(pkg) || '' : '';
         card.querySelector('[data-role="pkg-meta"]').innerHTML = `
@@ -216,7 +216,7 @@
       }
     }
 
-    for (const child of Array.from(listEl.querySelectorAll('.manager-card'))) {
+    for (const child of Array.from(listEl.querySelectorAll('.agy-card'))) {
       if (!seenIds.has(child.dataset.pkgId)) child.remove();
     }
   }
@@ -231,9 +231,9 @@
       paneEl.innerHTML = `
         <div data-role="discover-shell">
           <div class="discover-toolbar">
-            <div class="search-box">
-              ${ns.iconSvg('search', 14)}
-              <input type="search" data-role="discover-search" class="search-input" placeholder="Search sidecars and plugins…" />
+            <div class="agy-search-box">
+              <span class="agy-search-icon">${ns.iconSvg('search', 14)}</span>
+              <input type="search" data-role="discover-search" class="agy-search-input" placeholder="Search sidecars and plugins…" />
             </div>
             <div class="agy-toggle-group">
               ${categories.map((c) => `<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`).join('')}
@@ -281,10 +281,10 @@
     const bannerEl = shell.querySelector('[data-role="sideload-banner"]');
     if (bannerEl) {
       if (sideloadFeedback) {
-        bannerEl.className = `sideload-banner ${sideloadFeedback.tone}`;
+        bannerEl.className = `agy-banner ${sideloadFeedback.tone === 'err' ? 'is-error' : 'is-success'}`;
         bannerEl.textContent = sideloadFeedback.text;
       } else {
-        bannerEl.className = 'sideload-banner hidden';
+        bannerEl.className = 'agy-banner hidden';
         bannerEl.textContent = '';
       }
     }
@@ -307,15 +307,15 @@
     if (!shell) {
       paneEl.innerHTML = `
         <div data-role="sideload-shell">
-          <div data-role="sideload-banner" class="sideload-banner hidden"></div>
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div data-role="sideload-banner" class="agy-banner hidden"></div>
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Link Local Sidecar Folder</span>
-                  <span class="badge running">Development</span>
+                  <span class="agy-badge running">Development</span>
                 </div>
-                <div class="manager-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div>
+                <div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div>
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-scope="project" class="agy-toggle-item">${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span></button>
@@ -329,21 +329,21 @@
             </div>
           </div>
 
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Install from GitHub Repository</span>
-                  <span class="badge starting">Git Clone</span>
+                  <span class="agy-badge starting">Git Clone</span>
                 </div>
-                <div class="manager-card-meta">Clones into ~/.gemini/hangar/packages/ with --ignore-scripts protection</div>
+                <div class="agy-card-meta">Clones into ~/.gemini/hangar/packages/ with --ignore-scripts protection</div>
               </div>
             </div>
             <div class="ws-add-row">
               <input type="text" data-role="github-repo-input" class="ws-input" placeholder="https://github.com/owner/repo or owner/repo…" />
               <button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">${ns.iconSvg('download', 13)}<span>Install</span></button>
             </div>
-            <div data-role="gh-consent-bar" class="consent-bar hidden">
+            <div data-role="gh-consent-bar" class="agy-consent-bar hidden">
               <span data-role="gh-consent-text"></span>
               <div class="consent-actions">
                 <button type="button" data-role="gh-consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>

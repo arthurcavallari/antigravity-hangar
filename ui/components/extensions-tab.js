@@ -123,35 +123,35 @@
 
     for (const sc of sidecars || []) {
       seenIds.add(sc.sidecarId);
-      let card = paneEl.querySelector(`.manager-card[data-sidecar-id="${CSS.escape(sc.sidecarId)}"]`);
+      let card = paneEl.querySelector(`.agy-card[data-sidecar-id="${CSS.escape(sc.sidecarId)}"]`);
 
       if (!card) {
         card = document.createElement('div');
-        card.className = 'manager-card';
+        card.className = 'agy-card';
         card.dataset.sidecarId = sc.sidecarId;
         card.innerHTML = `
-          <div class="manager-card-header">
+          <div class="agy-card-header">
             <div class="manager-card-title-group">
               <div class="manager-card-title-row">
                 <span data-role="title" class="manager-card-title"></span>
-                <span data-role="status-badge" class="badge"></span>
+                <span data-role="status-badge" class="agy-badge"></span>
               </div>
-              <div class="manager-card-meta">
+              <div class="agy-card-meta">
                 ${ns.iconSvg('folder', 13)}
                 <span data-role="meta-sub"></span>
               </div>
             </div>
-            <div class="manager-card-actions">
+            <div class="agy-card-actions">
               <button type="button" data-role="fix-agent-btn" class="agy-btn agy-btn-outline has-icon hidden" title="Send sidecar error diagnostics to the agent">
                 ${ns.iconSvg('bolt', 13)}<span>Fix with Agent</span>
               </button>
               <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden" title="Update sidecar">
                 ${ns.iconSvg('download', 13)}<span>Update</span>
               </button>
-              <button type="button" data-role="restart-btn" class="icon-btn" title="Restart sidecar" aria-label="Restart sidecar">
+              <button type="button" data-role="restart-btn" class="agy-icon-btn" title="Restart sidecar" aria-label="Restart sidecar">
                 ${ns.iconSvg('refresh', 14)}
               </button>
-              <button type="button" data-role="uninstall-btn" class="icon-btn" title="Uninstall sidecar" aria-label="Uninstall sidecar">
+              <button type="button" data-role="uninstall-btn" class="agy-icon-btn" title="Uninstall sidecar" aria-label="Uninstall sidecar">
                 ${ns.iconSvg('delete', 14)}
               </button>
               <button type="button" role="switch" data-role="proc-btn" class="agy-switch" title="Enable or disable sidecar">
@@ -159,21 +159,21 @@
               </button>
             </div>
           </div>
-          <div data-role="uninstall-confirm" class="consent-bar hidden">
+          <div data-role="uninstall-confirm" class="agy-consent-bar hidden">
             <span data-role="uninstall-confirm-text"></span>
             <div class="consent-actions">
               <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
               <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
             </div>
           </div>
-          <div data-role="update-confirm" class="consent-bar hidden">
+          <div data-role="update-confirm" class="agy-consent-bar hidden">
             <span data-role="update-confirm-text"></span>
             <div class="consent-actions">
               <button type="button" data-role="update-cancel" class="agy-btn agy-btn-outline">Cancel</button>
               <button type="button" data-role="update-confirm-btn" class="agy-btn agy-btn-primary">Confirm Update</button>
             </div>
           </div>
-          <div data-role="card-error" class="sideload-banner err hidden" role="alert"></div>
+          <div data-role="card-error" class="agy-banner err hidden" role="alert"></div>
           <div data-role="desc" class="manager-card-desc"></div>
           <div class="manager-section-bar">
             <span class="manager-section-label">Workspace Scope</span>
@@ -348,8 +348,8 @@
       const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;
       if (statusBadge.dataset.sig !== badgeSig) {
         statusBadge.dataset.sig = badgeSig;
-        statusBadge.className = `badge ${badgeInfo.state}`;
-        statusBadge.innerHTML = `<span class="badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`;
+        statusBadge.className = `agy-badge ${badgeInfo.state}`;
+        statusBadge.innerHTML = `<span class="agy-badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`;
       }
       card.querySelector('[data-role="desc"]').textContent = sc.description || 'No description provided.';
 
@@ -406,7 +406,7 @@
       }
     }
 
-    for (const child of Array.from(paneEl.querySelectorAll('.manager-card'))) {
+    for (const child of Array.from(paneEl.querySelectorAll('.agy-card'))) {
       if (!seenIds.has(child.dataset.sidecarId)) child.remove();
     }
   }
@@ -418,15 +418,15 @@
     if (!shell) {
       paneEl.innerHTML = `
         <div data-role="settings-shell">
-          <div data-role="settings-banner" class="sideload-banner hidden" role="status"></div>
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div data-role="settings-banner" class="agy-banner hidden" role="status"></div>
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Idle Process Hibernation</span>
-                  <span data-role="settings-ttl-badge" class="badge running"></span>
+                  <span data-role="settings-ttl-badge" class="agy-badge running"></span>
                 </div>
-                <div class="manager-card-meta">Minutes an inactive project's sidecars stay running before Auto-Sleep stops their Node.js processes (1–240 min)</div>
+                <div class="agy-card-meta">Minutes an inactive project's sidecars stay running before Auto-Sleep stops their Node.js processes (1–240 min)</div>
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-role="ttl-5" data-ttl="5" class="agy-toggle-item">5m</button>
@@ -440,13 +440,13 @@
               <button type="button" data-role="settings-ttl-save" class="agy-btn agy-btn-secondary">Apply</button>
             </div>
           </div>
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Automatic Updates</span>
                 </div>
-                <div class="manager-card-meta">Automatically install updates for Hangar and managed extensions when capabilities do not escalate</div>
+                <div class="agy-card-meta">Automatically install updates for Hangar and managed extensions when capabilities do not escalate</div>
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-role="auto-update-off" class="agy-toggle-item">Off</button>
@@ -454,13 +454,13 @@
               </div>
             </div>
           </div>
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Extensions Entrypoint</span>
                 </div>
-                <div class="manager-card-meta">Show Extensions as a tab in the tab bar or as a compact icon button on the top-right bar</div>
+                <div class="agy-card-meta">Show Extensions as a tab in the tab bar or as a compact icon button on the top-right bar</div>
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-role="ext-mode-tab" class="agy-toggle-item">Tab Bar</button>
@@ -468,13 +468,13 @@
               </div>
             </div>
           </div>
-          <div class="manager-card">
-            <div class="manager-card-header">
+          <div class="agy-card">
+            <div class="agy-card-header">
               <div class="manager-card-title-group">
                 <div class="manager-card-title-row">
                   <span class="manager-card-title">Interactive Terminal</span>
                 </div>
-                <div class="manager-card-meta">Show Terminal as a tab in the tab bar or as a compact icon button on the top-right bar</div>
+                <div class="agy-card-meta">Show Terminal as a tab in the tab bar or as a compact icon button on the top-right bar</div>
               </div>
               <div class="agy-toggle-group">
                 <button type="button" data-role="term-mode-tab" class="agy-toggle-item">Tab Bar</button>
@@ -559,7 +559,7 @@
 
     const bannerEl = shell.querySelector('[data-role="settings-banner"]');
     if (bannerEl) {
-      bannerEl.className = settingsFeedback ? `sideload-banner ${settingsFeedback.tone}` : 'sideload-banner hidden';
+      bannerEl.className = settingsFeedback ? `agy-banner ${settingsFeedback.tone === 'err' ? 'is-error' : 'is-success'}` : 'agy-banner hidden';
       bannerEl.textContent = settingsFeedback ? settingsFeedback.text : '';
     }
 
@@ -601,7 +601,7 @@
     if (!shell) {
       storeViewEl.innerHTML = `
         <div data-role="store-shell">
-          <div data-role="hangar-update-banner" class="hangar-update-banner hidden">
+          <div data-role="hangar-update-banner" class="agy-banner update hidden">
             <div class="hangar-update-info">
               ${ns.iconSvg('bolt', 14)}
               <span data-role="hangar-update-text"></span>
@@ -610,14 +610,14 @@
               ${ns.iconSvg('download', 13)}<span>Update Hangar</span>
             </button>
           </div>
-          <div data-role="hangar-update-error" class="sideload-banner err hidden" role="alert"></div>
+          <div data-role="hangar-update-error" class="agy-banner is-error hidden" role="alert"></div>
           <div class="store-header">
             <div>
               <div class="store-title">
                 <span>UI Extensions</span>
-                <span data-role="total-count" class="count-pill"></span>
-                <span data-role="active-ws-pill" class="count-pill"></span>
-                <span data-role="hangar-ver-pill" class="count-pill hidden"></span>
+                <span data-role="total-count" class="agy-count-pill"></span>
+                <span data-role="active-ws-pill" class="agy-count-pill"></span>
+                <span data-role="hangar-ver-pill" class="agy-count-pill hidden"></span>
               </div>
               <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
@@ -627,13 +627,13 @@
                 <button type="button" data-subtab="discover" class="agy-toggle-item">Discover</button>
                 <button type="button" data-subtab="sideload" class="agy-toggle-item">Sideload</button>
               </div>
-              <button type="button" data-role="check-updates-btn" class="icon-btn" title="Check for updates" aria-label="Check for updates">
+              <button type="button" data-role="check-updates-btn" class="agy-icon-btn" title="Check for updates" aria-label="Check for updates">
                 ${ns.iconSvg('refresh', 14)}
               </button>
-              <button type="button" data-role="settings-btn" class="icon-btn" title="Hangar settings" aria-label="Hangar settings" aria-pressed="false">
+              <button type="button" data-role="settings-btn" class="agy-icon-btn" title="Hangar settings" aria-label="Hangar settings" aria-pressed="false">
                 ${ns.iconSvg('settings', 14)}
               </button>
-              <span data-role="running-count" class="badge running"></span>
+              <span data-role="running-count" class="agy-badge running"></span>
             </div>
           </div>
           <div data-role="pane-installed">
@@ -734,7 +734,7 @@
     const runningCountEl = shell.querySelector('[data-role="running-count"]');
     if (runningCountEl.dataset.count !== String(runningCount)) {
       runningCountEl.dataset.count = String(runningCount);
-      runningCountEl.innerHTML = `<span class="badge-dot"></span><span>${runningCount} Running</span>`;
+      runningCountEl.innerHTML = `<span class="agy-badge-dot"></span><span>${runningCount} Running</span>`;
     }
 
     shell.querySelectorAll('[data-subtab]').forEach((btn) => {

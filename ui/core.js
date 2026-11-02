@@ -77,7 +77,12 @@
     return data;
   };
 
+  window.AgyUI?.registerIcons?.(PATHS);
+
   ns.iconSvg = function iconSvg(name, size = 16, className = '') {
+    if (window.AgyUI?.iconSvg) {
+      return window.AgyUI.iconSvg(name, size, className);
+    }
     const cls = ['agy-icon', className].filter(Boolean).join(' ');
     if (name === 'terminal') {
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" class="${cls}" aria-hidden="true"><path transform="translate(18.775, 19.85) rotate(-180)" d="M10.925 14.05L11.975 13L8.9 9.925L11.975 6.85L10.925 5.8L6.8 9.925L10.925 14.05Z" fill="currentColor"/><path d="M11.675 14.95H16.175V13.45H11.675V14.95Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M3 5.25C3 4.00736 4.00736 3 5.25 3H18.75C19.9926 3 21 4.00736 21 5.25V18.75C21 19.9926 19.9926 21 18.75 21H5.25C4.00736 21 3 19.9926 3 18.75V5.25ZM5.25 4.5C4.83579 4.5 4.5 4.83579 4.5 5.25V18.75C4.5 19.1642 4.83579 19.5 5.25 19.5H18.75C19.1642 19.5 19.5 19.1642 19.5 18.75V5.25C19.5 4.83579 19.1642 4.5 18.75 4.5H5.25Z" fill="currentColor"/></svg>`;
@@ -87,13 +92,52 @@
   };
 
   ns.iconEl = function iconEl(name, size = 16, className = '') {
+    if (window.AgyUI?.iconEl) {
+      return window.AgyUI.iconEl(name, size, className);
+    }
     const wrap = document.createElement('span');
     wrap.className = 'agy-icon-wrap';
     wrap.innerHTML = ns.iconSvg(name, size, className);
     return wrap.firstElementChild;
   };
 
+  ns.el = function el(tag, attrs = {}, children = []) {
+    if (window.AgyUI?.el) {
+      return window.AgyUI.el(tag, attrs, children);
+    }
+    const elem = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === 'className' || k === 'class') elem.className = v;
+      else if (k === 'dataset' && typeof v === 'object') Object.assign(elem.dataset, v);
+      else if (k === 'style' && typeof v === 'object') Object.assign(elem.style, v);
+      else if (k.startsWith('on') && typeof v === 'function') elem.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k === 'innerHTML') elem.innerHTML = v;
+      else if (k === 'textContent') elem.textContent = v;
+      else elem.setAttribute?.(k, v);
+    }
+    for (const ch of (Array.isArray(children) ? children : [children]).filter(Boolean)) {
+      if (typeof ch === 'string') elem.appendChild(document.createTextNode(ch));
+      else elem.appendChild(ch);
+    }
+    return elem;
+  };
+
+  ns.clear = function clear(parent) {
+    if (window.AgyUI?.clear) {
+      return window.AgyUI.clear(parent);
+    }
+    if (!parent) return;
+    if (typeof parent.replaceChildren === 'function') {
+      parent.replaceChildren();
+    } else {
+      while (parent.firstChild) parent.removeChild(parent.firstChild);
+    }
+  };
+
   ns.formatStatusBadge = function formatStatusBadge(rawBadge = '', isRunning = false, isErrored = false) {
+    if (window.AgyUI?.formatStatusBadge) {
+      return window.AgyUI.formatStatusBadge(rawBadge, isRunning, isErrored);
+    }
     if (isRunning || rawBadge === 'RUNNING') return { label: 'Running', state: 'running' };
     if (isErrored || rawBadge === 'ERRORED') return { label: 'Error', state: 'errored' };
     if (rawBadge === 'HIBERNATED') return { label: 'Hibernated', state: 'hibernated' };
@@ -103,6 +147,12 @@
       label: rawBadge ? rawBadge.charAt(0).toUpperCase() + rawBadge.slice(1).toLowerCase() : 'Stopped',
       state: 'stopped',
     };
+  };
+
+  ns.setupStripScroll = function setupStripScroll(...args) {
+    if (window.AgyUI?.setupStripScroll) {
+      return window.AgyUI.setupStripScroll(...args);
+    }
   };
 
   ns.formatCapabilityTier = function formatCapabilityTier(tier = 'TIER_1_TELEMETRY') {
@@ -136,11 +186,17 @@
 
   let activeContextMenuEl = null;
   ns.closeTabContextMenu = function closeTabContextMenu() {
+    if (window.AgyUI?.closeContextMenu) {
+      window.AgyUI.closeContextMenu();
+    }
     if (activeContextMenuEl) { activeContextMenuEl.remove?.(); activeContextMenuEl = null; }
   };
 
   ns.openTabContextMenu = function openTabContextMenu(e, items = []) {
     e?.preventDefault?.(); e?.stopPropagation?.();
+    if (window.AgyUI?.openContextMenu) {
+      return window.AgyUI.openContextMenu(e, items);
+    }
     ns.closeTabContextMenu();
     const validItems = (items || []).filter(Boolean);
     if (!validItems.length || !document.body) return null;
@@ -155,11 +211,11 @@
         menu.appendChild(sep); continue;
       }
       const btn = document.createElement('button');
-      btn.type = 'button'; btn.className = 'agy-context-menu-item'; btn.setAttribute('role', 'menuitem');
+      btn.type = 'button'; btn.className = `agy-context-menu-item${item.danger ? ' danger' : ''}`; btn.setAttribute('role', 'menuitem');
       if (item.id) btn.dataset.menuId = item.id;
       btn.disabled = Boolean(item.disabled);
-      const iconHtml = item.icon ? `<span class="hub-tab-icon-slot">${ns.iconSvg(item.icon, 15)}</span>` : '';
-      const checkHtml = item.checked ? `<span class="hub-tab-icon-slot agy-context-menu-check">${ns.iconSvg('check', 14)}</span>` : '';
+      const iconHtml = item.icon ? `<span class="agy-tab-icon">${ns.iconSvg(item.icon, 15)}</span>` : '';
+      const checkHtml = item.checked ? `<span class="agy-tab-icon agy-context-menu-check">${ns.iconSvg('check', 14)}</span>` : '';
       btn.innerHTML = `${iconHtml}<span class="agy-context-menu-label">${ns.escHtml(item.label || '')}</span>${checkHtml}`;
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();

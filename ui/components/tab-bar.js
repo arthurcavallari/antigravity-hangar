@@ -54,14 +54,17 @@
 
   function cleanupAllDragGhosts() {
     ns.isPointerOnTab = false; ns.pointerTermInstanceId = ''; ns.pointerSideChatInstanceId = ''; ns.clearAllTermDropIndicators?.();
-    document.querySelectorAll('.tab-drag-ghost').forEach((el) => el.remove());
-    document.querySelectorAll('.hub-tab, .term-session-pill, .sidechat-session-pill').forEach((el) => { el.classList.remove('is-dragging-source', 'merge-drop-target'); if (ns.setTabShift) ns.setTabShift(el, 0); else el.style.transform = ''; });
+    document.querySelectorAll('.agy-tab-drag-ghost').forEach((el) => el.remove());
+    document.querySelectorAll('.agy-tab').forEach((el) => { el.classList.remove('is-dragging-source', 'merge-drop-target'); if (ns.setTabShift) ns.setTabShift(el, 0); else el.style.transform = ''; });
     document.body.classList.remove('dragging-tab');
     document.querySelectorAll('.split-drop-target').forEach((el) => el.classList.remove('split-drop-target'));
   }
   window.addEventListener('blur', cleanupAllDragGhosts);
 
-  ns.measureStrip = function measureStrip(sourceStrip, btn, startX, startY, selector = '.hub-tab[data-sidecar-id]') {
+  ns.measureStrip = function measureStrip(sourceStrip, btn, startX, startY, selector = '.agy-tab[data-sidecar-id]') {
+    if (window.AgyUI?.measureStrip) {
+      return window.AgyUI.measureStrip(sourceStrip, btn, startX, startY, selector);
+    }
     const sourceTabs = Array.from(sourceStrip?.querySelectorAll?.(selector) || []), centers = [], rects = [];
     let minLeft = Infinity, maxRight = -Infinity, gap = 0, prevRight = null;
     sourceTabs.forEach((el) => {
@@ -80,48 +83,88 @@
   };
 
   function updateSidecarTabButton(btn, sc, isActive, opts = {}) {
-    btn._sc = sc; btn._opts = opts; btn.dataset.pane = opts.pane || 'single'; btn.dataset.pinned = sc.isPinned ? 'true' : 'false'; btn.classList.toggle('active', Boolean(isActive));
-    const iconSlot = btn.querySelector('.hub-tab-icon-slot'), label = btn.querySelector('[data-role="tab-label"]'), extBadge = btn.querySelector('[data-role="tab-ext-badge"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeWrapEl = btn.querySelector('[data-role="tab-close-wrap"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
-    if (extBadge) { const showExt = Boolean(sc.isTerminal && sc.isExternal); extBadge.className = showExt ? 'term-external-badge' : 'term-external-badge hidden'; if (showExt && !extBadge.innerHTML) { extBadge.innerHTML = ns.iconSvg('open_in_new', 11); extBadge.title = 'Opened outside Hangar (shared with Antigravity)'; } }
-    if (pinEl) { pinEl.className = sc.isPinned ? 'hub-tab-pin' : 'hub-tab-pin hidden'; if (sc.isPinned && !pinEl.innerHTML) { pinEl.innerHTML = ns.iconSvg('keep', 16); pinEl.title = 'Unpin Tab'; } }
-    if (closeWrapEl && closeEl) { const showClose = Boolean(sc.canClose && !sc.isPinned); closeWrapEl.className = showClose ? 'hub-tab-close-wrap' : 'hub-tab-close-wrap hidden'; if (showClose) { if (!closeEl.innerHTML) closeEl.innerHTML = ns.iconSvg('close', 14); closeEl.title = ((sc.isSideChat && !sc.sideChatId) || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab'; } }
+    btn._sc = sc; btn._opts = opts; btn.dataset.pane = opts.pane || 'single'; btn.dataset.pinned = sc.isPinned ? 'true' : 'false'; btn.dataset.testid = `tab-${sc.sidecarId}`; btn.classList.toggle('active', Boolean(isActive));
+    const iconSlot = btn.querySelector('.agy-tab-icon'), label = btn.querySelector('[data-role="tab-label"]'), extBadge = btn.querySelector('[data-role="tab-ext-badge"]'), dot = btn.querySelector('[data-role="tab-dot"]'), pinEl = btn.querySelector('[data-role="tab-pin"]'), closeWrapEl = btn.querySelector('[data-role="tab-close-wrap"]'), closeEl = btn.querySelector('[data-role="tab-close"]'), pinSuffix = sc.isPinned ? ' · Pinned' : '';
+    if (extBadge) { const showExt = Boolean(sc.isTerminal && sc.isExternal); extBadge.className = showExt ? 'agy-tab-ext-badge' : 'agy-tab-ext-badge hidden'; if (showExt && !extBadge.innerHTML) { extBadge.innerHTML = ns.iconSvg('open_in_new', 11); extBadge.title = 'Opened outside Hangar (shared with Antigravity)'; } }
+    if (pinEl) { pinEl.className = sc.isPinned ? 'agy-tab-pin' : 'agy-tab-pin hidden'; if (sc.isPinned && !pinEl.innerHTML) { pinEl.innerHTML = ns.iconSvg('keep', 16); pinEl.title = 'Unpin Tab'; } }
+    if (closeWrapEl && closeEl) { const showClose = Boolean(sc.canClose && !sc.isPinned); closeWrapEl.className = showClose ? 'agy-tab-close-wrap' : 'agy-tab-close-wrap hidden'; if (showClose) { if (!closeEl.innerHTML) closeEl.innerHTML = ns.iconSvg('close', 14); closeEl.title = ((sc.isSideChat && !sc.sideChatId) || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab'; } }
     if (sc.isTerminal) {
       const extSuffix = sc.isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : '';
       btn.title = `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${extSuffix}${pinSuffix}`;
       if (iconSlot && iconSlot.dataset.icon !== 'terminal') { iconSlot.dataset.icon = 'terminal'; iconSlot.innerHTML = ns.iconSvg('terminal', 16); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
-      if (dot) dot.className = 'status-dot hidden'; return;
+      if (dot) dot.className = 'agy-status-dot hidden'; return;
     }
     if (sc.isSideChat) {
       btn.title = `${sc.displayName} (Tool-Enabled Terminal Side Chat)${pinSuffix}`;
       if (iconSlot && iconSlot.dataset.icon !== 'chat') { iconSlot.dataset.icon = 'chat'; iconSlot.innerHTML = ns.iconSvg('chat', 15); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
-      if (dot) dot.className = 'status-dot running'; return;
+      if (dot) dot.className = 'agy-status-dot running'; return;
     }
     if (sc.isVirtual) {
       const updCount = Number(opts.updateCount || 0);
       btn.title = `${updCount > 0 ? `${sc.displayName} (${updCount} update${updCount === 1 ? '' : 's'} available)` : sc.displayName}${pinSuffix}`;
       if (iconSlot && iconSlot.dataset.icon !== 'extension') { iconSlot.dataset.icon = 'extension'; iconSlot.innerHTML = ns.iconSvg('extension', 16); }
       if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
-      if (dot) dot.className = updCount > 0 ? 'status-dot update' : 'status-dot hidden'; return;
+      if (dot) dot.className = updCount > 0 ? 'agy-status-dot update' : 'agy-status-dot hidden'; return;
     }
     const badgeInfo = ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored), isGlobal = sc.scope === 'global', iconName = isGlobal ? 'globe' : 'folder';
     btn.title = `${sc.displayName} (${badgeInfo.label} · ${isGlobal ? 'Global' : 'Workspace'}${pinSuffix})`;
     if (iconSlot && iconSlot.dataset.icon !== iconName) { iconSlot.dataset.icon = iconName; iconSlot.innerHTML = ns.iconSvg(iconName, 15); }
     if (label && label.textContent !== sc.displayName) label.textContent = sc.displayName;
-    if (dot) dot.className = `status-dot ${badgeInfo.state}`;
+    if (dot) dot.className = `agy-status-dot ${badgeInfo.state}`;
   }
 
   function createSidecarTabButton(sc, isActive, opts = {}) {
     const btn = document.createElement('button'), iconSlot = document.createElement('span'), label = document.createElement('span'), extBadge = document.createElement('span'), dot = document.createElement('span'), pinEl = document.createElement('span'), closeWrapEl = document.createElement('span'), closeEl = document.createElement('span');
-    btn.type = 'button'; btn.className = 'hub-tab'; btn.dataset.sidecarId = sc.sidecarId;
-    iconSlot.className = 'hub-tab-icon-slot'; label.className = 'hub-tab-label'; label.dataset.role = 'tab-label'; extBadge.dataset.role = 'tab-ext-badge'; dot.dataset.role = 'tab-dot'; pinEl.dataset.role = 'tab-pin'; closeWrapEl.dataset.role = 'tab-close-wrap'; closeEl.className = 'hub-tab-close'; closeEl.dataset.role = 'tab-close';
+    btn.type = 'button'; btn.className = 'agy-tab'; btn.dataset.sidecarId = sc.sidecarId; btn.dataset.testid = `tab-${sc.sidecarId}`;
+    iconSlot.className = 'agy-tab-icon'; label.className = 'agy-tab-label'; label.dataset.role = 'tab-label'; extBadge.className = 'agy-tab-ext-badge hidden'; extBadge.dataset.role = 'tab-ext-badge'; dot.className = 'agy-status-dot hidden'; dot.dataset.role = 'tab-dot'; pinEl.className = 'agy-tab-pin hidden'; pinEl.dataset.role = 'tab-pin'; closeWrapEl.className = 'agy-tab-close-wrap hidden'; closeWrapEl.dataset.role = 'tab-close-wrap'; closeEl.className = 'agy-tab-close'; closeEl.dataset.role = 'tab-close';
     closeWrapEl.appendChild(closeEl);
     btn.append(iconSlot, label, extBadge, dot, pinEl, closeWrapEl);
     updateSidecarTabButton(btn, sc, isActive, opts);
     pinEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: btn._sc?.sidecarId || sc.sidecarId }); });
     closeEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); });
     btn.addEventListener('auxclick', (e) => { if (e.button === 1 && !btn._sc?.isPinned) { e.preventDefault(); e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); } });
+    btn.addEventListener('dblclick', (e) => {
+      const curSc = btn._sc || sc;
+      const isPoppedTerm = String(curSc.sidecarId).startsWith('terminal__');
+      const isPoppedSc = String(curSc.sidecarId).startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__');
+      if (!isPoppedTerm && !isPoppedSc) return;
+      e.stopPropagation();
+      const labelEl = btn.querySelector('[data-role="tab-label"]');
+      const initial = isPoppedTerm
+        ? (ns.readCustomTermTitles?.()?.[curSc.terminalId] || curSc.displayName)
+        : (ns.readCustomSideChatTitles?.()?.[curSc.sideChatId] || curSc.displayName);
+      const renameFn = window.AgyUI?.startInlineRename || ns.startInlineRename;
+      if (renameFn) {
+        renameFn(btn, labelEl, {
+          initialValue: initial,
+          inputClassName: 'agy-rename-input',
+          onCommit: (next) => {
+            if (isPoppedTerm) {
+              ns.saveCustomTermTitle?.(curSc.terminalId, next);
+              fetch('/api/terminal/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ terminalId: curSc.terminalId, title: next }),
+              }).catch(() => {});
+              ns.renderTabs?.();
+            } else {
+              ns.saveCustomSideChatTitle?.(curSc.sideChatId, next);
+              fetch('/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
+                body: JSON.stringify({ cascadeId: curSc.sideChatId, annotations: { title: next }, mergeAnnotations: true }),
+              }).catch(() => {});
+              ns.renderTabs?.();
+            }
+          },
+          onCancel: () => {
+            if (labelEl) labelEl.textContent = curSc.displayName;
+          },
+        });
+      }
+    });
     btn.addEventListener('contextmenu', (e) => {
       const curSc = btn._sc || sc, curId = curSc.sidecarId, canClose = Boolean(curSc.canClose), isPinned = Boolean(curSc.isPinned), isGlobal = curSc.scope === 'global', pane = btn._opts?.pane || 'single';
       const stripTabs = btn._opts?.stripTabs || [], idx = stripTabs.findIndex((t) => t.sidecarId === curId);
@@ -132,7 +175,7 @@
         { separator: true },
       ] : [];
       const isCloseDestructive = Boolean(canClose && !(curSc.isSideChat && !curSc.sideChatId) && !(curSc.isTerminal && !curSc.terminalId));
-      ns.openTabContextMenu?.(e, [
+      (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(e, [
         { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: curId }) },
         ...scopeItems,
         { id: isCloseDestructive ? 'close-tab' : 'hide-tab', label: isCloseDestructive ? 'Close Tab' : 'Hide Tab', disabled: isPinned, onClick: () => btn._opts?.onContextAction?.({ action: 'close', targetIds: [curId], pane }) },
@@ -146,7 +189,7 @@
     const clearHoverTimer = () => { if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; } hoverTargetId = ''; };
 
     btn.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target?.closest?.('[data-role="tab-pin"], [data-role="tab-close"], [data-role="tab-close-wrap"]')) return;
+      if (e.button !== 0 || e.target?.closest?.('[data-role="tab-pin"], [data-role="tab-close"], [data-role="tab-close-wrap"], .agy-tab-close, .agy-tab-pin, .agy-rename-input')) return;
       cleanupAllDragGhosts(); clearHoverTimer(); previewedTargetId = ''; activePointerId = e.pointerId; ns.isPointerOnTab = true;
       startX = e.clientX; startY = e.clientY; isDragging = false; targetPane = btn._opts?.pane || 'single'; beforeTabId = null; dragMeta = null; termDropTarget = null;
       btn.setPointerCapture?.(e.pointerId);
@@ -159,7 +202,7 @@
         isDragging = true; document.body.classList.add('dragging-tab');
         dragMeta = ns.measureStrip(btn.parentElement, btn, startX, startY);
         btn.classList.add('is-dragging-source');
-        ghostEl = btn.cloneNode(true); ghostEl.className = 'hub-tab active tab-drag-ghost';
+        ghostEl = btn.cloneNode(true); ghostEl.className = 'agy-tab active agy-tab-drag-ghost';
         ghostEl.style.width = `${dragMeta.draggedWidth}px`; ghostEl.style.height = `${dragMeta.draggedHeight}px`;
         document.body.appendChild(ghostEl);
       }
@@ -183,7 +226,7 @@
           clearHoverTimer(); hoverTargetId = termDropTarget.targetInstanceTabId;
           hoverTimer = setTimeout(() => { hoverTimer = null; previewedTargetId = termDropTarget.targetInstanceTabId; btn._opts?.onPreviewTerminalSlot?.(termDropTarget.targetInstanceTabId, termDropTarget.pane); }, 350);
         } else if (termDropTarget.zone !== 'hub-tab') clearHoverTimer();
-        document.querySelectorAll('.hub-tab').forEach((el) => { const idx = dragMeta.sourceTabs.indexOf(el); ns.setTabShift?.(el, !dragMeta.locked && idx > dragMeta.draggedIndex ? -dragMeta.draggedSlot : 0); });
+        document.querySelectorAll('.agy-tab[data-sidecar-id]').forEach((el) => { const idx = dragMeta.sourceTabs.indexOf(el); ns.setTabShift?.(el, !dragMeta.locked && idx > dragMeta.draggedIndex ? -dragMeta.draggedSlot : 0); });
         return;
       }
       clearHoverTimer(); if (previewedTargetId) { previewedTargetId = ''; btn._opts?.onPreviewTerminalSlot?.('', pane); }
@@ -192,7 +235,7 @@
           if (e.clientX < stripRect.left + 26) dragMeta.sourceStrip.scrollLeft -= 10;
           else if (e.clientX > stripRect.right - 26) dragMeta.sourceStrip.scrollLeft += 10;
         }
-        document.getElementById(pane === 'top' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.hub-tab').forEach((el) => (ns.setTabShift ? ns.setTabShift(el, 0) : (el.style.transform = '')));
+        document.getElementById(pane === 'top' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.agy-tab[data-sidecar-id]').forEach((el) => (ns.setTabShift ? ns.setTabShift(el, 0) : (el.style.transform = '')));
         const x = e.clientX - dragMeta.grabOffsetX + dragMeta.draggedWidth / 2, scrollDelta = dragMeta.sourceStrip.scrollLeft - dragMeta.startScrollLeft;
         const pinnedCount = dragMeta.sourceTabs.filter((t) => t.dataset.pinned === 'true').length, isPin = Boolean(btn._sc?.isPinned);
         let dropIndex = dragMeta.draggedIndex;
@@ -215,7 +258,7 @@
         dragMeta.sourceTabs.forEach((el, i) => { if (i !== dragMeta.draggedIndex) { const s = i > dragMeta.draggedIndex ? -dragMeta.draggedSlot : 0; if (ns.setTabShift) ns.setTabShift(el, s); else el.style.transform = s ? `translateX(${s}px)` : ''; } });
         const tBar = document.getElementById(targetPane === 'top' ? 'chrome-bar' : 'bottom-tab-bar'), tRect = tBar?.getBoundingClientRect();
         const inBar = !tRect || !tRect.height || (e.clientY >= tRect.top - 14 && e.clientY <= tRect.bottom + 4), isPin = Boolean(btn._sc?.isPinned);
-        const targetSibs = Array.from(document.getElementById(targetPane === 'top' ? 'tab-strip' : 'bottom-tab-strip')?.querySelectorAll('.hub-tab[data-sidecar-id]') || []);
+        const targetSibs = Array.from(document.getElementById(targetPane === 'top' ? 'tab-strip' : 'bottom-tab-strip')?.querySelectorAll('.agy-tab[data-sidecar-id]') || []);
         beforeTabId = null;
         targetSibs.forEach((sib) => {
           const sibPin = sib.dataset.pinned === 'true', r = ns.getUnshiftedRect ? ns.getUnshiftedRect(sib) : sib.getBoundingClientRect();
@@ -246,15 +289,18 @@
   }
   function setupStripScroll(stripEl, overflowBtnEl, getTabs, onSelectTab, popoverEl, getClosedTabs, onReopenTab) {
     if (!stripEl) return;
-    if (overflowBtnEl) { overflowBtnEl._getTabs = getTabs; overflowBtnEl._onSelectTab = onSelectTab; overflowBtnEl._getClosedTabs = getClosedTabs; overflowBtnEl._onReopenTab = onReopenTab; }
+    if (overflowBtnEl) {
+      overflowBtnEl.classList.add('agy-tab-overflow-btn');
+      overflowBtnEl._getTabs = getTabs; overflowBtnEl._onSelectTab = onSelectTab; overflowBtnEl._getClosedTabs = getClosedTabs; overflowBtnEl._onReopenTab = onReopenTab;
+    }
     const update = () => {
       const { scrollLeft, scrollWidth, clientWidth } = stripEl, hasOverflow = scrollWidth > clientWidth + 1;
       const closedList = overflowBtnEl?._getClosedTabs?.() || [], hiddenCount = closedList.length, showBtn = hasOverflow || (stripEl.id !== 'bottom-tab-strip' && hiddenCount > 0);
       if (overflowBtnEl) {
         overflowBtnEl.classList.toggle('hidden', !showBtn); overflowBtnEl.classList.toggle('has-hidden-tabs', hiddenCount > 0);
-        let badgeEl = overflowBtnEl.querySelector?.('.tab-overflow-badge');
+        let badgeEl = overflowBtnEl.querySelector?.('.agy-tab-overflow-badge');
         if (hiddenCount > 0) {
-          if (!badgeEl && overflowBtnEl.appendChild) { badgeEl = document.createElement('span'); badgeEl.className = 'tab-overflow-badge'; overflowBtnEl.appendChild(badgeEl); }
+          if (!badgeEl && overflowBtnEl.appendChild) { badgeEl = document.createElement('span'); badgeEl.className = 'agy-tab-overflow-badge'; overflowBtnEl.appendChild(badgeEl); }
           if (badgeEl) badgeEl.textContent = String(hiddenCount);
           overflowBtnEl.title = `${hasOverflow ? 'More tabs · ' : ''}${hiddenCount} hidden tab${hiddenCount === 1 ? '' : 's'}: ${closedList.map((t) => t.displayName).join(', ')}`;
         } else { badgeEl?.remove?.(); overflowBtnEl.title = 'More tabs'; }
@@ -274,6 +320,7 @@
     update();
     if (overflowBtnEl && popoverEl && !overflowBtnEl._popoverBound) {
       overflowBtnEl._popoverBound = true;
+      popoverEl.classList.add('agy-tab-overflow-popover');
       overflowBtnEl.addEventListener('pointerdown', () => { overflowBtnEl._wasOpenOnDown = Boolean(popoverEl.matches?.(':popover-open') && popoverEl._anchorBtn === overflowBtnEl); });
       overflowBtnEl.addEventListener('click', (e) => {
         e.stopPropagation(); if (overflowBtnEl._wasOpenOnDown) { try { popoverEl.hidePopover?.(); } catch {} return; }
@@ -282,24 +329,24 @@
         popoverEl.style.top = flipUp ? 'auto' : `${r.bottom + 4}px`; popoverEl.style.bottom = flipUp ? `${window.innerHeight - r.top + 4}px` : 'auto';
         popoverEl.style.maxHeight = `${Math.max(120, (flipUp ? r.top : window.innerHeight - r.bottom) - 12)}px`;
         popoverEl.style.left = `${Math.max(8, Math.min(window.innerWidth - 230, r.right - 220))}px`;
-        const activeId = stripEl.querySelector('.hub-tab.active')?.dataset.sidecarId, hasOverflow = stripEl.scrollWidth > stripEl.clientWidth + 1;
+        const activeId = stripEl.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset.sidecarId, hasOverflow = stripEl.scrollWidth > stripEl.clientWidth + 1;
         popoverEl.innerHTML = '';
         const appendItem = (tab, isClosed) => {
           const item = document.createElement('button'), left = document.createElement('span'), icon = document.createElement('span'), title = document.createElement('span');
-          item.type = 'button'; item.className = `tab-overflow-item${isClosed ? ' is-hidden-tab' : tab.sidecarId === activeId ? ' active' : ''}`;
-          left.className = 'tab-overflow-item-left'; icon.className = 'hub-tab-icon-slot'; title.className = 'tab-overflow-item-title';
+          item.type = 'button'; item.className = `agy-tab-overflow-item${isClosed ? ' is-hidden-tab' : tab.sidecarId === activeId ? ' active' : ''}`;
+          left.className = 'agy-tab-overflow-item-left'; icon.className = 'agy-tab-icon'; title.className = 'agy-tab-overflow-item-title';
           icon.innerHTML = ns.iconSvg(tab.isTerminal ? 'terminal' : tab.isSideChat ? 'chat' : tab.isVirtual ? 'extension' : (tab.scope === 'global' ? 'globe' : 'folder'), 15);
           title.textContent = tab.displayName; left.append(icon, title); item.append(left);
-          if (isClosed) { item.title = `Show ${tab.displayName}`; const pill = document.createElement('span'); pill.className = 'tab-overflow-restore'; pill.textContent = 'Show'; item.append(pill); }
-          else if (!tab.isVirtual) { const badge = ns.formatStatusBadge(tab.statusBadge, tab.isRunning, tab.isErrored), dot = document.createElement('span'); dot.className = `status-dot ${badge.state}`; item.append(dot); }
-          else if (!tab.isTerminal && overflowBtnEl._updateCount > 0) { const dot = document.createElement('span'); dot.className = 'status-dot update'; item.append(dot); }
-          if (!isClosed && tab.isPinned) { const pin = document.createElement('span'); pin.className = 'hub-tab-pin'; pin.innerHTML = ns.iconSvg('keep', 12); item.append(pin); }
-          item.addEventListener('click', () => { popoverEl.hidePopover?.(); if (isClosed) overflowBtnEl._onReopenTab?.(tab.sidecarId); else { overflowBtnEl._onSelectTab?.(tab.sidecarId); stripEl.querySelector(`.hub-tab[data-sidecar-id="${CSS.escape(tab.sidecarId)}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); } });
+          if (isClosed) { item.title = `Show ${tab.displayName}`; const pill = document.createElement('span'); pill.className = 'agy-tab-overflow-restore'; pill.textContent = 'Show'; item.append(pill); }
+          else if (!tab.isVirtual) { const badge = ns.formatStatusBadge(tab.statusBadge, tab.isRunning, tab.isErrored), dot = document.createElement('span'); dot.className = `agy-status-dot ${badge.state}`; item.append(dot); }
+          else if (!tab.isTerminal && overflowBtnEl._updateCount > 0) { const dot = document.createElement('span'); dot.className = 'agy-status-dot update'; item.append(dot); }
+          if (!isClosed && tab.isPinned) { const pin = document.createElement('span'); pin.className = 'agy-tab-pin'; pin.innerHTML = ns.iconSvg('keep', 12); item.append(pin); }
+          item.addEventListener('click', () => { popoverEl.hidePopover?.(); if (isClosed) overflowBtnEl._onReopenTab?.(tab.sidecarId); else { overflowBtnEl._onSelectTab?.(tab.sidecarId); stripEl.querySelector(`.agy-tab[data-sidecar-id="${CSS.escape(tab.sidecarId)}"]`)?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); } });
           popoverEl.appendChild(item);
         };
         if (hasOverflow) for (const tab of overflowBtnEl._getTabs?.() || []) appendItem(tab, false);
         const closedList = overflowBtnEl._getClosedTabs?.() || [];
-        if (closedList.length) { const hdr = document.createElement('div'); hdr.className = 'tab-overflow-section'; hdr.textContent = `Hidden Tabs (${closedList.length})`; popoverEl.appendChild(hdr); for (const tab of closedList) appendItem(tab, true); }
+        if (closedList.length) { const hdr = document.createElement('div'); hdr.className = 'agy-tab-overflow-section'; hdr.textContent = `Hidden Tabs (${closedList.length})`; popoverEl.appendChild(hdr); for (const tab of closedList) appendItem(tab, true); }
         try { popoverEl.showPopover(); } catch { popoverEl.classList.toggle('hidden'); }
       });
     }
@@ -332,14 +379,14 @@
       let addBtn = stripEl.querySelector?.('[data-role="hub-add-tab"]');
       if (!addBtn) {
         addBtn = document.createElement('button');
-        addBtn.type = 'button'; addBtn.className = 'chrome-icon-btn term-strip-add-btn';
+        addBtn.type = 'button'; addBtn.className = 'agy-icon-btn agy-tab-add-btn';
         addBtn.dataset.role = 'hub-add-tab'; addBtn.dataset.testid = 'hangar-new-tab-button';
         addBtn.title = 'Open Terminal or Side Chat'; addBtn.innerHTML = ns.iconSvg('add', 16);
         addBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           const r = addBtn.getBoundingClientRect?.() || { left: e.clientX || 40, bottom: e.clientY || 36 };
           const pane = addBtn._opts?.pane || 'single';
-          ns.openTabContextMenu?.(
+          (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(
             { clientX: r.left, clientY: (r.bottom || 36) + 4, preventDefault() {}, stopPropagation() {} },
             [
               { id: 'new-terminal', icon: 'terminal', label: 'New Terminal', onClick: () => addBtn._opts?.onContextAction?.({ action: 'new-terminal', pane }) },
@@ -355,21 +402,26 @@
       if (!stripEl) return;
       const stripOpts = { ...opts, stripTabs: tabs }, seenIds = new Set();
       if (!tabs.length) {
-        stripEl._lastActiveId = ''; stripEl.querySelectorAll('.hub-tab').forEach((el) => el.remove());
-        if (!stripEl.querySelector('.tab-drop-hint')) { const hint = document.createElement('span'); hint.className = 'tab-drop-hint'; hint.textContent = 'Drag a tab here'; stripEl.appendChild(hint); }
+        stripEl._lastActiveId = '';
+        if (window.AgyUI?.reconcileTabStrip) {
+          window.AgyUI.reconcileTabStrip(stripEl, [], { idDatasetKey: 'sidecarId', emptyHint: 'Drag a tab here' });
+        } else {
+          stripEl.querySelectorAll('.agy-tab[data-sidecar-id]').forEach((el) => el.remove());
+          if (!stripEl.querySelector('.agy-tab-drop-hint')) { const hint = document.createElement('span'); hint.className = 'agy-tab-drop-hint'; hint.textContent = 'Drag a tab here'; stripEl.appendChild(hint); }
+        }
         ensureHubAddButton(stripEl, stripOpts);
         return;
       }
-      stripEl.querySelectorAll('.tab-drop-hint').forEach((el) => el.remove());
+      stripEl.querySelectorAll('.agy-tab-drop-hint').forEach((el) => el.remove());
       tabs.forEach((sc, i) => {
         seenIds.add(sc.sidecarId);
-        let btn = stripEl.querySelector(`.hub-tab[data-sidecar-id="${CSS.escape(sc.sidecarId)}"]`);
+        let btn = stripEl.querySelector(`.agy-tab[data-sidecar-id="${CSS.escape(sc.sidecarId)}"]`);
         if (!btn) btn = createSidecarTabButton(sc, sc.sidecarId === activeId, stripOpts); else updateSidecarTabButton(btn, sc, sc.sidecarId === activeId, stripOpts);
         if (stripEl.children[i] !== btn) stripEl.insertBefore(btn, stripEl.children[i] || null);
       });
-      stripEl.querySelectorAll('.hub-tab').forEach((child) => { if (!seenIds.has(child.dataset.sidecarId)) child.remove(); });
+      stripEl.querySelectorAll('.agy-tab[data-sidecar-id]').forEach((child) => { if (!seenIds.has(child.dataset.sidecarId)) child.remove(); });
       ensureHubAddButton(stripEl, stripOpts);
-      if (stripEl._lastActiveId !== activeId) { stripEl._lastActiveId = activeId; stripEl.querySelector('.hub-tab.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }
+      if (stripEl._lastActiveId !== activeId) { stripEl._lastActiveId = activeId; stripEl.querySelector('.agy-tab.active[data-sidecar-id]')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }
     }
     if (!splitEnabled) {
       bottomTabBarEl?.classList.add('hidden'); bottomOverflowBtnEl?.classList.add('hidden');

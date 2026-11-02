@@ -4,12 +4,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { createAgysClientHandler, createShellCssHandler } from 'antigravity-sidecar-kit/server';
+import { createShellClientHandler, createShellCssHandler } from 'antigravity-sidecar-kit/server';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-describe('Hangar launch.mjs, AGYS shell contrast engine, StateSync routes, and Fix with Agent UI', () => {
-  it('sidecar.json uses launch.mjs and server.mjs stays within the 80-line ceiling with AGYS + StateSync routes', () => {
+describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fix with Agent UI', () => {
+  it('sidecar.json uses launch.mjs and server.mjs stays within the 80-line ceiling with AGY + StateSync routes', () => {
     const sidecarJson = JSON.parse(readFileSync(join(ROOT, 'sidecar.json'), 'utf8'));
     assert.deepEqual(sidecarJson.args, ['launch.mjs']);
     assert.equal(existsSync(join(ROOT, 'launch.mjs')), true);
@@ -18,21 +18,21 @@ describe('Hangar launch.mjs, AGYS shell contrast engine, StateSync routes, and F
     const serverLines = serverSrc.split(/\r?\n/).filter((_, i, a) => i < a.length - 1 || a[i] !== '').length;
     assert.ok(serverLines <= 80, `server.mjs must be <= 80 lines (got ${serverLines})`);
     assert.match(serverSrc, /app\.page\('\/shell\.css'/);
-    assert.match(serverSrc, /app\.page\('\/agys-client\.js'/);
+    assert.match(serverSrc, /app\.page\('\/shell\.js'/);
     assert.match(serverSrc, /registerStateSyncRoutes\(app/);
     assert.match(serverSrc, /name:\s*'manage_sidecar'/);
   });
 
-  it('ui/styles.css uses --agys-ink-soft (88% contrast) and @media (forced-colors: active) fallbacks', () => {
+  it('ui/styles.css uses --agy-ink-soft (88% contrast) and @media (forced-colors: active) fallbacks', () => {
     const css = readFileSync(join(ROOT, 'ui', 'styles.css'), 'utf8');
-    assert.match(css, /--hub-muted:\s*var\(--agys-ink-soft,\s*color-mix\(in srgb,\s*var\(--hub-fg\)\s*88%/);
+    assert.match(css, /--hub-muted:\s*var\(--agy-ink-soft,\s*color-mix\(in srgb,\s*var\(--hub-fg\)\s*88%/);
     assert.match(css, /@media\s*\(forced-colors:\s*active\)/);
 
     const shellCss = createShellCssHandler()().body;
-    assert.match(shellCss, /--agys-ink-soft:\s*color-mix\(in srgb,\s*var\(--agys-ink\)\s*88%,\s*var\(--agys-canvas\)\)/);
+    assert.match(shellCss, /--agy-ink-soft:\s*color-mix\(in srgb,\s*var\(--agy-ink\)\s*88%,\s*var\(--agy-canvas\)\)/);
   });
 
-  it('AGYS_CLIENT_JS computes relative luminance, caches theme in sessionStorage, and notifies agent on errored sidecars', async () => {
+  it('AGY_CLIENT_JS computes relative luminance, caches theme in sessionStorage, and notifies agent on errored sidecars', async () => {
     const storage = new Map();
     const attrs = new Map();
     const styleProps = new Map();
@@ -64,20 +64,20 @@ describe('Hangar launch.mjs, AGYS shell contrast engine, StateSync routes, and F
     };
     sandbox.window = sandbox;
 
-    const clientJs = createAgysClientHandler()().body;
+    const clientJs = createShellClientHandler()().body;
     vm.runInNewContext(clientJs, sandbox);
 
-    assert.equal(typeof sandbox.Hangar.applyAgysThemeFromPayload, 'function');
-    const isDark = sandbox.Hangar.applyAgysThemeFromPayload({
+    assert.equal(typeof sandbox.Hangar.applyAgyThemeFromPayload, 'function');
+    const isDark = sandbox.Hangar.applyAgyThemeFromPayload({
       themeType: 'dark',
       cssVariables: { '--background': '#101114', '--foreground': '#e6e8ec' },
     });
     assert.equal(isDark, true);
     assert.equal(docEl.dataset.theme, 'dark');
     assert.equal(attrs.get('data-follow-host'), true);
-    assert.ok(storage.get('agys.theme.v1')?.includes('#101114'));
+    assert.ok(storage.get('agy.theme.v1')?.includes('#101114'));
 
-    const isDarkForLight = sandbox.Hangar.applyAgysThemeFromPayload({
+    const isDarkForLight = sandbox.Hangar.applyAgyThemeFromPayload({
       themeType: 'light',
       cssVariables: { '--background': '#fbfbfa', '--foreground': '#1f2124' },
     });

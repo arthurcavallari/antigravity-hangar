@@ -5,7 +5,8 @@ import { SidecarApp, Response } from 'sidecar_sdk';
 import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAgysClientHandler, createAgyCssHandler, createAssetHandler, createShellCssHandler } from 'antigravity-sidecar-kit/server';
+import { createShellClientHandler, createAgyCssHandler, createAssetHandler, createShellCssHandler } from 'antigravity-sidecar-kit/server';
+import { registerUiRoutes } from 'antigravity-sidecar-kit';
 import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { registerStateSyncRoutes } from 'antigravity-sidecar-kit/state-sync';
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
@@ -20,13 +21,12 @@ const UI_DIR = join(__dirname, 'ui');
 const serveAsset = (relPath, contentType) => createAssetHandler(UI_DIR, relPath, contentType, { ResponseClass: Response });
 const app = new SidecarApp();
 
-app.page('/', serveAsset('index.html', 'text/html; charset=utf-8'));
-app.page('/index.html', serveAsset('index.html', 'text/html; charset=utf-8'));
+app.page('/', serveAsset('index.html', 'text/html; charset=utf-8')); app.page('/index.html', serveAsset('index.html', 'text/html; charset=utf-8'));
 app.page('/compiled_tailwind.css', createAgyCssHandler({ ResponseClass: Response }));
 app.page('/shell.css', createShellCssHandler({ ResponseClass: Response }));
-app.page('/agys-client.js', createAgysClientHandler({ ResponseClass: Response }));
-app.page('/styles.css', serveAsset('styles.css', 'text/css; charset=utf-8'));
-app.page('/components.css', serveAsset('components.css', 'text/css; charset=utf-8'));
+app.page('/shell.js', createShellClientHandler({ ResponseClass: Response }));
+registerUiRoutes(app, { modules: 'all', ResponseClass: Response });
+app.page('/styles.css', serveAsset('styles.css', 'text/css; charset=utf-8')); app.page('/components.css', serveAsset('components.css', 'text/css; charset=utf-8'));
 const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/marketplace-panes.js',
   'components/plugin-panes.js', 'components/extensions-tab.js', 'components/iframe-deck.js',
   'components/terminal-emulator.js', 'components/terminal-quote.js', 'components/terminal-groups.js', 'components/terminal-tab.js'];

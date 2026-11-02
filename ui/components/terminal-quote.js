@@ -201,17 +201,21 @@
   };
 
   ns.showTerminalQuoteToast = function showTerminalQuoteToast(hostEl, message) {
+    if (window.AgyUI?.showToast) {
+      window.AgyUI.showToast(message, { container: hostEl });
+      return;
+    }
     const root = hostEl || document.body;
     if (!root || !message) return;
     let toast = root._hangarQuoteToast;
     if (!toast) {
       toast = document.createElement('div');
-      toast.className = 'term-quote-toast';
+      toast.className = 'agy-toast';
       root.appendChild?.(toast);
       root._hangarQuoteToast = toast;
     }
     toast.textContent = message;
-    toast.className = 'term-quote-toast';
+    toast.className = 'agy-toast';
     toast.classList?.remove?.('hidden');
     if (toast._timer) clearTimeout(toast._timer);
     toast._timer = setTimeout(() => toast.classList?.add?.('hidden'), 2600);
@@ -486,10 +490,14 @@
 
   ns.inspectHangarPointerOverSideChat = function inspectHangarPointerOverSideChat(clientX, clientY, draggedSidecarId, checkShells = true) {
     document.querySelectorAll?.('.merge-drop-target, .drop-target').forEach((el) => el.classList?.remove('merge-drop-target', 'drop-target'));
-    document.querySelectorAll?.('.sidechat-session-pill:not(.is-dragging-source)').forEach((el) => ns.setTabShift?.(el, 0));
+    for (const shell of document.querySelectorAll?.('.term-quote-composer[data-instance-tab-id]') || []) {
+      if (shell.dataset.instanceTabId !== draggedSidecarId) {
+        shell.querySelectorAll?.('.agy-tab[data-cascade-id]:not(.is-dragging-source)').forEach((el) => ns.setTabShift?.(el, 0));
+      }
+    }
     if (!ns.isSideChatTabId(draggedSidecarId)) return null;
-    const srcEl = document.querySelector?.(`.hub-tab[data-sidecar-id="${draggedSidecarId}"]`), srcR = srcEl ? (ns.getUnshiftedRect ? ns.getUnshiftedRect(srcEl) : srcEl.getBoundingClientRect()) : null;
-    for (const el of document.querySelectorAll?.('.hub-tab[data-sidecar-id]') || []) {
+    const srcEl = document.querySelector?.(`.agy-tab[data-sidecar-id="${draggedSidecarId}"]`), srcR = srcEl ? (ns.getUnshiftedRect ? ns.getUnshiftedRect(srcEl) : srcEl.getBoundingClientRect()) : null;
+    for (const el of document.querySelectorAll?.('.agy-tab[data-sidecar-id]') || []) {
       const sid = el.dataset.sidecarId, r = ns.getUnshiftedRect ? ns.getUnshiftedRect(el) : el.getBoundingClientRect();
       if (!sid || sid === draggedSidecarId || !ns.isSideChatTabId(sid) || r.width <= 0 || clientY < r.top - 18 || clientY > r.bottom + (!checkShells ? 18 : 4)) continue;
       const same = srcEl && srcEl.parentElement === el.parentElement, lPad = same && srcR && srcR.left < r.left ? 0 : r.width * 0.12, rPad = same && srcR && srcR.left > r.left ? 0 : r.width * 0.12;
@@ -502,9 +510,9 @@
     for (const shell of document.querySelectorAll?.('.term-quote-composer[data-instance-tab-id]') || []) {
       const targetInstanceTabId = shell.dataset.instanceTabId, sRect = shell.getBoundingClientRect();
       if (!targetInstanceTabId || targetInstanceTabId === draggedSidecarId || shell.classList?.contains?.('hidden') || sRect.width === 0 || clientX < sRect.left || clientX > sRect.right || clientY < sRect.top || clientY > sRect.bottom) continue;
-      const pane = shell.dataset.slot || 'top', strip = shell.querySelector('.term-session-strip'), tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
+      const pane = shell.dataset.slot || 'top', strip = shell.querySelector('.agy-tab-strip'), tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
       shell.classList.add('drop-target'); strip?.classList.add('drop-target');
-      const pills = Array.from(strip?.querySelectorAll('.sidechat-session-pill') || []); let index = pills.length;
+      const pills = Array.from(strip?.querySelectorAll('.agy-tab[data-cascade-id]') || []); let index = pills.length;
       if (tRect && clientY <= tRect.bottom + 10) {
         for (let i = 0; i < pills.length; i++) { const pr = ns.getUnshiftedRect ? ns.getUnshiftedRect(pills[i]) : pills[i].getBoundingClientRect(); if (clientX < pr.left + pr.width / 2) { index = i; break; } }
         pills.forEach((p, i) => ns.setTabShift?.(p, i >= index ? 68 : 0));
@@ -528,7 +536,7 @@
     box.dataset.instanceTabId = curTabId;
 
     const hdr = document.createElement('div'); hdr.className = 'term-toolbar term-quote-composer-hdr';
-    const sessionsEl = document.createElement('div'); sessionsEl.className = 'term-session-strip'; if (!sessionsEl.dataset) sessionsEl.dataset = {}; sessionsEl.dataset.role = 'sessions';
+    const sessionsEl = document.createElement('div'); sessionsEl.className = 'agy-tab-strip'; if (!sessionsEl.dataset) sessionsEl.dataset = {}; sessionsEl.dataset.role = 'sessions';
     sessionsEl.addEventListener?.('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && sessionsEl.scrollWidth > sessionsEl.clientWidth) { e.preventDefault?.(); sessionsEl.scrollLeft += e.deltaY; } }, { passive: false });
 
     const actionsEl = document.createElement('div'); actionsEl.className = 'term-toolbar-actions';
@@ -537,11 +545,11 @@
     const hint = document.createElement('span'); hint.className = 'term-quote-composer-hint hidden'; hint.textContent = 'Side Chat (tools enabled)';
     const backBtn = document.createElement('button'); backBtn.type = 'button'; backBtn.className = 'agy-btn agy-btn-outline term-sidechat-main-btn hidden'; if (!backBtn.dataset) backBtn.dataset = {}; backBtn.dataset.role = 'sidechat-back'; backBtn.title = 'Return to the active Side Chat thread'; backBtn.textContent = '↩ Back to Side Chat';
     const mainToggleBtn = document.createElement('button'); mainToggleBtn.type = 'button'; mainToggleBtn.className = 'agy-btn agy-btn-outline term-sidechat-main-btn hidden'; if (!mainToggleBtn.dataset) mainToggleBtn.dataset = {}; mainToggleBtn.dataset.role = 'sidechat-main-toggle'; mainToggleBtn.title = 'Send quoted output to the Main Conversation instead'; mainToggleBtn.textContent = 'Send to Main Chat';
-    const newThreadBtn = document.createElement('button'); newThreadBtn.type = 'button'; newThreadBtn.className = 'chrome-icon-btn hidden'; if (!newThreadBtn.dataset) newThreadBtn.dataset = {}; newThreadBtn.dataset.action = 'new'; newThreadBtn.dataset.role = 'sidechat-new'; newThreadBtn.title = 'New Side Chat'; newThreadBtn.innerHTML = ns.iconSvg?.('add', 16) || '+';
-    const deleteBtn = document.createElement('button'); deleteBtn.type = 'button'; deleteBtn.className = 'chrome-icon-btn hidden'; if (!deleteBtn.dataset) deleteBtn.dataset = {}; deleteBtn.dataset.action = 'kill'; deleteBtn.dataset.role = 'sidechat-delete'; deleteBtn.title = 'Delete Side Chat'; deleteBtn.innerHTML = ns.iconSvg?.('delete', 15) || '🗑';
-    const overviewBtn = document.createElement('button'); overviewBtn.type = 'button'; overviewBtn.className = 'chrome-icon-btn'; if (!overviewBtn.dataset) overviewBtn.dataset = {}; overviewBtn.dataset.action = 'overview'; overviewBtn.dataset.role = 'sidechat-overview'; overviewBtn.title = 'Toggle Overview Panel'; overviewBtn.innerHTML = ns.iconSvg?.('overview', 15) || '☰';
-    const popoutBtn = document.createElement('button'); popoutBtn.type = 'button'; popoutBtn.className = 'chrome-icon-btn'; if (!popoutBtn.dataset) popoutBtn.dataset = {}; popoutBtn.dataset.action = 'popout'; popoutBtn.dataset.role = 'sidechat-popout'; popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar'; popoutBtn.innerHTML = ns.iconSvg?.('dock_to_right', 14) || '⧉';
-    const dockBtn = document.createElement('button'); dockBtn.type = 'button'; dockBtn.className = 'chrome-icon-btn term-sidechat-btn hidden'; if (!dockBtn.dataset) dockBtn.dataset = {}; dockBtn.dataset.role = 'sidechat-dock';
+    const newThreadBtn = document.createElement('button'); newThreadBtn.type = 'button'; newThreadBtn.className = 'agy-icon-btn hidden'; if (!newThreadBtn.dataset) newThreadBtn.dataset = {}; newThreadBtn.dataset.action = 'new'; newThreadBtn.dataset.role = 'sidechat-new'; newThreadBtn.title = 'New Side Chat'; newThreadBtn.innerHTML = ns.iconSvg?.('add', 16) || '+';
+    const deleteBtn = document.createElement('button'); deleteBtn.type = 'button'; deleteBtn.className = 'agy-icon-btn hidden'; if (!deleteBtn.dataset) deleteBtn.dataset = {}; deleteBtn.dataset.action = 'kill'; deleteBtn.dataset.role = 'sidechat-delete'; deleteBtn.title = 'Delete Side Chat'; deleteBtn.innerHTML = ns.iconSvg?.('delete', 15) || '🗑';
+    const overviewBtn = document.createElement('button'); overviewBtn.type = 'button'; overviewBtn.className = 'agy-icon-btn'; if (!overviewBtn.dataset) overviewBtn.dataset = {}; overviewBtn.dataset.action = 'overview'; overviewBtn.dataset.role = 'sidechat-overview'; overviewBtn.title = 'Toggle Overview Panel'; overviewBtn.innerHTML = ns.iconSvg?.('overview', 15) || '☰';
+    const popoutBtn = document.createElement('button'); popoutBtn.type = 'button'; popoutBtn.className = 'agy-icon-btn'; if (!popoutBtn.dataset) popoutBtn.dataset = {}; popoutBtn.dataset.action = 'popout'; popoutBtn.dataset.role = 'sidechat-popout'; popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar'; popoutBtn.innerHTML = ns.iconSvg?.('dock_to_right', 14) || '⧉';
+    const dockBtn = document.createElement('button'); dockBtn.type = 'button'; dockBtn.className = 'agy-icon-btn term-sidechat-btn hidden'; if (!dockBtn.dataset) dockBtn.dataset = {}; dockBtn.dataset.role = 'sidechat-dock';
     const closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.className = 'term-quote-composer-close hidden'; closeBtn.textContent = '×';
     actionsEl.append?.(badge, backBtn, mainToggleBtn, newThreadBtn, deleteBtn, overviewBtn, popoutBtn, threadSelect, hint, dockBtn, closeBtn);
     hdr.append?.(sessionsEl, actionsEl);
@@ -601,10 +609,33 @@
 
     function startInlineRename(pill, t) {
       if (isRenaming || !t) return;
-      const lbl = pill?.querySelector?.('.term-session-label');
+      const lbl = pill?._slots?.labelEl || pill?.querySelector?.('.agy-tab-label');
       if (!lbl) return;
+      const renameFn = window.AgyUI?.startInlineRename || ns.startInlineRename;
+      if (renameFn) {
+        isRenaming = true;
+        renameFn(pill, lbl, {
+          initialValue: resolveSideChatTitle(t),
+          inputClassName: 'agy-rename-input',
+          onCommit: (rawNext) => {
+            isRenaming = false;
+            const next = String(rawNext || '').trim();
+            ns.saveCustomSideChatTitle(t.cascadeId, next);
+            if (next) ns.apiCall?.('/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations', body: { cascadeId: t.cascadeId, title: next } })?.catch?.(() => {});
+            lbl.textContent = resolveSideChatTitle(t);
+            renderSessionStrip();
+            onSideChatStateChange?.(ns.getSideChatState());
+          },
+          onCancel: () => {
+            isRenaming = false;
+            lbl.textContent = resolveSideChatTitle(t);
+            renderSessionStrip();
+          },
+        });
+        return;
+      }
       const inp = document.createElement('input');
-      inp.type = 'text'; inp.className = 'term-rename-input'; inp.value = resolveSideChatTitle(t);
+      inp.type = 'text'; inp.className = 'agy-rename-input'; inp.value = resolveSideChatTitle(t);
       let committed = false; isRenaming = true;
       const commit = (save) => {
         if (committed) return; committed = true; isRenaming = false;
@@ -640,7 +671,7 @@
       }
     };
 
-    function bindSideChatPointerDrag(pill, t) {
+    function bindChatPillDrag(pill, t) {
       let activePointerId = null, startX = 0, startY = 0, isDragging = false, ghostEl = null, dragMeta = null, dropAction = null, hoverTimer = null, hoverTargetId = '', previewedTargetId = '';
       const clearHover = (resetPreview, slot) => {
         if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
@@ -655,7 +686,7 @@
         try { if (pill.hasPointerCapture?.(e.pointerId)) pill.releasePointerCapture(e.pointerId); } catch {}
         if (ghostEl) { ghostEl.remove?.(); ghostEl = null; }
         pill.classList?.remove?.('is-dragging-source', 'is-dragging');
-        document.querySelectorAll?.('.sidechat-session-pill').forEach((n) => { n.classList?.remove?.('is-dragging-source'); ns.setTabShift?.(n, 0); });
+        document.querySelectorAll?.('.agy-tab').forEach((n) => { n.classList?.remove?.('is-dragging-source'); ns.setTabShift?.(n, 0); });
         ns.clearAllTermDropIndicators?.();
         if (cancelled || !wasDragging || !finalAction) {
           clearHover(true, slot);
@@ -687,7 +718,7 @@
       };
       const onWinPointerEnd = (e) => endPointer(e, false), onWinPointerCancel = (e) => endPointer(e, true);
       pill.addEventListener?.('pointerdown', (e) => {
-        if (e.button !== 0 || e.target?.closest?.('[data-close-cid], [data-pin-cid], .term-session-close-wrap, .term-rename-input')) return;
+        if (e.button !== 0 || e.target?.closest?.('[data-close-cid], [data-pin-cid], .agy-tab-pin, [data-role="tab-pin"], [data-role="tab-close"], .agy-tab-close-wrap, .agy-rename-input')) return;
         ns.clearAllTermDropIndicators?.(); clearHover(false); previewedTargetId = ''; activePointerId = e.pointerId; ns.isPointerOnTab = true; ns.pointerSideChatInstanceId = curTabId;
         startX = e.clientX; startY = e.clientY; isDragging = false; ghostEl = null; dragMeta = null; dropAction = null;
         pill.setPointerCapture?.(e.pointerId);
@@ -698,17 +729,17 @@
         const sourceSlot = box.dataset?.slot || 'top', dropCfg = ns.getHangarDropCfg?.() || {};
         if (!isDragging && Math.hypot(e.clientX - startX, e.clientY - startY) > 4) {
           isDragging = true; document.body?.classList?.add('dragging-tab');
-          dragMeta = ns.measureStrip?.(sessionsEl, pill, startX, startY, '.sidechat-session-pill');
+          dragMeta = ns.measureStrip?.(sessionsEl, pill, startX, startY, '.agy-tab');
           if (dragMeta) {
             pill.classList?.add?.('is-dragging-source');
-            ghostEl = pill.cloneNode(true); ghostEl.className = 'sidechat-session-pill active tab-drag-ghost';
+            ghostEl = pill.cloneNode(true); ghostEl.className = 'agy-tab active agy-tab-drag-ghost';
             ghostEl.style.width = `${dragMeta.draggedWidth}px`; ghostEl.style.height = `${dragMeta.draggedHeight}px`;
             document.body?.appendChild?.(ghostEl);
           }
         }
         if (!isDragging || !ghostEl || !dragMeta) return;
         document.querySelectorAll?.('.drop-target, .merge-drop-target, .split-drop-target').forEach((n) => n.classList?.remove('drop-target', 'merge-drop-target', 'split-drop-target'));
-        document.querySelectorAll?.('.hub-tab, .sidechat-session-pill').forEach((n) => ns.setTabShift?.(n, 0));
+        document.querySelectorAll?.('.agy-tab').forEach((n) => ns.setTabShift?.(n, 0));
         const sRect = sessionsEl?.getBoundingClientRect?.() || { left: 0, right: 0, top: 0, bottom: 0 };
         const nextLocked = dragMeta.draggedIndex >= 0 && e.clientY >= sRect.top - 18 && e.clientY <= sRect.bottom + 18;
         if (nextLocked !== dragMeta.locked) { dragMeta.locked = nextLocked; dragMeta.lockChangedAt = Date.now(); }
@@ -752,7 +783,7 @@
         const inChrome = Boolean(cRect && cRect.height > 0 && e.clientY >= cRect.top - 14 && e.clientY <= cRect.bottom + 4), inBottomBar = Boolean(bRect && bRect.height > 0 && e.clientY >= bRect.top - 14 && e.clientY <= bRect.bottom + 4);
         const hRect = splitEnabled ? document.getElementById('split-resize-handle')?.getBoundingClientRect?.() : null, pointerSlot = !splitEnabled ? 'top' : (e.clientY < (hRect ? hRect.top + hRect.height / 2 : window.innerHeight / 2) ? 'top' : 'bottom');
         if (inChrome || inBottomBar || (splitEnabled && pointerSlot !== sourceSlot)) {
-          const pane = inChrome ? 'top' : inBottomBar ? 'bottom' : pointerSlot, tabs = Array.from(document.getElementById(pane === 'bottom' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.hub-tab[data-sidecar-id]') || []);
+          const pane = inChrome ? 'top' : inBottomBar ? 'bottom' : pointerSlot, tabs = Array.from(document.getElementById(pane === 'bottom' ? 'bottom-tab-strip' : 'tab-strip')?.querySelectorAll('.agy-tab[data-sidecar-id]') || []);
           let beforeTabId = null;
           if (inChrome || inBottomBar) {
             for (const tabEl of tabs) { const r = ns.getUnshiftedRect ? ns.getUnshiftedRect(tabEl) : tabEl.getBoundingClientRect(); if (beforeTabId === null && e.clientX < r.left + r.width * (ns.isSideChatTabId(tabEl.dataset.sidecarId) ? 0.12 : 0.5)) beforeTabId = tabEl.dataset.sidecarId; }
@@ -774,48 +805,91 @@
       const actCid = ns.getActiveSideChatId(curTabId) || instThreads[0]?.cascadeId || '';
       popoutBtn.classList?.toggle?.('active', Boolean(curRootId));
       popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
-      sessionsEl.innerHTML = '';
       const togglePin = (t) => {
         t.pinned = !t.pinned;
         sideChatThreads = [...sideChatThreads.filter((x) => x.pinned), ...sideChatThreads.filter((x) => !x.pinned)];
         renderSessionStrip();
         onSideChatStateChange?.(ns.getSideChatState());
       };
+      const openChatPillMenu = (e, pill, t, idx) => {
+        const isPinned = Boolean(t.pinned);
+        const others = instThreads.filter((x) => x.cascadeId !== t.cascadeId && !x.pinned).map((x) => x.cascadeId);
+        const right = instThreads.slice(idx + 1).filter((x) => !x.pinned).map((x) => x.cascadeId);
+        ns.openTabContextMenu?.(e, [
+          { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(t) },
+          { id: 'rename-tab', label: 'Rename Side Chat…', onClick: () => startInlineRename(pill, t) },
+          { id: 'popout-tab', label: curRootId ? 'Merge into Main Side Chat Tab' : 'Pin Side Chat Tab to Top Bar', onClick: () => handlePopoutOrMerge(t.cascadeId) },
+          { separator: true },
+          { id: 'close-tab', label: 'Delete Side Chat', disabled: isPinned, onClick: () => deleteSideChatsByIds([t.cascadeId], curTabId) },
+          { id: 'close-other-tabs', label: 'Delete Other Side Chats', disabled: !others.length, onClick: () => { ns.setActiveSideChatId(curTabId, t.cascadeId); deleteSideChatsByIds(others, curTabId); } },
+          { id: 'close-tabs-to-the-right', label: 'Delete Side Chats to the Right', disabled: !right.length, onClick: () => deleteSideChatsByIds(right, curTabId) },
+        ]);
+      };
+      if (window.AgyUI?.reconcileTabStrip) {
+        const stripItems = instThreads.map((t, idx) => {
+          const isCurrent = t.cascadeId === actCid, isPinned = Boolean(t.pinned), cleanTitle = resolveSideChatTitle(t);
+          return {
+            id: t.cascadeId,
+            thread: t,
+            idx,
+            label: cleanTitle,
+            icon: 'chat',
+            iconSize: 15,
+            active: isCurrent,
+            pinned: isPinned,
+            closable: !isPinned,
+            closeTitle: 'Delete Side Chat',
+            renamable: true,
+            title: `${cleanTitle}${isPinned ? ' · Pinned' : ''} (Drag to reorder or move across Hangar, double-click to rename)`,
+            dataset: { cascadeId: t.cascadeId, pinned: isPinned ? 'true' : 'false' },
+          };
+        });
+        window.AgyUI.reconcileTabStrip(sessionsEl, stripItems, {
+          idDatasetKey: 'cascadeId',
+          closeTitle: 'Delete Side Chat',
+          addButton: { role: 'sidechat-strip-add', title: 'New Side Chat', onClick: (e) => { e?.stopPropagation?.(); spawnNewInInstance(); } },
+          onClose: (id) => deleteSideChatsByIds([id], curTabId),
+          onUnpin: (_id, item) => togglePin(item.thread),
+          onRenameStart: () => { isRenaming = true; },
+          onRenameCancel: () => { isRenaming = false; },
+          onRename: (_id, rawNext, item) => {
+            isRenaming = false;
+            const next = String(rawNext || '').trim();
+            ns.saveCustomSideChatTitle(item.thread.cascadeId, next);
+            if (next) ns.apiCall?.('/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations', body: { cascadeId: item.thread.cascadeId, title: next } })?.catch?.(() => {});
+            renderSessionStrip();
+            onSideChatStateChange?.(ns.getSideChatState());
+          },
+          onContextMenu: (_id, item, e, pill) => openChatPillMenu(e, pill, item.thread, item.idx),
+          bindDrag: (pill, item) => bindChatPillDrag(pill, item.thread),
+        });
+        return;
+      }
+      ns.clear(sessionsEl);
+      if (Array.isArray(sessionsEl.childNodes)) sessionsEl.childNodes.length = 0;
       instThreads.forEach((t, idx) => {
         const isCurrent = t.cascadeId === actCid, isPinned = Boolean(t.pinned), cleanTitle = resolveSideChatTitle(t);
         const pill = document.createElement('button');
         pill.type = 'button';
-        pill.className = `sidechat-session-pill${isCurrent ? ' active' : ''}`;
+        pill.className = `agy-tab${isCurrent ? ' active' : ''}`;
         if (!pill.dataset) pill.dataset = {};
         pill.dataset.pinned = isPinned ? 'true' : 'false';
         pill.dataset.cascadeId = t.cascadeId;
         pill.title = `${cleanTitle}${isPinned ? ' · Pinned' : ''} (Drag to reorder or move across Hangar, double-click to rename)`;
         const trailHtml = isPinned
-          ? `<span class="term-session-pin" data-pin-cid="${ns.escHtml?.(t.cascadeId) || t.cascadeId}" title="Unpin Tab">${ns.iconSvg?.('keep', 16) || ''}</span>`
-          : `<span class="term-session-close-wrap"><span class="term-session-close" data-close-cid="${ns.escHtml?.(t.cascadeId) || t.cascadeId}" title="Delete Side Chat">${ns.iconSvg?.('close', 14) || '×'}</span></span>`;
-        pill.innerHTML = `${ns.iconSvg?.('chat', 15) || ''}<span class="term-session-label">${ns.escHtml?.(cleanTitle) || cleanTitle}</span>${trailHtml}`;
+          ? `<span class="agy-tab-pin" data-pin-cid="${ns.escHtml?.(t.cascadeId) || t.cascadeId}" title="Unpin Tab">${ns.iconSvg?.('keep', 16) || ''}</span>`
+          : `<span class="agy-tab-close-wrap"><span class="agy-tab-close" data-close-cid="${ns.escHtml?.(t.cascadeId) || t.cascadeId}" title="Delete Side Chat">${ns.iconSvg?.('close', 14) || '×'}</span></span>`;
+        pill.innerHTML = `<span class="agy-tab-icon">${ns.iconSvg?.('chat', 15) || ''}</span><span class="agy-tab-label">${ns.escHtml?.(cleanTitle) || cleanTitle}</span>${trailHtml}`;
         pill.querySelector?.('[data-close-cid]')?.addEventListener?.('click', (e) => { e.stopPropagation?.(); deleteSideChatsByIds([t.cascadeId], curTabId); });
         pill.querySelector?.('[data-pin-cid]')?.addEventListener?.('click', (e) => { e.stopPropagation?.(); togglePin(t); });
         pill.addEventListener?.('dblclick', (e) => { e.stopPropagation?.(); startInlineRename(pill, t); });
         pill.addEventListener?.('auxclick', (e) => { if (e.button === 1 && !isPinned) { e.preventDefault?.(); e.stopPropagation?.(); deleteSideChatsByIds([t.cascadeId], curTabId); } });
-        pill.addEventListener?.('contextmenu', (e) => {
-          const others = instThreads.filter((x) => x.cascadeId !== t.cascadeId && !x.pinned).map((x) => x.cascadeId);
-          const right = instThreads.slice(idx + 1).filter((x) => !x.pinned).map((x) => x.cascadeId);
-          ns.openTabContextMenu?.(e, [
-            { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(t) },
-            { id: 'rename-tab', label: 'Rename Side Chat…', onClick: () => startInlineRename(pill, t) },
-            { id: 'popout-tab', label: curRootId ? 'Merge into Main Side Chat Tab' : 'Pin Side Chat Tab to Top Bar', onClick: () => handlePopoutOrMerge(t.cascadeId) },
-            { separator: true },
-            { id: 'close-tab', label: 'Delete Side Chat', disabled: isPinned, onClick: () => deleteSideChatsByIds([t.cascadeId], curTabId) },
-            { id: 'close-other-tabs', label: 'Delete Other Side Chats', disabled: !others.length, onClick: () => { ns.setActiveSideChatId(curTabId, t.cascadeId); deleteSideChatsByIds(others, curTabId); } },
-            { id: 'close-tabs-to-the-right', label: 'Delete Side Chats to the Right', disabled: !right.length, onClick: () => deleteSideChatsByIds(right, curTabId) },
-          ]);
-        });
-        bindSideChatPointerDrag(pill, t);
+        pill.addEventListener?.('contextmenu', (e) => openChatPillMenu(e, pill, t, idx));
+        bindChatPillDrag(pill, t);
         sessionsEl.appendChild?.(pill);
       });
       const addTabBtn = document.createElement('button');
-      addTabBtn.type = 'button'; addTabBtn.className = 'chrome-icon-btn term-strip-add-btn'; if (!addTabBtn.dataset) addTabBtn.dataset = {}; addTabBtn.dataset.role = 'sidechat-strip-add'; addTabBtn.title = 'New Side Chat';
+      addTabBtn.type = 'button'; addTabBtn.className = 'agy-icon-btn agy-tab-add-btn'; if (!addTabBtn.dataset) addTabBtn.dataset = {}; addTabBtn.dataset.role = 'sidechat-strip-add'; addTabBtn.title = 'New Side Chat';
       addTabBtn.innerHTML = ns.iconSvg?.('add', 16) || '+';
       addTabBtn.addEventListener?.('click', (e) => { e.stopPropagation?.(); spawnNewInInstance(); });
       sessionsEl.appendChild?.(addTabBtn);

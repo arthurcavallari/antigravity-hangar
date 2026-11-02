@@ -388,11 +388,11 @@ describe('Hangar UI polling load', () => {
         return el.dataset?.role === role;
       }
       if (sel === '[data-subtab]') return el.dataset?.subtab !== undefined;
-      if (sel.startsWith('.manager-card[data-sidecar-id="')) {
-        const id = sel.slice(31, -2);
+      if (sel.startsWith('.agy-card[data-sidecar-id="')) {
+        const id = sel.slice(sel.indexOf('"') + 1, -2);
         return el.dataset?.sidecarId === id;
       }
-      if (sel === '.manager-card') return (el.className || '').split(/\s+/).includes('manager-card');
+      if (sel === '.agy-card') return (el.className || '').split(/\s+/).some((c) => c === 'agy-card');
       if (sel === '.ws-input') return (el.className || '').split(/\s+/).includes('ws-input');
       return false;
     }
@@ -464,7 +464,7 @@ describe('Hangar UI polling load', () => {
     sugBtn.click();
     assert.deepEqual(appliedSuggestions, ['docker-ui']);
 
-    const cmCard = storeViewEl.querySelector('.manager-card[data-sidecar-id="context-monitor"]');
+    const cmCard = storeViewEl.querySelector('.agy-card[data-sidecar-id="context-monitor"]');
     const cmHibBtn = cmCard.querySelector('[data-role="hibernate-btn"]');
     assert.equal(cmHibBtn.disabled, false);
     assert.equal(cmHibBtn.attributes['aria-pressed'], 'true');
@@ -481,7 +481,7 @@ describe('Hangar UI polling load', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(savedWorkspaces)), [['context-monitor', []]]);
 
     // Plugin sidecar has Auto-Sleep locked and disabled
-    const pluginCard = storeViewEl.querySelector('.manager-card[data-sidecar-id="my-plugin/pane"]');
+    const pluginCard = storeViewEl.querySelector('.agy-card[data-sidecar-id="my-plugin/pane"]');
     const pluginHibBtn = pluginCard.querySelector('[data-role="hibernate-btn"]');
     assert.equal(pluginHibBtn.disabled, true);
     pluginHibBtn.click();
@@ -614,4 +614,94 @@ describe('Hangar UI polling load', () => {
     await flush();
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__extensions__');
   });
+
+  it('preserves exact SVG icons, host theme precedence, and container-scoped toasts when AgyUI is loaded', async () => {
+    const { buildAgyUiJs } = await import('antigravity-sidecar-kit');
+    const inlineProps = new Map();
+    const docBodyChildren = [];
+    const customContainerChildren = [];
+    const documentElement = {
+      dataset: {},
+      style: {
+        setProperty: (k, v) => inlineProps.set(k, v),
+        removeProperty: (k) => inlineProps.delete(k),
+      },
+    };
+    const makeEl = (tag) => {
+      const el = {
+        tagName: tag.toUpperCase(),
+        className: '',
+        textContent: '',
+        dataset: {},
+        style: {},
+        classList: fakeClassList(),
+        children: [],
+        appendChild(c) { this.children.push(c); return c; },
+        remove() {},
+        querySelector: () => null,
+        addEventListener() {},
+      };
+      return el;
+    };
+    const document = {
+      documentElement,
+      head: { appendChild() {} },
+      body: { style: {}, classList: fakeClassList(), appendChild: (c) => docBodyChildren.push(c) },
+      getElementById: () => null,
+      createElement: (tag) => makeEl(tag),
+    };
+    const window = { document, addEventListener() {}, innerHeight: 800, Hangar: {} };
+    const ctx = vm.createContext({ window, document, URL, setTimeout: () => 0, clearTimeout: () => {} });
+    vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+    for (const rel of ['core.js', 'components/tab-bar.js', 'components/iframe-deck.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+
+    // 1. splitscreen_vertical_add, play_arrow, keep, globe, and pause must match HEAD:ui/core.js PATHS
+    const splitVertSvg = window.Hangar.iconSvg('splitscreen_vertical_add', 15);
+    const codeBlocksSvg = window.Hangar.iconSvg('code_blocks', 15);
+    assert.notEqual(splitVertSvg, codeBlocksSvg);
+    assert.match(splitVertSvg, /M180-160q-24\.75 0-42\.37-17\.63Q120-195\.25 120-220v-520/);
+    assert.match(window.Hangar.iconSvg('play_arrow', 15), /M340-236\.16V-723\.84L723\.07-480L340-236\.16Z/);
+    assert.match(window.Hangar.iconSvg('keep', 16), /M620-471\.54L691\.54-400v60H510v220L480-90/);
+    assert.match(window.Hangar.iconSvg('globe', 16), /M480-80q-82 0-155-31\.5t-127\.5-86/);
+    assert.match(window.Hangar.iconSvg('pause', 16), /M530-220V-740H740v520H530Zm-310,0V-740H430v520H220Z/);
+
+    // 2. Live host postMessage theme must not be clobbered by subsequent /api/state poll
+    // and must not write static --agy-canvas inline when --background is present
+    window.Hangar.applyThemePayload({
+      themeType: 'light',
+      cssVariables: {
+        '--background': '#fafafa',
+        '--foreground': '#111111',
+        '--agy-canvas': '#181818',
+        '--agy-ink-soft': 'rgba(17, 17, 17, 0.6)',
+      },
+    }, true);
+    assert.equal(document.body.classList.has('theme-light'), true);
+    assert.equal(inlineProps.get('--background'), '#fafafa');
+    assert.equal(inlineProps.has('--agy-canvas'), false);
+    assert.equal(inlineProps.has('--agy-ink-soft'), false);
+
+    window.Hangar.applyThemePayload({
+      themeType: 'dark',
+      cssVariables: {
+        '--background': '#181818',
+        '--foreground': '#ffffff',
+        '--agy-canvas': '#181818',
+      },
+    }, false);
+    assert.equal(document.body.classList.has('theme-light'), true);
+    assert.equal(inlineProps.get('--background'), '#fafafa');
+
+    // 3. AgyUI.showToast respects opts.container
+    const hostContainer = {
+      querySelector: () => null,
+      appendChild: (c) => customContainerChildren.push(c),
+    };
+    window.AgyUI.showToast('Sent to Side Chat', { container: hostContainer });
+    assert.equal(customContainerChildren.length, 1);
+    assert.equal(docBodyChildren.length, 0);
+  });
 });
+

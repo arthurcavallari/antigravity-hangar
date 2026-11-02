@@ -10,6 +10,7 @@
   let latestThemeEvent = null;
   let latestWorkspaceEvent = null;
   let lastConfigThemeSig = '';
+  let hasLiveHostTheme = false;
 
   ns.getLatestThemeEvent = () => latestThemeEvent;
 
@@ -27,18 +28,29 @@
 
   ns.applyThemePayload = function applyThemePayload(payload, fromHostMessage = false) {
     if (!payload || typeof payload.cssVariables !== 'object') return;
-    if (!fromHostMessage) {
+    if (fromHostMessage) {
+      hasLiveHostTheme = true;
+    } else {
+      if (hasLiveHostTheme) return;
       const sig = JSON.stringify(payload.cssVariables);
       if (sig === lastConfigThemeSig && latestThemeEvent) return;
       lastConfigThemeSig = sig;
     }
     const rootStyle = document.documentElement.style;
+    const hasHostFollowVars = Boolean(
+      payload.cssVariables['--background'] || payload.cssVariables['--foreground'] || payload.cssVariables['--card']
+    );
     for (const [key, val] of Object.entries(payload.cssVariables)) {
-      if (val) rootStyle.setProperty(key, val);
+      if (!val) continue;
+      if (hasHostFollowVars && key.startsWith('--agy-')) {
+        rootStyle.removeProperty?.(key);
+        continue;
+      }
+      rootStyle.setProperty(key, val);
     }
     const isLight = payload.themeType === 'light' || payload.isDark === false;
     rootStyle.colorScheme = isLight ? 'light' : 'dark';
-    ns.applyAgysThemeFromPayload?.(payload);
+    ns.applyAgyThemeFromPayload?.(payload);
     if (document.body) {
       document.body.style.fontFamily =
         payload.cssVariables['--vscode-font-family'] ||
@@ -140,6 +152,32 @@
     if (!els.splitResizeHandle || !els.mainViewport) return;
     let dragStartY = 0;
     let dragStartHeight = 185;
+    if (window.AgyUI?.bindSplitResize) {
+      window.AgyUI.bindSplitResize(els.splitResizeHandle, {
+        direction: 'vertical',
+        containerEl: () => els.mainViewport,
+        minRatio: 0.1,
+        maxRatio: 0.85,
+        onResizeStart: (e) => {
+          state.isResizingSplit = true;
+          dragStartY = e?.clientY || 0;
+          const topSlotEl = els.mainViewport.querySelector('.slot-top.visible, .slot-top:not(.hidden)');
+          dragStartHeight =
+            topSlotEl?.getBoundingClientRect().height || state.layout.pinnedTopHeightPx || 185;
+        },
+        onResize: (_ratio, e) => {
+          state.isResizingSplit = true;
+          const nextHeight = ns.clampSplitHeight(dragStartHeight + ((e?.clientY || 0) - dragStartY));
+          els.mainViewport.style.setProperty('--split-top-height', `${nextHeight}px`);
+          state.layout.pinnedTopHeightPx = nextHeight;
+        },
+        onResizeEnd: async () => {
+          state.isResizingSplit = false;
+          await onSaveHeight?.(state.layout.pinnedTopHeightPx);
+        },
+      });
+      return;
+    }
 
     els.splitResizeHandle.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
