@@ -173,7 +173,10 @@
         ns.setHtml(card.querySelector('[data-role="pkg-kind"]'), isPlugin ? ns.pluginBadgesHtml?.(pkg) || '' : '');
         ns.setHtml(
           card.querySelector('[data-role="pkg-meta"]'),
-          ns.html`${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}<span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>`,
+          ns.html`
+            ${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}
+            <span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>
+          `,
         );
         card.querySelector('[data-role="pkg-desc"]').textContent = pkg.tagline || '';
         if (!isPlugin) {

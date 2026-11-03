@@ -371,7 +371,10 @@
     if (hasHangarUpdate && q('hangar-update-text')) {
       ns.setHtml(
         q('hangar-update-text'),
-        ns.html`<strong>Hangar v${ns.escHtml(hangar.latestVersion)}</strong> is available (installed: v${ns.escHtml(hangar.installedVersion || '1.0.0')})`,
+        ns.html`
+          <strong>Hangar v${ns.escHtml(hangar.latestVersion)}</strong>
+          is available (installed: v${ns.escHtml(hangar.installedVersion || '1.0.0')})
+        `,
       );
     }
     q('total-count').textContent = String(sidecars.length);
