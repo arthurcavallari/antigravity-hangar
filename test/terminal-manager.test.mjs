@@ -389,6 +389,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.deepEqual(children.filter((c) => c.className === 'term-jetbox-frame').map((c) => c.src.includes('terminalId=t1') ? 't1' : 't2'), ['t1', 't2']);
     assert.ok(children.some((c) => c.dataset?.testid === 'aux-pane-new-tab-button'));
     const sessionPill = children.find((c) => c.dataset?.termTid === 't1');
+    for (let i = 0; i < 2; i++) {
+      sessionPill.emit('pointerdown', { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+      sessionPill.emit('pointerup', { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+      sessionPill.emit('click', { button: 0, detail: i + 1, stopPropagation() {} });
+    }
     sessionPill.emit('dblclick', { stopPropagation() {} });
     const escInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
     escInp.value = 'cancelled-name'; escInp.emit('keydown', { key: 'Escape', stopPropagation() {} }); escInp.emit('blur', {});

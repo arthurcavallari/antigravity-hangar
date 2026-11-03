@@ -21,16 +21,25 @@
     await Promise.all(tids.map((tid) => ns.apiCall?.('/api/terminal/close', { terminalId: tid }).catch(() => {})));
     setTimeout(() => tids.forEach((id) => closingIds.delete(id)), 1500);
   };
-  ns._focusTermPane = function focusTermPane(tid, engineMode) {
+  let focusTimer = null;
+  ns._userActivatedTerminal = false;
+  ns._cancelTermFocus = () => {
+    if (focusTimer) clearTimeout(focusTimer);
+    focusTimer = null;
+  };
+  ns._focusTermPane = function focusTermPane(tid, engineMode, delayMs = 0) {
+    ns._cancelTermFocus();
+    const canFocus = () => !(typeof document !== 'undefined' && (document.querySelector?.('.agy-rename-input') || (typeof document.hasFocus === 'function' && !document.hasFocus())));
     const run = () => {
+      if (!canFocus()) return;
       const p = sharedPanes.get(tid);
       if (engineMode !== 'jetbox') return void p?.emu?.focus();
       p?.frame?.focus?.();
       p?.frame?.contentWindow?.focus?.();
       try { p?.frame?.contentWindow?.postMessage({ type: 'hangar-jetbox-focus' }, '*'); } catch { /* ignore */ }
     };
-    run();
-    setTimeout(run, 0);
+    if (delayMs > 0) focusTimer = setTimeout(() => { focusTimer = null; run(); }, delayMs);
+    else { run(); focusTimer = setTimeout(() => { focusTimer = null; run(); }, 0); }
   };
   function bindPaneResizer(resizerEl, wrap) {
     let st = null;
@@ -149,13 +158,13 @@
           p.frame.dataset.loadedSrc = src;
           p.frame.addEventListener?.('load', () => {
             try { if (ns.getLatestThemeEvent?.()) p.frame.contentWindow?.postMessage(ns.getLatestThemeEvent(), '*'); } catch { /* ignore */ }
-            if (isVisible() && tid === getActiveTid()) focusPane(tid);
+            if (ns._userActivatedTerminal && isVisible() && tid === getActiveTid()) focusPane(tid);
           });
           p.wrap.appendChild(p.frame);
         } else if (p.frame.dataset.loadedSrc !== src) {
           p.frame.dataset.loadedSrc = src;
           p.frame.src = src;
-        } else if (wasHidden) try { p.frame.contentWindow?.postMessage({ type: 'hangar-jetbox-shown', focus: isFoc }, '*'); } catch { /* ignore */ }
+        } else if (wasHidden) try { p.frame.contentWindow?.postMessage({ type: 'hangar-jetbox-shown', focus: false }, '*'); } catch { /* ignore */ }
       } else if (p.frame) {
         p.frame.remove?.();
         p.frame = null;

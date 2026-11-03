@@ -118,6 +118,7 @@
       onSelect: (id) => stripOpts.onClick?.(id),
       onUnpin: (id) => act({ action: 'toggle-pin', sidecarId: id }),
       onClose: (id) => act({ action: 'close', targetIds: [id], pane: stripOpts.pane || 'single' }),
+      onRenameStart: () => ns._cancelTermFocus?.(),
       onRename: async (_id, next, item) => {
         if (item.isPoppedTerm) {
           ns.saveCustomTermTitle?.(item.targetId, next);

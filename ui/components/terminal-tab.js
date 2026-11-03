@@ -3,7 +3,7 @@
   const ns = (window.Hangar = window.Hangar || {});
   const instanceControllers = ns._termInstances, sharedPanes = ns._termSharedPanes;
   function createInstanceController(instanceTabId, rootId = '') {
-    let tabGroups = ns.readTabGroups(instanceTabId), activeGroupId = tabGroups[0]?.groupId || rootId || '', pendingSplit = null, engineMode = ns.readEngineMode(), terminals = [], workspacePath = '', conversationId = '', callbacks = {}, pollBusy = false, isVisible = false, pendingFocus = false, slotKey = 'top', isRenaming = false;
+    let tabGroups = ns.readTabGroups(instanceTabId), activeGroupId = tabGroups[0]?.groupId || rootId || '', pendingSplit = null, engineMode = ns.readEngineMode(), terminals = [], workspacePath = '', conversationId = '', callbacks = {}, pollBusy = false, isVisible = null, pendingFocus = false, slotKey = 'top', isRenaming = false;
     const rootEl = Object.assign(document.createElement('div'), { className: 'term-shell' });
     rootEl.dataset.instanceTabId = instanceTabId;
     ns.setHtml(rootEl, ns.html`<div class="term-toolbar"><agy-tab-strip class="agy-tab-strip" data-role="sessions"></agy-tab-strip><div class="term-toolbar-actions"><button type="button" class="agy-icon-btn" data-action="split" data-testid="terminal-split-button" title="Split Terminal">${ns.iconSvg('splitscreen_vertical_add', 15)}</button><button type="button" class="agy-icon-btn" data-action="popout" title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}">${ns.iconSvg('dock_to_right', 14)}</button></div></div><div class="term-stage" data-role="stage"></div>`);
@@ -13,16 +13,9 @@
     const getActiveTerm = () => terminals.find((t) => t.terminalId === getActiveTid()) || terminals[0] || null;
     const getVisibleIds = () => getActiveGroup()?.paneIds || [];
     const resolveTitle = (tid, fb = 'pwsh') => ns.readCustomTermTitles?.()?.[tid] || ns.formatTermTitle(sharedPanes.get(tid)?.title || terminals.find((x) => x.terminalId === tid)?.title || fb);
-    const saveGroups = () => {
-      ns.setActiveGroupId?.(instanceTabId, activeGroupId);
-      ns.saveTabGroups(instanceTabId, tabGroups);
-    };
-    const refreshView = (notify = false) => {
-      renderToolbar();
-      renderStage();
-      if (notify && rootId) callbacks.onSessionChange?.();
-    };
-    const focusPane = (tid) => ns._focusTermPane(tid, engineMode);
+    const saveGroups = () => (ns.setActiveGroupId?.(instanceTabId, activeGroupId), ns.saveTabGroups(instanceTabId, tabGroups));
+    const refreshView = (notify = false) => (renderToolbar(), renderStage(), notify && rootId && callbacks.onSessionChange?.());
+    const focusPane = (tid, delayMs = 0) => ns._focusTermPane(tid, engineMode, delayMs);
     const applyDropResult = (drag, dropTarget) => {
       if (drag?.instanceTabId && drag.instanceTabId !== instanceTabId) return void callbacks.onCrossInstanceMerge?.(ns.mergeTermDragIntoInstance?.(drag, { ...dropTarget, targetInstanceTabId: instanceTabId, pane: slotKey }));
       const res = ns.applyTerminalDrop(tabGroups, drag, dropTarget);
@@ -65,6 +58,7 @@
       ns.saveCustomTermTitle?.(tid, next);
       ns.apiCall?.('/api/terminal/rename', { terminalId: tid, title: next })?.catch?.(() => {});
       refreshView(true);
+      focusPane(getActiveTid());
     };
     const ensureDirectPane = (tid) => ns._ensureDirectTermPane(tid, {
       instanceTabId, sessionsEl, stageEl, close: closeTerminalsByIds, focus: setFocusedPane, getTitle: resolveTitle, getEngineMode: () => engineMode,
@@ -85,6 +79,7 @@
         renderToolbar();
       };
       const startRename = (pill, tid) => {
+        ns._cancelTermFocus?.();
         const live = pill?.isConnected === false ? Array.from(sessionsEl.children || sessionsEl.childNodes || []).find((c) => c.dataset?.termTid === tid) : pill;
         const lbl = !isRenaming && live?.isConnected !== false ? (live?._slots?.labelEl || live?.querySelector?.('.agy-tab-label')) : null;
         if (lbl && (isRenaming = true)) ns.startInlineRename?.(live, lbl, { initialValue: resolveTitle(tid), inputClassName: 'agy-rename-input', onCommit: (v) => commitRename(tid, v), onCancel: () => refreshView((isRenaming = false)) });
@@ -104,14 +99,15 @@
         closeTerminalsByIds(others.flatMap((g) => g.paneIds));
       };
       const selectGroup = (grp, pill) => {
-        if (!grp) return;
+        if (!grp || isRenaming) return;
+        ns._userActivatedTerminal = true;
         if (activeGroupId !== grp.groupId) {
           ns.setActiveGroupId?.(instanceTabId, (activeGroupId = grp.groupId));
           Array.from(sessionsEl.children || sessionsEl.childNodes || []).forEach((c) => c.classList?.toggle?.('active', c === pill || c._item?.grp?.groupId === grp.groupId));
           renderStage();
           if (rootId) callbacks.onSessionChange?.();
         }
-        focusPane(getActiveTid());
+        focusPane(getActiveTid(), 220);
         pollVisiblePanes();
       };
       window.AgyUI?.reconcileTabStrip?.(sessionsEl, stripItems, {
@@ -119,7 +115,7 @@
         addButton: hasSessions ? { role: 'term-add-tab', testId: 'aux-pane-new-tab-button', title: 'New Terminal Tab', onClick: () => spawnTerminal('') } : null,
         onSelect: (_id, item, _e, pill) => selectGroup(item?.grp, pill),
         onClose: (_id, item) => closeTerminalsByIds(item.grp.paneIds), onUnpin: (_id, item) => togglePin(item.grp),
-        onRenameStart: () => (isRenaming = true), onRenameCancel: () => (isRenaming = false), onRename: commitRename,
+        onRenameStart: () => { ns._cancelTermFocus?.(); isRenaming = true; }, onRenameCancel: () => { isRenaming = false; focusPane(getActiveTid()); }, onRename: commitRename,
         onContextMenu: (_id, item, e, pill) => {
           const grp = item.grp, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
           const t = terminals.find((x) => x.terminalId === focTid), others = tabGroups.filter((g) => g.groupId !== grp.groupId && !g.pinned), right = tabGroups.slice(item.gIdx + 1).filter((g) => !g.pinned);
@@ -164,7 +160,7 @@
         normalizeGroupState();
       }
       refreshView();
-      focusPane(created.terminalId);
+      focusPane((ns._userActivatedTerminal = true) && created.terminalId);
       pollVisiblePanes();
       await callbacks.onRefreshState?.();
     }
@@ -195,7 +191,7 @@
     return {
       rootEl,
       setVisible: (vis) => {
-        pendingFocus = Boolean(pendingFocus || (vis && !isVisible));
+        if (isVisible === false && vis && (ns._userActivatedTerminal = true)) pendingFocus = true;
         isVisible = Boolean(vis);
       },
       focusTerminal: (tid) => {
