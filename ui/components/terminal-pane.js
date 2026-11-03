@@ -114,7 +114,7 @@
       ns.setHtml(stageEl, ns.html`<div class="empty-split-zone"><button type="button" class="agy-btn agy-btn-primary has-icon" data-role="spawn-empty">${ns.iconSvg('add', 14)}<span>Launch Interactive Terminal</span></button></div>`);
       return void stageEl.querySelector('[data-role="spawn-empty"]')?.addEventListener('click', () => onSpawnEmpty());
     }
-    const instanceIds = new Set(terminals.map((t) => t.terminalId)), visSet = new Set(visibleIds), isSplit = visibleIds.length > 1, isJetbox = engineMode === 'jetbox', isLight = document.body.classList.contains('theme-light'), uiTok = new URLSearchParams(window.location?.search || '').get('token') || '';
+    const instanceIds = new Set(terminals.map((t) => t.terminalId)), visSet = new Set(visibleIds), isSplit = visibleIds.length > 1, isJetbox = engineMode === 'jetbox', isLight = document.body.classList.contains('theme-light'), uiTok = ns.getUiToken?.() || new URLSearchParams(window.location?.search || '').get('token') || '';
     for (const ch of Array.from(stageEl.children || [])) {
       const cid = ch.dataset?.terminalId;
       if (!cid || !instanceIds.has(cid)) {

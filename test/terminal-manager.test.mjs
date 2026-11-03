@@ -788,6 +788,13 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://localhost:51000' }, url: '/jetbox-terminal?token=secret-ui-tok-999' }).ok, true);
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', referer: 'http://127.0.0.1:51000/jetbox-terminal?token=secret-ui-tok-999' } }).ok, true);
 
+      const { runWithRequestContext } = await import('antigravity-sidecar-kit/state-sync');
+      const asyncStoreAuth = runWithRequestContext(
+        { headers: { origin: 'http://127.0.0.1:51000' }, query: { token: 'secret-ui-tok-999' }, url: '/jetbox-terminal?token=secret-ui-tok-999' },
+        () => checkJetboxAuth({ cascadeId: 'conv-1', terminalId: 'term-1' })
+      );
+      assert.equal(asyncStoreAuth.ok, true, 'checkJetboxAuth must resolve token from AsyncLocalStorage when SidecarApp strips data.token and omits ctx');
+
       const html = buildJetboxTerminalHtml({
         cascadeId: 'conv-1',
         terminalId: '</script><script>alert(1)</script>',

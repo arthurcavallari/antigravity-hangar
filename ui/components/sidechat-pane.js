@@ -3,7 +3,7 @@
   const ns = (window.Hangar = window.Hangar || {});
   const sc = ns._sc;
   const buildChatFrameSrc = (cascadeId) => {
-    const isLight = Boolean(document.body?.classList?.contains?.('theme-light')), uiTok = new URLSearchParams(window.location?.search || '').get('token') || '';
+    const isLight = Boolean(document.body?.classList?.contains?.('theme-light')), uiTok = ns.getUiToken?.() || new URLSearchParams(window.location?.search || '').get('token') || '';
     return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=7${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
   };
   const mkEl = (ns._mkSideChatEl = function mkEl(tag, className, { html: rawHtml, ...rest } = {}, ds = {}, onClick = null) {

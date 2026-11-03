@@ -29,10 +29,21 @@
   ns.iconSvg = ns.iconSvg || ui.iconSvg || ((name, size = 16, cls = '') => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="M120-240v-80h720v80H120Z"/></svg>`);
   ns.iconEl = ns.iconEl || ui.iconEl || ((name, size = 16, cls = '') => ns.setHtml(Object.assign(document.createElement('span'), { className: 'agy-icon-wrap' }), ns.iconSvg(name, size, cls)).firstElementChild);
   ns.escHtml = ns.escHtml || ui.escHtml || ((str = '') => String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+  ns.getUiToken = ns.getUiToken || (() => {
+    try {
+      const qTok = new URLSearchParams(window.location?.search || '').get('token');
+      if (qTok) return (window.__AGY_TOKEN__ = qTok);
+      if (window.__AGY_TOKEN__) return window.__AGY_TOKEN__;
+      for (const el of document?.querySelectorAll?.('script[src*="token="], link[href*="token="]') || []) {
+        const tok = new URL(el.getAttribute?.('src') || el.getAttribute?.('href') || '', 'http://127.0.0.1').searchParams.get('token');
+        if (tok) return (window.__AGY_TOKEN__ = tok);
+      }
+    } catch { /* ignore */ }
+    return '';
+  });
   ns.apiCall = ns.apiCall || (async function apiCall(path, body = {}) {
     const fn = window.sidecar?.fetch || window.fetch.bind(window);
-    let urlToken = '';
-    try { urlToken = new URLSearchParams(window.location?.search || '').get('token') || ''; } catch { /* ignore */ }
+    const urlToken = ns.getUiToken();
     const res = await fn(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(urlToken ? { 'X-Sidecar-Token': urlToken } : {}) }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
