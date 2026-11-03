@@ -858,4 +858,118 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('propagates release.sha256 to cached updates and suggestions, and clears stale sha256 when upstream advances (HUB-02)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sha256-prop-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const wsDir = join(dir, 'workspace');
+      mkdirSync(wsDir, { recursive: true });
+      writeFileSync(join(wsDir, 'docker-compose.yml'), 'version: "3"\n', 'utf8');
+
+      installManagedCopy(sidecarsDir, packagesDir, 'pinned-sc');
+      writeJsonNoBom(join(sidecarsDir, 'pinned-sc', 'sidecar.json'), { command: 'node', version: '1.0.0' });
+      installManagedCopy(sidecarsDir, packagesDir, 'probed-sc');
+      writeJsonNoBom(join(sidecarsDir, 'probed-sc', 'sidecar.json'), { command: 'node', version: '1.0.0' });
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        registryUrl: 'https://registry.example.test',
+        sidecars: {
+          'pinned-sc': { scope: 'global', workspaces: ['*'] },
+          'probed-sc': { scope: 'global', workspaces: ['*'] },
+        },
+      });
+
+      const PINNED_SHA = 'a'.repeat(64);
+      const STALE_SHA = 'b'.repeat(64);
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir,
+        packagesDir,
+        probeUpstream: true,
+        fetchFn: async (url) => {
+          if (url === 'https://registry.example.test/registry.json') {
+            return {
+              ok: true,
+              json: async () => ({
+                hangar: {
+                  id: 'hangar',
+                  latestVersion: '88.0.0',
+                  release: {
+                    gitRepo: 'https://github.com/acme/hangar',
+                    tarballUrl: 'https://cdn.example.test/hangar-88.0.0.tgz',
+                    sha256: PINNED_SHA,
+                  },
+                },
+                packages: [
+                  {
+                    id: 'pinned-sc',
+                    name: 'Pinned SC',
+                    latestVersion: '1.1.0',
+                    workspaceTriggers: { files: ['docker-compose.yml'] },
+                    release: {
+                      gitRepo: 'https://github.com/acme/pinned-sc',
+                      tarballUrl: 'https://cdn.example.test/pinned-sc-1.1.0.tgz',
+                      sha256: PINNED_SHA,
+                    },
+                  },
+                  {
+                    id: 'probed-sc',
+                    name: 'Probed SC',
+                    npmPackage: 'acme-probed-sc',
+                    latestVersion: '1.1.0',
+                    release: {
+                      gitRepo: 'https://github.com/acme/probed-sc',
+                      tarballUrl: 'https://cdn.example.test/probed-sc-1.1.0.tgz',
+                      sha256: STALE_SHA,
+                    },
+                  },
+                ],
+              }),
+            };
+          }
+          if (url === 'https://registry.npmjs.org/acme-probed-sc/latest') {
+            return {
+              ok: true,
+              json: async () => ({
+                version: '1.2.0',
+                dist: { tarball: 'https://registry.npmjs.org/acme-probed-sc/-/acme-probed-sc-1.2.0.tgz' },
+              }),
+            };
+          }
+          return { ok: false, status: 404 };
+        },
+      });
+
+      assert.equal(catalog.hangar.sha256, PINNED_SHA);
+      assert.equal(catalog.sidecarUpdates['pinned-sc'].sha256, PINNED_SHA);
+      assert.equal(catalog.sidecarUpdates['probed-sc'].latestVersion, '1.2.0');
+      assert.equal(catalog.sidecarUpdates['probed-sc'].sha256, '', 'stale sha256 must be cleared when upstream version advances');
+      const probedPkg = catalog.packages.find((p) => p.id === 'probed-sc');
+      assert.equal(probedPkg.release.sha256, undefined);
+
+      const enriched = enrichSidecarList(
+        [
+          { sidecarId: 'pinned-sc', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+          { sidecarId: 'probed-sc', status: 'SIDECAR_STATUS_RUNNING', config: { hasWebUi: true } },
+        ],
+        loadHangarConfig(cfgPath),
+        { sidecarsDir, packagesDir }
+      );
+      assert.equal(enriched.find((s) => s.sidecarId === 'pinned-sc').sha256, PINNED_SHA);
+      assert.equal(enriched.find((s) => s.sidecarId === 'probed-sc').sha256, '');
+
+      const suggestions = detectWorkspaceSuggestions({
+        activeWorkspacePath: wsDir,
+        sidecars: [],
+        registryPackages: catalog.packages.map((p) => ({ ...p, isInstalled: false })),
+      });
+      assert.equal(suggestions.length, 1);
+      assert.equal(suggestions[0].sha256, PINNED_SHA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

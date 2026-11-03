@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
@@ -11,6 +12,7 @@ import {
   linkLocalSidecar,
   selfUpdateHangar,
   uninstallSidecar,
+  verifyTarballSha256,
 } from '../lib/package-installer.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
 
@@ -542,6 +544,87 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       assert.equal(readFileSync(hangarCfgPath, 'utf8'), corrupt);
       assert.equal(existsSync(join(sidecarsDir, 'my-sidecar', 'sidecar.json')), true);
       assert.equal(existsSync(join(sampleSidecarDir, 'sidecar.json')), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('verifyTarballSha256 throws TARBALL_HASH_MISMATCH when downloaded tarball digest differs from release.sha256', async () => {
+    assert.throws(
+      () => verifyTarballSha256(Buffer.from('corrupted-bytes'), '0'.repeat(64)),
+      (err) => err.code === 'TARBALL_HASH_MISMATCH' && /TARBALL_HASH_MISMATCH/.test(err.message)
+    );
+
+    const validBytes = Buffer.from('authentic-tarball-payload');
+    const validSha = createHash('sha256').update(validBytes).digest('hex');
+    assert.doesNotThrow(() => verifyTarballSha256(validBytes, validSha));
+    assert.doesNotThrow(() => verifyTarballSha256(validBytes, ''));
+
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sha256-test-'));
+    try {
+      const execCalls = [];
+      await assert.rejects(
+        installRemoteSidecar({
+          sidecarId: 'tampered-pkg',
+          tarballUrl: 'https://registry.example.test/tampered-pkg-1.0.0.tgz',
+          version: '1.0.0',
+          sha256: '0'.repeat(64),
+          packagesDir: join(dir, 'packages'),
+          sidecarsDir: join(dir, 'sidecars'),
+          configPath: join(dir, 'hangar.json'),
+          agyConfigPath: join(dir, 'config.json'),
+          rpcFn: async () => ({}),
+          fetchFn: async () => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode('corrupted-bytes').buffer,
+          }),
+          execFn: (...args) => execCalls.push(args),
+          delayMs: 0,
+        }),
+        (err) => err.code === 'TARBALL_HASH_MISMATCH' && /TARBALL_HASH_MISMATCH/.test(err.message)
+      );
+      assert.equal(execCalls.length, 0, 'tar extraction must not run when SHA-256 verification fails');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('HGR-AUD-04: uninstallSidecar refuses to uninstall single-root plugin sidecars and extensions-tab hides Uninstall button', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-single-root-uninstall-'));
+    try {
+      const packagesDir = join(dir, 'packages');
+      const sidecarsDir = join(dir, 'sidecars');
+      const hangarCfgPath = join(dir, 'hangar.json');
+      const agyCfgPath = join(dir, 'config.json');
+      const pkgDir = join(packagesDir, 'single-root@1.0.0');
+      mkdirSync(pkgDir, { recursive: true });
+      writeFileSync(join(pkgDir, 'plugin.json'), JSON.stringify({ name: 'single-root' }), 'utf8');
+      writeFileSync(
+        hangarCfgPath,
+        JSON.stringify({
+          version: 1,
+          sidecars: {},
+          plugins: { 'single-root': { dir: 'single-root', installedVersion: '1.0.0' } },
+        }),
+        'utf8'
+      );
+
+      await assert.rejects(
+        uninstallSidecar({
+          sidecarId: 'single-root',
+          packagesDir,
+          sidecarsDir,
+          configPath: hangarCfgPath,
+          agyConfigPath: agyCfgPath,
+          rpcFn: async () => ({}),
+        }),
+        /bundled with a plugin|parent plugin/i
+      );
+      assert.equal(existsSync(join(pkgDir, 'plugin.json')), true, 'plugin package directory must not be deleted');
+
+      const extTabSrc = readFileSync(new URL('../ui/components/extensions-tab.js', import.meta.url), 'utf8');
+      assert.match(extTabSrc, /!sc\.parentPluginId/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

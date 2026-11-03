@@ -114,6 +114,7 @@
               sidecarId: curPkg.id,
               gitRepo: curPkg.release?.gitRepo || '',
               tarballUrl: curPkg.release?.tarballUrl || '',
+              sha256: curPkg.release?.sha256 || '',
               version: curPkg.latestVersion || '1.0.0',
               scope: isGlobalPkg ? 'global' : 'project',
               workspaces: isGlobalPkg ? ['*'] : wsPath ? [wsPath] : ['*'],

@@ -621,7 +621,7 @@
             isRenaming = false;
             const next = String(rawNext || '').trim();
             ns.saveCustomSideChatTitle(t.cascadeId, next);
-            if (next) ns.apiCall?.('/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations', body: { cascadeId: t.cascadeId, title: next } })?.catch?.(() => {});
+            if (next) ns.apiCall?.('/api/sidechat/rename', { cascadeId: t.cascadeId, title: next })?.catch?.(() => {});
             lbl.textContent = resolveSideChatTitle(t);
             renderSessionStrip();
             onSideChatStateChange?.(ns.getSideChatState());
@@ -642,7 +642,7 @@
         if (save) {
           const next = inp.value.trim();
           ns.saveCustomSideChatTitle(t.cascadeId, next);
-          if (next) ns.apiCall?.('/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations', body: { cascadeId: t.cascadeId, title: next } })?.catch?.(() => {});
+          if (next) ns.apiCall?.('/api/sidechat/rename', { cascadeId: t.cascadeId, title: next })?.catch?.(() => {});
         }
         lbl.textContent = resolveSideChatTitle(t);
         inp.replaceWith?.(lbl);
@@ -856,7 +856,7 @@
             isRenaming = false;
             const next = String(rawNext || '').trim();
             ns.saveCustomSideChatTitle(item.thread.cascadeId, next);
-            if (next) ns.apiCall?.('/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations', body: { cascadeId: item.thread.cascadeId, title: next } })?.catch?.(() => {});
+            if (next) ns.apiCall?.('/api/sidechat/rename', { cascadeId: item.thread.cascadeId, title: next })?.catch?.(() => {});
             renderSessionStrip();
             onSideChatStateChange?.(ns.getSideChatState());
           },

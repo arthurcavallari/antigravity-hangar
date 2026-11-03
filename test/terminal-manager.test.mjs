@@ -4,12 +4,15 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import vm from 'node:vm';
 import { closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
-import { buildJetboxChatHtml, buildJetboxTerminalHtml, deleteTerminalSideChat, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow } from '../lib/jetbox-proxy.mjs';
+import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
+import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
 describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulator', () => {
   it('encodes and parses 5-byte Connect frames across fragmented chunk boundaries', () => {
+    assert.equal(encodeConnectFrame, kitEncodeConnectFrame);
+    assert.equal(parseConnectFrames, kitParseConnectFrames);
     const f1 = encodeConnectFrame({ output: Buffer.from('hello ').toString('base64'), isScrollback: true });
     const f2 = encodeConnectFrame({ output: Buffer.from('world').toString('base64'), isScrollback: false });
     const f3 = encodeConnectFrame({}, 2), combined = Buffer.concat([f1, f2, f3]);
@@ -691,5 +694,102 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.deepEqual(JSON.parse(strippedDt.getData('application/context-scope-item-cider')), { terminal: { processId: 'term-99', name: 'zsh', selectionContent: 'native drop test' } });
     const dupRes = await syncQuoteWithHostWindow({ conversationId: 'conv-target-1', terminalId: 'term-99', name: 'zsh', selectionContent: 'native drop test', action: 'drop', cdpPort: 54818, fetchFn: mockFetch, WebSocketClass: MockWs });
     assert.deepEqual(dupRes, { ok: true, result: 'already-dropped-natively', targetId: 'page-match' });
+  });
+
+  it('evictStaleChatStreams aborts and deletes streams idle longer than maxIdleMs and tab-bar renames via apiCall', async () => {
+    const baseNow = Date.now();
+    pollChatStream({ conversationId: 'stale-conv-1', subscriberId: 'sub-a', afterSeq: 0, fetchFn: null });
+    assert.equal(evictStaleChatStreams(baseNow + 60_000, 120_000), 0);
+    const evicted = evictStaleChatStreams(baseNow + 180_000, 120_000);
+    assert.equal(evicted, 1);
+    assert.equal(evictStaleChatStreams(baseNow + 180_000, 120_000), 0);
+
+    const serverSrc = readFileSync(join(REPO_ROOT, 'server.mjs'), 'utf8');
+    assert.match(serverSrc, /\/api\/sidechat\/rename/);
+    assert.match(serverSrc, /UpdateConversationAnnotations/);
+
+    const tabBarSrc = readFileSync(join(REPO_ROOT, 'ui/components/tab-bar.js'), 'utf8');
+    assert.match(tabBarSrc, /ns\.apiCall\?\.\('\/api\/terminal\/rename'|ns\.apiCall\('\/api\/terminal\/rename'/);
+    assert.match(tabBarSrc, /ns\.apiCall\?\.\('\/api\/sidechat\/rename'|ns\.apiCall\('\/api\/sidechat\/rename'/);
+    assert.equal(tabBarSrc.includes('/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations'), false);
+  });
+
+  it('enforces checkJetboxAuth, strips csrfToken from window.__APP_CONFIG__, escapes </script>, and prevents closed terminal resurrection (HUB-01, HUB-08, HUB-10)', async () => {
+    const prevUiTok = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    try {
+      process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = 'secret-ui-tok-999';
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'https://evil.example', 'x-sidecar-token': 'secret-ui-tok-999' } }).ok, false);
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'wrong-tok' } }).ok, false);
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'secret-ui-tok-999' } }).ok, true);
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://localhost:51000' }, url: '/jetbox-terminal?token=secret-ui-tok-999' }).ok, true);
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', referer: 'http://127.0.0.1:51000/jetbox-terminal?token=secret-ui-tok-999' } }).ok, true);
+
+      const html = buildJetboxTerminalHtml({
+        cascadeId: 'conv-1',
+        terminalId: '</script><script>alert(1)</script>',
+        hostTheme: 'dark',
+        csrfToken: 'super-secret-ls-csrf-token-do-not-expose',
+        uiToken: 'secret-ui-tok-999',
+      });
+      assert.equal(html.includes('super-secret-ls-csrf-token-do-not-expose'), false, 'LS csrfToken must never be embedded in HTML');
+      assert.equal(html.includes('</script><script>alert(1)'), false, '</script> breakout must be escaped');
+      assert.ok(html.includes('\\u003c/script\\u003e'));
+
+      const apis = new Map();
+      registerTerminalRoutes({ page() {}, api: (p, fn) => apis.set(p, fn) });
+      const unauthorizedRes = await apis.get('/api/terminal/ls-rpc')(
+        { method: 'GetSidecars' },
+        { headers: { origin: 'https://evil.example' } }
+      );
+      assert.equal(unauthorizedRes.status, 403);
+      await assert.rejects(
+        () => apis.get('/api/terminal/ls-rpc')(
+          { method: 'GetSidecars/../evil' },
+          { headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'secret-ui-tok-999' } }
+        ),
+        /Disallowed Jetbox RPC method/
+      );
+    } finally {
+      if (prevUiTok === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+      else process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = prevUiTok;
+    }
+
+    // HUB-08: Closing a terminal prevents concurrent poll/input/rename/list from resurrecting it
+    const closedTid = 'term-closed-resurrect-check';
+    await closeWorkspaceTerminal({ terminalId: closedTid, rpcFn: async () => ({}) });
+    const polledAfterClose = pollTerminalOutput({ terminalId: closedTid, afterSeq: 0 });
+    assert.equal(polledAfterClose.exited, true);
+    assert.deepEqual(polledAfterClose.chunks, []);
+    await sendTerminalInput({ terminalId: closedTid, input: 'echo should-not-resurrect\r', rpcFn: async () => ({}) });
+    await renameWorkspaceTerminal({ terminalId: closedTid, title: 'Ghost Title', rpcFn: async () => ({}) });
+    const listedAfterClose = await listWorkspaceTerminals({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-hub',
+      rpcFn: async () => ({ terminals: [] }),
+    });
+    assert.equal(listedAfterClose.some((t) => t.terminalId === closedTid), false);
+
+    // HUB-10: setup.mjs requiredFiles includes jetbox-proxy, plugin-diagnostics, terminal-manager, and terminal UI files
+    const setupSrc = readFileSync(join(REPO_ROOT, 'setup.mjs'), 'utf8');
+    for (const reqFile of [
+      'lib/jetbox-proxy.mjs',
+      'lib/plugin-diagnostics.mjs',
+      'lib/terminal-manager.mjs',
+      'ui/components/terminal-emulator.js',
+      'ui/components/terminal-quote.js',
+      'ui/components/terminal-groups.js',
+      'ui/components/terminal-tab.js',
+    ]) {
+      assert.ok(setupSrc.includes(`'${reqFile}'`), `setup.mjs requiredFiles must include ${reqFile}`);
+    }
+
+    // HGR-AUD-03: Side-Chat session-strip inline rename routes through /api/sidechat/rename instead of /api/terminal/ls-rpc
+    const quoteSrc = readFileSync(join(REPO_ROOT, 'ui', 'components', 'terminal-quote.js'), 'utf8');
+    assert.equal(
+      quoteSrc.includes("'/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations'"),
+      false,
+      'terminal-quote.js must not call disallowed UpdateConversationAnnotations on /api/terminal/ls-rpc'
+    );
+    const sidechatRenameMatches = quoteSrc.match(/\/api\/sidechat\/rename/g) || [];
+    assert.ok(sidechatRenameMatches.length >= 3, 'all 3 session-strip inline rename handlers must call /api/sidechat/rename');
   });
 });

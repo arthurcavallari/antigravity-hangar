@@ -21,7 +21,7 @@
       const actGrp = grps.find((g) => g.groupId === actGid) || grps[0] || null, focTid = actGrp?.focusedPaneId || actGrp?.paneIds?.[0] || t.terminalId;
       const base = customTitles[focTid] || `Terminal ${idx + 2}`, cnt = 1 + visibleTerminals.filter((x) => x.terminalId !== t.terminalId && grpMap[x.terminalId] === t.terminalId).length;
       const isExternal = Boolean(t.isExternal || visibleTerminals.some((x) => grpMap[x.terminalId] === t.terminalId && x.isExternal));
-      return { sidecarId, terminalId: t.terminalId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, isExternal, matchesWorkspace: true };
+      return { sidecarId, terminalId: t.terminalId, focusedTerminalId: focTid, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isTerminal: true, isExternal, matchesWorkspace: true };
     });
     const scState = ns.getSideChatState?.(), allScThreads = scState?.threads || [];
     const poppedScTabs = [...poppedSc].map((rootId, idx) => {
@@ -31,7 +31,7 @@
       const actThread = instThreads.find((t) => t.cascadeId === actCid) || instThreads[0] || null;
       const base = customScTitles[actCid] || actThread?.title || `Side Chat ${idx + 2}`;
       const cnt = Math.max(1, instThreads.length);
-      return { sidecarId, sideChatId: rootId, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isSideChat: true, matchesWorkspace: true };
+      return { sidecarId, sideChatId: rootId, activeSideChatId: actCid, displayName: cnt > 1 ? `${base} (${cnt})` : base, statusBadge: 'RUNNING', isVirtual: true, isSideChat: true, matchesWorkspace: true };
     });
     const isTermBtn = layout?.terminalDisplayMode === 'button';
     const isExtBtn = layout?.extensionsDisplayMode === 'button';
@@ -125,6 +125,11 @@
     pinEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'toggle-pin', sidecarId: btn._sc?.sidecarId || sc.sidecarId }); });
     closeEl.addEventListener('click', (e) => { e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); });
     btn.addEventListener('auxclick', (e) => { if (e.button === 1 && !btn._sc?.isPinned) { e.preventDefault(); e.stopPropagation(); btn._opts?.onContextAction?.({ action: 'close', targetIds: [btn._sc?.sidecarId || sc.sidecarId], pane: btn._opts?.pane || 'single' }); } });
+    btn.addEventListener('click', (e) => {
+      if (e?.detail) return;
+      if (e?.target?.closest?.('[data-role="tab-pin"], [data-role="tab-close"], [data-role="tab-close-wrap"], .agy-tab-close, .agy-tab-pin, .agy-rename-input')) return;
+      btn._opts?.onClick?.(btn._sc?.sidecarId || sc.sidecarId);
+    });
     btn.addEventListener('dblclick', (e) => {
       const curSc = btn._sc || sc;
       const isPoppedTerm = String(curSc.sidecarId).startsWith('terminal__');
@@ -132,30 +137,27 @@
       if (!isPoppedTerm && !isPoppedSc) return;
       e.stopPropagation();
       const labelEl = btn.querySelector('[data-role="tab-label"]');
+      const targetTermId = curSc.focusedTerminalId || curSc.terminalId;
+      const targetScId = curSc.activeSideChatId || curSc.sideChatId;
+      const baseDisplayName = String(curSc.displayName || '').replace(/\s+\(\d+\)$/, '');
       const initial = isPoppedTerm
-        ? (ns.readCustomTermTitles?.()?.[curSc.terminalId] || curSc.displayName)
-        : (ns.readCustomSideChatTitles?.()?.[curSc.sideChatId] || curSc.displayName);
+        ? (ns.readCustomTermTitles?.()?.[targetTermId] || baseDisplayName)
+        : (ns.readCustomSideChatTitles?.()?.[targetScId] || baseDisplayName);
       const renameFn = window.AgyUI?.startInlineRename || ns.startInlineRename;
       if (renameFn) {
         renameFn(btn, labelEl, {
           initialValue: initial,
           inputClassName: 'agy-rename-input',
-          onCommit: (next) => {
+          onCommit: async (next) => {
             if (isPoppedTerm) {
-              ns.saveCustomTermTitle?.(curSc.terminalId, next);
-              fetch('/api/terminal/rename', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ terminalId: curSc.terminalId, title: next }),
-              }).catch(() => {});
+              ns.saveCustomTermTitle?.(targetTermId, next);
+              if (labelEl) labelEl.textContent = next || curSc.displayName;
+              await ns.apiCall('/api/terminal/rename', { terminalId: targetTermId, title: next }).catch(() => {});
               ns.renderTabs?.();
             } else {
-              ns.saveCustomSideChatTitle?.(curSc.sideChatId, next);
-              fetch('/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
-                body: JSON.stringify({ cascadeId: curSc.sideChatId, annotations: { title: next }, mergeAnnotations: true }),
-              }).catch(() => {});
+              ns.saveCustomSideChatTitle?.(targetScId, next);
+              if (labelEl) labelEl.textContent = next || curSc.displayName;
+              await ns.apiCall('/api/sidechat/rename', { cascadeId: targetScId, title: next }).catch(() => {});
               ns.renderTabs?.();
             }
           },

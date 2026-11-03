@@ -404,4 +404,49 @@ describe('config-store and child iframe URL normalization', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('HGR-AUD-04 & HGR-AUD-05: updateSidecarRule preserves plugin identity for single-root plugin sidecars and discoverInstalledPluginSidecars deduplicates Windows drive-letter casing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-single-root-rule-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const pluginsDir = join(dir, 'plugins');
+      const pDir = join(pluginsDir, 'single-root');
+      mkdirSync(pDir, { recursive: true });
+      writeFileSync(join(pDir, 'plugin.json'), JSON.stringify({ name: 'single-root' }), 'utf8');
+      writeFileSync(join(pDir, 'sidecar.json'), JSON.stringify({ displayName: 'Single Root', hasWebUi: true }), 'utf8');
+
+      saveHangarConfig(
+        {
+          version: 1,
+          layout: { pinnedTopSidecarId: 'context-monitor', pinnedTopHeightPx: 185, splitViewEnabled: false },
+          sidecars: {},
+          plugins: { 'single-root': { dir: 'single-root', installedVersion: '1.0.0' } },
+        },
+        cfgPath
+      );
+
+      const rule = updateSidecarRule('single-root', { workspaces: ['*'] }, { configPath: cfgPath, sidecarsDir: join(dir, 'sidecars') });
+      assert.equal(rule.source, 'plugin:single-root');
+      assert.equal(rule.autoHibernate, false);
+
+      const lowerDrivePath = pDir.replace(/^([A-Z]):/, (_, d) => `${d.toLowerCase()}:`);
+      const upperDrivePluginsDir = pluginsDir.replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
+      const enriched = enrichSidecarList(
+        [],
+        loadHangarConfig(cfgPath),
+        {
+          pluginsDir: upperDrivePluginsDir,
+          pluginsRes: {
+            plugins: [{ name: 'single-root-ls-alias', path: lowerDrivePath }],
+          },
+          sidecarsDir: join(dir, 'sidecars'),
+        }
+      );
+      assert.equal(enriched.length, 1, 'must not duplicate plugin root when drive-letter casing differs');
+      assert.equal(enriched[0].autoHibernate, false);
+      assert.equal(enriched[0].autoHibernateLocked, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

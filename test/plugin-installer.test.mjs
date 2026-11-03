@@ -6,8 +6,9 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  flagsDigest, installRemotePlugin, listInstalledPlugins, pluginRequest, previewPluginPort, uninstallPlugin,
+  countPluginHooks, flagsDigest, installRemotePlugin, listInstalledPlugins, pluginRequest, previewPluginPort, reducePlugin, uninstallPlugin,
 } from '../lib/plugin-installer.mjs';
+import { inspectInstalledPluginHealth } from '../lib/plugin-diagnostics.mjs';
 import { fetchHangarState } from '../lib/state-orchestrator.mjs';
 import { loadHangarConfig, writeJsonNoBom } from '../lib/config-store.mjs';
 
@@ -427,7 +428,7 @@ describe('Hangar plugin installer', () => {
             skills: [{ name: 'review', content: 'SECRET SKILL BODY' }, { name: 'audit', content: 'SECRET' }],
             agents: [{ name: 'reviewer' }],
             rules: [{ absolutePath: '/x/rules/AGENTS.md', content: 'SECRET RULE' }],
-            hooksJson: '{"guard":{"PreToolUse":[]},"start":{"SessionStart":[]}}',
+            hooksJson: '{"guard":{"PreToolUse":[{"command":"echo 1"}]},"start":{"SessionStart":[{"command":"echo 2"}]}}',
             mcpServers: [{ name: 'github' }],
           },
           { name: 'science', path: 'C:\\Program Files\\Antigravity\\builtin\\plugins\\science', skills: [] },
@@ -501,5 +502,229 @@ describe('Hangar plugin installer', () => {
     } finally {
       box.cleanup();
     }
+  });
+
+  it('countPluginHooks sums lifecycle event arrays inside named-group and wrapper hooks.json', () => {
+    const namedGroup = JSON.stringify({
+      'soc-gate': {
+        PreToolUse: [{ matcher: 'call_mcp_tool', hooks: [{ type: 'command', command: 'echo 1' }] }],
+        PostToolUse: [{ matcher: 'call_mcp_tool', hooks: [{ type: 'command', command: 'echo 2' }] }],
+      },
+    });
+    assert.equal(countPluginHooks(namedGroup), 2);
+
+    const wrapperHooks = JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          { matcher: 'run_command', hooks: [{ type: 'command', command: 'echo 1' }] },
+          { matcher: 'edit_file', hooks: [{ type: 'command', command: 'echo 2' }] },
+        ],
+        PostToolUse: [{ matcher: 'run_command', hooks: [{ type: 'command', command: 'echo 3' }] }],
+      },
+    });
+    assert.equal(countPluginHooks(wrapperHooks), 3);
+    assert.equal(reducePlugin({ name: 'soc-gate', path: '/plugins/soc-gate', hooksJson: namedGroup }).counts.hooks, 2);
+  });
+
+  it('inspectInstalledPluginHealth reports missing stdio binaries and unconfigured ${VAR} placeholders without leaking values', () => {
+    const box = sandbox();
+    try {
+      writeTree(join(box.pluginsDir, 'dynatrace'), {
+        'plugin.json': JSON.stringify({ name: 'dynatrace', version: '1.0.0' }),
+        'mcp_config.json': JSON.stringify({
+          mcpServers: {
+            'dt-stdio': {
+              command: 'nonexistent-bin-xyz',
+              args: ['--token', '${DT_PLATFORM_TOKEN}', '--root', '${PLUGIN_ROOT}'],
+              env: {
+                DT_ENV_URL: '${DT_ENV_URL}',
+                CONFIGURED_SECRET: '${CONFIGURED_SECRET}',
+              },
+            },
+            'dt-node': {
+              command: 'node',
+              args: ['server.mjs'],
+            },
+            'dt-http': {
+              serverUrl: 'https://mcp.dynatrace.example/sse',
+              headers: {
+                Authorization: 'Bearer ${DT_PLATFORM_TOKEN}',
+                'X-Api-Key': '${CONFIGURED_SECRET}',
+              },
+            },
+          },
+        }),
+        'hooks/hooks.json': JSON.stringify({
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: 'call_mcp_tool',
+                hooks: [{ type: 'command', command: 'node ./scripts/guard.mjs' }],
+              },
+            ],
+          },
+        }),
+      });
+
+      const diag = inspectInstalledPluginHealth(box.pluginsDir, {
+        DT_PLATFORM_TOKEN: '',
+        DT_ENV_URL: '   ',
+        CONFIGURED_SECRET: 'top-secret-token-value-do-not-leak',
+      });
+
+      assert.equal(diag.length, 1);
+      assert.equal(diag[0].id, 'dynatrace');
+      const [stdioSrv, nodeSrv, httpSrv] = diag[0].mcpServers;
+      assert.equal(stdioSrv.key, 'dt-stdio');
+      assert.equal(stdioSrv.transport, 'stdio');
+      assert.equal(stdioSrv.commandExists, false);
+      assert.deepEqual(stdioSrv.missingEnvVars, ['DT_PLATFORM_TOKEN', 'DT_ENV_URL']);
+
+      assert.equal(nodeSrv.key, 'dt-node');
+      assert.equal(nodeSrv.transport, 'stdio');
+      assert.equal(nodeSrv.commandExists, true);
+      assert.deepEqual(nodeSrv.missingEnvVars, []);
+
+      assert.equal(httpSrv.key, 'dt-http');
+      assert.equal(httpSrv.transport, 'http');
+      assert.equal(httpSrv.commandExists, null);
+      assert.deepEqual(httpSrv.missingEnvVars, ['DT_PLATFORM_TOKEN']);
+
+      assert.deepEqual(diag[0].hooks, [
+        { event: 'PreToolUse', matcher: 'call_mcp_tool', command: 'node ./scripts/guard.mjs' },
+      ]);
+      assert.equal(JSON.stringify(diag).includes('top-secret-token-value-do-not-leak'), false);
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('runs lintPluginOrSidecar with autofix before auditPlugin and persists lintReport in .hangar-receipt.json', async () => {
+    const box = sandbox();
+    try {
+      let auditedMcp = null;
+      let auditedHooks = null;
+      let auditedRule = null;
+      const porter = {
+        portPackage: async () => { throw new Error('should not port native plugin'); },
+        auditPlugin: (dir) => {
+          auditedMcp = JSON.parse(readFileSync(join(dir, '.mcp.json'), 'utf8'));
+          auditedHooks = JSON.parse(readFileSync(join(dir, 'hooks.json'), 'utf8'));
+          auditedRule = readFileSync(join(dir, 'rules', 'AGENTS.md'), 'utf8');
+          const flags = [];
+          if (auditedMcp.mcpServers?.demo?.url) {
+            flags.push({ kind: 'legacy-mcp-url', severity: 'medium', file: '.mcp.json', line: 1 });
+          }
+          return { flags, warnings: [], tier: 'TIER_1_TELEMETRY', reasons: [] };
+        },
+      };
+
+      const res = await installRemotePlugin({
+        pluginId: 'autofix-native',
+        gitRepo: 'acme/autofix-native',
+        ref: 'v1.0.0',
+        acceptedTier: 'TIER_1_TELEMETRY',
+        packagesDir: box.packagesDir,
+        pluginsDir: box.pluginsDir,
+        configPath: box.configPath,
+        porter,
+        rpcFn: async () => ({}),
+        execFn: fakeExec(box, {
+          'plugin.json': JSON.stringify({ name: 'autofix-native', version: '1.0.0' }),
+          '.mcp.json': JSON.stringify({ demo: { url: 'https://mcp.example.com/sse' } }),
+          'hooks.json': JSON.stringify({
+            hooks: {
+              PreToolUse: [{ matcher: 'mcp__demo', hooks: [{ type: 'command', command: 'node ./ok.mjs' }] }],
+            },
+          }),
+          'rules/AGENTS.md': 'Run ${CLAUDE_PLUGIN_ROOT}/scripts/helper.mjs first.',
+        }),
+        pollMs: 1,
+        maxWaitMs: 1,
+      });
+
+      assert.equal(res.ok, true);
+      assert.equal(auditedMcp.mcpServers.demo.serverUrl, 'https://mcp.example.com/sse');
+      assert.equal('url' in auditedMcp.mcpServers.demo, false);
+      assert.equal(auditedHooks.hooks.PreToolUse[0].matcher, 'call_mcp_tool|mcp_tool');
+      assert.equal(auditedRule, 'Run ./scripts/helper.mjs first.');
+      assert.ok(res.lintReport);
+      assert.equal(res.lintReport.valid, true);
+      assert.ok(res.lintReport.fixedCount >= 4);
+
+      const receiptPath = join(box.pluginsDir, 'autofix-native', '.hangar-receipt.json');
+      assert.equal(existsSync(receiptPath), true);
+      const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+      assert.equal(receipt.pluginId, 'autofix-native');
+      assert.deepEqual(receipt.lintReport, res.lintReport);
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('re-runs auditPlugin after lintPluginOrSidecar autofixes ported plugins and preserves unicode-tags-stripped flags (HUB-03, XREPO-01, XREPO-05)', async () => {
+    const box = sandbox();
+    try {
+      const unicodeFlag = { kind: 'unicode-tags-stripped', severity: 'high', file: 'skills/review/SKILL.md', line: 1 };
+      const postFixFlag = { kind: 'env-dump', severity: 'high', file: 'mcp_config.json', line: 1 };
+      const porter = {
+        portPackage: async ({ outDir, slug }) => {
+          writeTree(outDir, {
+            'plugin.json': JSON.stringify({ name: slug, version: '1.0.0' }),
+            // Bare mcp_config.json before autofix wraps it into { mcpServers: { ... } }
+            'mcp_config.json': JSON.stringify({ supabase: { command: 'npx', args: ['-y', '@supabase/mcp'] } }),
+          });
+          return {
+            report: {
+              slug,
+              ecosystems: ['claude'],
+              ported: ['mcp:supabase'],
+              unported: [],
+              warnings: [],
+              flags: [unicodeFlag],
+              tier: 'TIER_1_TELEMETRY',
+              tierReasons: [],
+            },
+            tier: 'TIER_1_TELEMETRY',
+          };
+        },
+        auditPlugin: (dir) => {
+          const mcp = JSON.parse(readFileSync(join(dir, 'mcp_config.json'), 'utf8'));
+          const hasWrappedMcp = Boolean(mcp.mcpServers?.supabase);
+          return {
+            flags: hasWrappedMcp ? [postFixFlag] : [],
+            warnings: [],
+            tier: hasWrappedMcp ? 'TIER_2_LOCAL_TOOLING' : 'TIER_1_TELEMETRY',
+            reasons: hasWrappedMcp ? ['mcp_config.json: 1 MCP server (supabase)'] : [],
+          };
+        },
+      };
+
+      const refused = await installRemotePlugin({
+        ...portRequest(box, { acceptedTier: 'TIER_1_TELEMETRY' }),
+        porter,
+        rpcFn: async () => ({}),
+        execFn: fakeExec(box, CLAUDE_SOURCE),
+      });
+      assert.equal(refused.needsConsent, true, 'autofixed mcpServers escalation must require consent');
+      assert.equal(refused.scannedTier, 'TIER_2_LOCAL_TOOLING');
+      assert.deepEqual(refused.report.flags, [unicodeFlag, postFixFlag]);
+      assert.equal(refused.flagsDigest, flagsDigest([unicodeFlag, postFixFlag]));
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('HGR-AUD-07 & HGR-AUD-08: countPluginHooks returns 0 for empty event arrays and malformed JSON, and installers use removeLinkOrDir for staging cleanup', () => {
+    assert.equal(countPluginHooks('{"hooks":{"PreToolUse":[],"PostToolUse":[]}}'), 0);
+    assert.equal(countPluginHooks('{"guard":{"PreToolUse":[]}}'), 0);
+    assert.equal(countPluginHooks('{malformed json'), 0);
+
+    const pluginInstSrc = readFileSync(new URL('../lib/plugin-installer.mjs', import.meta.url), 'utf8');
+    const pkgInstSrc = readFileSync(new URL('../lib/package-installer.mjs', import.meta.url), 'utf8');
+    const remoteSrc = readFileSync(new URL('../lib/remote-source.mjs', import.meta.url), 'utf8');
+    assert.equal(pluginInstSrc.includes('rmSync('), false, 'plugin-installer.mjs must use removeLinkOrDir instead of raw rmSync');
+    assert.equal(pkgInstSrc.includes('rmSync('), false, 'package-installer.mjs must use removeLinkOrDir instead of raw rmSync');
+    assert.equal(remoteSrc.includes('rmSync('), false, 'remote-source.mjs must use removeLinkOrDir instead of raw rmSync');
   });
 });

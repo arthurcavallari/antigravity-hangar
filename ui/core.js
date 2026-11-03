@@ -65,9 +65,17 @@
 
   ns.apiCall = async function apiCall(path, body = {}) {
     const fn = window.sidecar?.fetch || window.fetch.bind(window);
+    let urlToken = '';
+    try {
+      urlToken = new URLSearchParams(window.location?.search || '').get('token') || '';
+    } catch {}
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(urlToken ? { 'X-Sidecar-Token': urlToken } : {}),
+    };
     const res = await fn(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -175,6 +183,81 @@
     }
   };
 
+  const SAFE_ID_RE = /^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?$/;
+  const LOOPBACK_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
+  ns.SAFE_ID_RE = SAFE_ID_RE;
+
+  ns.isTrustedSidecarOrigin = function isTrustedSidecarOrigin(origin = '') {
+    if (!origin) return true;
+    if (typeof window !== 'undefined' && window.location?.origin && origin === window.location.origin) {
+      return true;
+    }
+    return LOOPBACK_ORIGIN_RE.test(String(origin));
+  };
+
+  ns.handleHangarNavigateMessage = function handleHangarNavigateMessage(event) {
+    const data = event?.data;
+    if (!data || typeof data !== 'object' || data.type !== 'hangar-navigate') return false;
+    if (!ns.isTrustedSidecarOrigin(event.origin)) return false;
+    const rawCandidate =
+      typeof data.pluginId === 'string' && data.pluginId.trim()
+        ? data.pluginId
+        : typeof data.sidecarId === 'string' && data.sidecarId.trim()
+          ? data.sidecarId
+          : typeof data.targetId === 'string'
+            ? data.targetId
+            : '';
+    const rawId = rawCandidate.trim();
+    if (!rawId || !SAFE_ID_RE.test(rawId) || rawId.split('/').some((seg) => seg === '.' || seg === '..')) return false;
+    const rawTargetId =
+      typeof data.targetId === 'string' && SAFE_ID_RE.test(data.targetId.trim()) && !data.targetId.trim().split('/').some((seg) => seg === '.' || seg === '..')
+        ? data.targetId.trim()
+        : typeof data.sidecarId === 'string' && SAFE_ID_RE.test(data.sidecarId.trim()) && !data.sidecarId.trim().split('/').some((seg) => seg === '.' || seg === '..')
+          ? data.sidecarId.trim()
+          : '';
+    const effectiveSidecarId = rawTargetId || rawId;
+
+    const rawTab =
+      typeof data.targetTab === 'string' && data.targetTab
+        ? data.targetTab
+        : typeof data.tab === 'string' && data.tab
+          ? data.tab
+          : 'plugins';
+    const targetTab = rawTab;
+    const subTab = targetTab === 'plugins' || targetTab === 'sidecars' ? 'installed' : targetTab;
+    ns.activeNavigatedPluginId = rawId;
+    ns.activeNavigationTarget = { targetTab, pluginId: rawId, sidecarId: effectiveSidecarId };
+    ns.setExtensionsSubTab?.(subTab);
+    ns.onHangarNavigate?.({ targetTab, pluginId: rawId, sidecarId: effectiveSidecarId });
+    if (typeof document !== 'undefined') {
+      const storeView = document.getElementById?.('store-view');
+      const isStoreOpen = storeView && storeView.classList && !storeView.classList.contains?.('hidden');
+      if (!isStoreOpen) {
+        const extTab = document.querySelector?.('.agy-tab[data-sidecar-id="__extensions__"]');
+        const extBtn = document.getElementById?.('extensions-toggle-btn');
+        if (extTab && !extTab.classList?.contains?.('active')) {
+          extTab.click?.();
+        } else if (!extTab && !extBtn?.classList?.contains?.('active')) {
+          extBtn?.click?.();
+        }
+      }
+      document.querySelector?.(`[data-subtab="${subTab}"]`)?.click?.();
+      const candidateIds = Array.from(new Set([effectiveSidecarId, rawId].filter(Boolean)));
+      let card = null;
+      for (const id of candidateIds) {
+        card = document.querySelector?.(
+          `.agy-card[data-plugin-dir="${id}"], .agy-card[data-plugin-id="${id}"], .agy-card[data-sidecar-id="${id}"], .agy-card[data-pkg-id="${id}"]`
+        );
+        if (card) break;
+      }
+      if (card) {
+        card.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        card.classList?.add?.('agy-card-highlight');
+      }
+    }
+    return true;
+  };
+
   ns.escHtml = function escHtml(str = '') {
     return String(str ?? '')
       .replace(/&/g, '&amp;')
@@ -234,6 +317,7 @@
     return menu;
   };
 
+  window.addEventListener?.('message', (e) => ns.handleHangarNavigateMessage(e));
   window.addEventListener?.('pointerdown', (e) => { if (activeContextMenuEl && !activeContextMenuEl.contains?.(e.target)) ns.closeTabContextMenu(); }, true);
   window.addEventListener?.('keydown', (e) => { if (e.key === 'Escape') ns.closeTabContextMenu(); }, true);
   window.addEventListener?.('blur', () => ns.closeTabContextMenu());

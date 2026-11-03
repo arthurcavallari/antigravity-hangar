@@ -292,6 +292,7 @@
           const curSc = card._sc;
           const gitRepo = pkg?.release?.gitRepo || curSc?.gitRepo || '';
           const tarballUrl = pkg?.release?.tarballUrl || curSc?.tarballUrl || '';
+          const sha256 = (pkg?.release?.sha256 ?? curSc?.sha256) || '';
           const version = pkg?.latestVersion || curSc?.latestVersion || 'latest';
           if (!gitRepo && !tarballUrl) return;
           upBtn.disabled = true;
@@ -301,6 +302,7 @@
               sidecarId: curSc.sidecarId,
               gitRepo,
               tarballUrl,
+              sha256,
               version,
               scope: curSc.scope,
               workspaces: curSc.workspaces,
@@ -353,7 +355,7 @@
       }
       card.querySelector('[data-role="desc"]').textContent = sc.description || 'No description provided.';
 
-      const canUninstall = !sc.sidecarId.includes('/');
+      const canUninstall = !sc.sidecarId.includes('/') && !sc.parentPluginId && !String(sc.source || '').startsWith('plugin:');
       card.querySelector('[data-role="uninstall-btn"]').classList.toggle('hidden', !canUninstall);
       card.querySelector('[data-role="fix-agent-btn"]')?.classList.toggle('hidden', !sc.isErrored);
 
@@ -687,6 +689,7 @@
           await curOpts.onSelfUpdate?.({
             gitRepo: h.gitRepo || '',
             tarballUrl: h.tarballUrl || '',
+            sha256: h.sha256 || '',
             version: h.latestVersion || 'latest',
           });
           selfUpBtn.innerHTML = `${ns.iconSvg('download', 13)}<span>Update Hangar</span>`;

@@ -14,7 +14,7 @@
     workspaceUris: [], activeWorkspace: { workspacePath: '', workspaceName: 'Detecting...' },
     // Empty until the first /api/state, so a render before then doesn't claim a tab for this window
     layout: { pinnedTopSidecarId: '', pinnedTopHeightPx: 185, splitViewEnabled: false },
-    hangar: null, sidecars: [], terminals: [], plugins: [], suggestions: [], registryPackages: [],
+    hangar: null, sidecars: [], terminals: [], plugins: [], pluginDiagnostics: [], suggestions: [], registryPackages: [],
     activeTabId: '', bottomActiveTabId: '', isResizingSplit: false,
   };
 
@@ -395,7 +395,7 @@
     const isExtensionsVisible = state.layout.splitViewEnabled ? state.bottomActiveTabId === ns.EXTENSIONS_TAB_ID || activeTopId === ns.EXTENSIONS_TAB_ID : activeSingleId === ns.EXTENSIONS_TAB_ID;
     if (isExtensionsVisible) {
       ns.renderExtensionsTab?.({
-        storeViewEl: els.storeView, sidecars: state.sidecars, plugins: state.plugins, suggestions: state.suggestions,
+        storeViewEl: els.storeView, sidecars: state.sidecars, plugins: state.plugins, pluginDiagnostics: state.pluginDiagnostics, suggestions: state.suggestions,
         registryPackages: state.registryPackages, hangar: state.hangar, layout: state.layout, activeWorkspace: state.activeWorkspace,
         onCheckUpdates: async () => { await refreshRegistry(); await refreshHangarState(); },
         onUpdateSettings: async (patch) => {
@@ -471,7 +471,7 @@
       state.terminals = (seq === layoutSeq || wsChanged)
         ? incomingTerms
         : [...incomingTerms, ...state.terminals.filter((t) => t?.terminalId && !incomingTerms.some((x) => x.terminalId === t.terminalId) && !ns.isTerminalClosing?.(t.terminalId))];
-      state.plugins = data.plugins || []; state.suggestions = data.suggestions || [];
+      state.plugins = data.plugins || []; state.pluginDiagnostics = data.pluginDiagnostics || []; state.suggestions = data.suggestions || [];
       const wsPath = state.activeWorkspace?.workspacePath || '';
       if (data.layout && (seq === layoutSeq || wsChanged)) {
         const wsLayout = applyWorkspaceLayout(data.layout, nextWsKey);

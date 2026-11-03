@@ -208,9 +208,13 @@
 
   function syncPluginCard(card) {
     const p = card._plugin;
+    card.dataset.pluginId = p.pluginId || p.dir || '';
+    const diag = card._diag || p.diagnostics || null;
+    const missingBins = (diag?.mcpServers || []).filter((s) => s.transport === 'stdio' && s.commandExists === false).map((s) => s.key);
+    const missingVars = Array.from(new Set((diag?.mcpServers || []).flatMap((s) => s.missingEnvVars || [])));
     const managed = Boolean(p.pluginId);
     const tier = p.capabilityTier ? ns.formatCapabilityTier(p.capabilityTier) : null;
-    const sig = JSON.stringify([p.name, p.portedFrom, p.disabled, p.builtin, p.restartRequired, p.capabilityTier, p.installedVersion, p.counts]);
+    const sig = JSON.stringify([p.name, p.portedFrom, p.disabled, p.builtin, p.restartRequired, p.capabilityTier, p.installedVersion, p.counts, missingBins, missingVars]);
     if (card.dataset.sig !== sig) {
       card.dataset.sig = sig;
       card.querySelector('[data-role="title"]').textContent = p.name;
@@ -220,6 +224,8 @@
         p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
         p.disabled ? '<span class="agy-badge stopped">Disabled</span>' : '',
         p.builtin ? '<span class="agy-badge stopped">Built-in</span>' : '',
+        missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
+        missingVars.length ? `<span class="agy-badge hibernated" title="Unset env vars: ${ns.escHtml(missingVars.join(', '))}">Needs Env (${missingVars.length})</span>` : '',
       ].join('');
       const origin = managed ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar') : p.builtin ? 'ships with Antigravity' : 'installed outside Hangar';
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
@@ -252,6 +258,7 @@
     sectionEl.querySelector('[data-role="plugin-count"]').textContent = String(plugins.length);
 
     const regMap = new Map((ctx.registryPackages || []).map((p) => [p.id, p]));
+    const diagMap = new Map((ctx.pluginDiagnostics || []).map((d) => [d.id, d]));
     const seen = new Set();
     plugins.forEach((plugin, i) => {
       seen.add(plugin.dir);
@@ -259,6 +266,7 @@
       card._plugin = plugin;
       card._ctx = ctx;
       card._regPkg = plugin.pluginId ? regMap.get(plugin.pluginId) || null : null;
+      card._diag = diagMap.get(plugin.dir) || diagMap.get(plugin.pluginId) || null;
       syncPluginCard(card);
       if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
     });

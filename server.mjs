@@ -1,6 +1,4 @@
-/**
- * @fileoverview Thin routing entrypoint for Antigravity Hangar (<= 80 lines).
- */
+/** @fileoverview Thin routing entrypoint for Antigravity Hangar (<= 80 lines). */
 import { SidecarApp, Response } from 'sidecar_sdk';
 import { realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,8 +9,10 @@ import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { registerStateSyncRoutes } from 'antigravity-sidecar-kit/state-sync';
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
 import { updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
+import { hangarRpc } from './lib/ls-rpc.mjs';
 import { inspectSidecarDirectory, installRemoteSidecar, linkLocalSidecar, selfUpdateHangar, uninstallSidecar } from './lib/package-installer.mjs';
 import { installRemotePlugin, pluginRequest, previewPluginPort, uninstallPlugin } from './lib/plugin-installer.mjs';
+import { inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from './lib/plugin-diagnostics.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
 import { registerTerminalRoutes } from './lib/terminal-manager.mjs';
 
@@ -27,9 +27,8 @@ app.page('/shell.css', createShellCssHandler({ ResponseClass: Response }));
 app.page('/shell.js', createShellClientHandler({ ResponseClass: Response }));
 registerUiRoutes(app, { modules: 'all', ResponseClass: Response });
 app.page('/styles.css', serveAsset('styles.css', 'text/css; charset=utf-8')); app.page('/components.css', serveAsset('components.css', 'text/css; charset=utf-8'));
-const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/marketplace-panes.js',
-  'components/plugin-panes.js', 'components/extensions-tab.js', 'components/iframe-deck.js',
-  'components/terminal-emulator.js', 'components/terminal-quote.js', 'components/terminal-groups.js', 'components/terminal-tab.js'];
+const SCRIPTS = ['core.js', 'app.js', 'components/tab-bar.js', 'components/marketplace-panes.js', 'components/plugin-panes.js', 'components/extensions-tab.js',
+  'components/iframe-deck.js', 'components/terminal-emulator.js', 'components/terminal-quote.js', 'components/terminal-groups.js', 'components/terminal-tab.js'];
 for (const script of SCRIPTS) app.page(`/${script}`, serveAsset(script, 'text/javascript; charset=utf-8'));
 
 app.api('/api/state', async (data) => fetchHangarState({
@@ -63,10 +62,12 @@ app.api('/api/store/uninstall', async (data) => uninstallSidecar({ sidecarId: St
 app.api('/api/store/port-preview', async (data) => previewPluginPort(pluginRequest(data)), 'POST');
 app.api('/api/store/install-plugin', async (data) => installRemotePlugin(pluginRequest(data)), 'POST');
 app.api('/api/store/uninstall-plugin', async (data) => uninstallPlugin({ pluginId: String(data?.pluginId || '') }), 'POST');
+app.api('/api/plugins/diagnostics', async (d, c) => isAuthorizedSidecarRequest(d, c) ? inspectInstalledPluginHealth() : new Response('{"error":"Unauthorized"}', { status: 401, contentType: 'application/json' }), 'GET');
 app.api('/api/store/self-update', async (data) => selfUpdateHangar({
   gitRepo: data?.gitRepo ? String(data.gitRepo) : '', tarballUrl: data?.tarballUrl ? String(data.tarballUrl) : '',
   version: data?.version ? String(data.version) : 'latest', sha256: data?.sha256 ? String(data.sha256) : '', deferRestart: true,
 }), 'POST');
+app.api('/api/sidechat/rename', async (ctx) => hangarRpc('UpdateConversationAnnotations', { cascadeId: String(ctx?.body?.cascadeId || ctx?.cascadeId || ''), annotations: { title: String(ctx?.body?.title || ctx?.title || '') }, mergeAnnotations: true }), 'POST');
 registerTerminalRoutes(app, { ResponseClass: Response });
 const stateSync = registerStateSyncRoutes(app, {
   sidecarId: 'hangar', initialState: () => ({ status: 'running', lastMutationTs: 0 }),
@@ -74,7 +75,5 @@ const stateSync = registerStateSyncRoutes(app, {
     inputSchema: { type: 'object', properties: { sidecarId: { type: 'string' }, action: { type: 'string' } }, required: ['sidecarId', 'action'] },
     handler: ({ sidecarId, action }) => manageChildSidecar(String(sidecarId || ''), String(action || '')) }],
 });
-fetchRegistry().catch(() => {});
-setInterval(() => { fetchRegistry().catch(() => {}); }, 30 * 60 * 1000).unref();
-await app.run();
-exitWithLanguageServer({ app });
+fetchRegistry().catch(() => {}); setInterval(() => { fetchRegistry().catch(() => {}); }, 30 * 60 * 1000).unref();
+await app.run(); exitWithLanguageServer({ app });
