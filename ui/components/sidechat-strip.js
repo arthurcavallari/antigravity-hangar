@@ -202,6 +202,7 @@
       }));
       window.AgyUI?.reconcileTabStrip?.(ctx.sessionsEl, items, {
         idDatasetKey: 'cascadeId', closeTitle: 'Delete Side Chat', addButton: { role: 'sidechat-strip-add', title: 'New Side Chat', onClick: () => ctx.spawnNewInInstance() },
+        onSelect: (id) => ns.getActiveSideChatId(ctx.getTabId()) !== id && selectThread(id),
         onClose: (id) => ns.deleteSideChatsByIds([id], curTabId), onUnpin: (_id, item) => togglePin(item.thread), onRenameStart: () => (isRenaming = true), onRenameCancel: () => (isRenaming = false), onRename: (_id, rawNext, item) => applyRename(item.thread.cascadeId, rawNext),
         onContextMenu: (_id, item, e, pill) => {
           const t = item.thread, others = instThreads.filter((x) => x.cascadeId !== item.thread.cascadeId && !x.pinned).map((x) => x.cascadeId), right = instThreads.slice(item.idx + 1).filter((x) => !x.pinned).map((x) => x.cascadeId);

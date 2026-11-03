@@ -103,9 +103,21 @@
         ns.setActiveGroupId?.(instanceTabId, (activeGroupId = grpId));
         closeTerminalsByIds(others.flatMap((g) => g.paneIds));
       };
+      const selectGroup = (grp, pill) => {
+        if (!grp) return;
+        if (activeGroupId !== grp.groupId) {
+          ns.setActiveGroupId?.(instanceTabId, (activeGroupId = grp.groupId));
+          Array.from(sessionsEl.children || sessionsEl.childNodes || []).forEach((c) => c.classList?.toggle?.('active', c === pill || c._item?.grp?.groupId === grp.groupId));
+          renderStage();
+          if (rootId) callbacks.onSessionChange?.();
+        }
+        focusPane(getActiveTid());
+        pollVisiblePanes();
+      };
       window.AgyUI?.reconcileTabStrip?.(sessionsEl, stripItems, {
         idDatasetKey: 'termTid', emptyHint: 'Drop a terminal tab here',
         addButton: hasSessions ? { role: 'term-add-tab', testId: 'aux-pane-new-tab-button', title: 'New Terminal Tab', onClick: () => spawnTerminal('') } : null,
+        onSelect: (_id, item, _e, pill) => selectGroup(item?.grp, pill),
         onClose: (_id, item) => closeTerminalsByIds(item.grp.paneIds), onUnpin: (_id, item) => togglePin(item.grp),
         onRenameStart: () => (isRenaming = true), onRenameCancel: () => (isRenaming = false), onRename: commitRename,
         onContextMenu: (_id, item, e, pill) => {
@@ -126,17 +138,8 @@
           ]);
         },
         bindDrag: (pill, item) => ns.bindTermPointerDrag?.(pill, {
-          kind: 'tab', groupId: () => item.grp.groupId, terminalId: item.id, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => slotKey,
-          onClick: () => {
-            if (activeGroupId !== item.grp.groupId) {
-              ns.setActiveGroupId?.(instanceTabId, (activeGroupId = item.grp.groupId));
-              Array.from(sessionsEl.children || sessionsEl.childNodes || []).forEach((c) => c.classList?.toggle?.('active', c === pill));
-              renderStage();
-              if (rootId) callbacks.onSessionChange?.();
-            }
-            focusPane(getActiveTid());
-            pollVisiblePanes();
-          },
+          kind: 'tab', groupId: () => (pill._item || item).grp.groupId, terminalId: item.id, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => slotKey,
+          onClick: () => selectGroup((pill._item || item).grp, pill),
           onSameInstanceDrop: applyDropResult,
         }),
       });
