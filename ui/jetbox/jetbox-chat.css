@@ -1,0 +1,36 @@
+.agy-shell:not(:has([data-aux-pane-open="true"])) > div.flex-1.relative > div.absolute.right-0.top-0.z-50 {
+  display: none !important;
+}
+
+html:not([data-hangar-overview="open"]) [data-testid="overview-panel-host"] {
+  --overview-panel-reserve: 0px !important;
+  --overview-panel-gutter-reserve: 0px !important;
+}
+
+html:not([data-hangar-overview="open"]) :is(
+  [data-testid="overview-panel-host-overlay"],
+  [data-testid="overview-panel-host-gutter"],
+  [data-testid="overview-panel-host-sibling"],
+  [data-testid="overview-panel-overlay-backdrop"]
+) {
+  display: none !important;
+}
+
+div[title="Open side-by-side view"] {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+div[title="Open side-by-side view"] button {
+  pointer-events: none !important;
+  text-decoration: none !important;
+}
+
+div[title="Open side-by-side view"] button svg:last-child {
+  display: none !important;
+}
+
+[data-testid="conversation-view"] {
+  min-height: 0;
+  z-index: 10 !important;
+}

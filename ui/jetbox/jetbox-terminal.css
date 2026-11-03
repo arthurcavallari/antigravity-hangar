@@ -1,0 +1,68 @@
+.agy-shell > div.flex-1.relative > div.absolute.right-0.top-0.z-50 {
+  display: none !important;
+}
+
+#root,
+#root *:not([data-testid="terminal-split-container"]):not([data-testid="terminal-split-container"] *) {
+  container-type: normal !important;
+  contain: none !important;
+  isolation: auto !important;
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}
+
+#root *:not([data-testid="terminal-tab-connecting"]):not([data-testid="terminal-tab-connecting"] *):not([data-testid="terminal-tab-surface"]):not([data-testid="terminal-tab-surface"] *):not([data-testid="terminal-split-container"]):not([data-testid="terminal-split-container"] *):not(.selection-popup):not(.selection-popup *) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+[data-testid="conversation-view"],
+[data-testid="conversation-view-drag-tint"],
+[data-testid="input-card-drag-highlight"],
+[data-testid="terminal-active"]:has(.xterm) > .pointer-events-none {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+[data-testid="terminal-tab-connecting"],
+[data-testid="terminal-tab-surface"],
+[data-testid="terminal-split-container"] {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 99999 !important;
+  background: var(--background, #101010) !important;
+}
+
+[data-testid="terminal-tab-connecting"] *,
+[data-testid="terminal-tab-surface"] *,
+[data-testid="terminal-split-container"] *,
+.selection-popup,
+.selection-popup * {
+  visibility: visible !important;
+}
+
+.selection-popup {
+  pointer-events: auto !important;
+  width: auto !important;
+  white-space: nowrap !important;
+}
+
+.selection-popup button:not([data-hangar-ask]) {
+  -webkit-user-drag: element !important;
+  cursor: grab !important;
+}
+
+.selection-popup button[data-hangar-ask] {
+  border-left: 1px solid var(--border, rgba(128, 128, 128, 0.25)) !important;
+  cursor: pointer !important;
+}
+
+.selection-popup button > * {
+  pointer-events: none !important;
+}
