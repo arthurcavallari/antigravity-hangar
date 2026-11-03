@@ -2,16 +2,27 @@
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   const deckFrames = new Map();
-  let latestThemeEvent = null, latestWorkspaceEvent = null, lastConfigThemeSig = '', hasLiveHostTheme = false;
+  let latestThemeEvent = null;
+  let latestWorkspaceEvent = null;
+  let lastConfigThemeSig = '';
+  let hasLiveHostTheme = false;
   ns.getLatestThemeEvent = () => latestThemeEvent;
   ns.VISIBILITY_MESSAGE_TYPE = 'sidecar-visibility';
+
   function broadcastToChildFrames(messageData) {
     if (!messageData) return;
-    const extra = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.term-jetbox-frame, .term-sidechat-frame') : [];
+    const extra = typeof document.querySelectorAll === 'function'
+      ? document.querySelectorAll('.term-jetbox-frame, .term-sidechat-frame')
+      : [];
     for (const frame of [...deckFrames.values(), ...extra]) {
-      try { frame.contentWindow?.postMessage(messageData, '*'); } catch { /* ignore */ }
+      try {
+        frame.contentWindow?.postMessage(messageData, '*');
+      } catch {
+        /* ignore */
+      }
     }
   }
+
   ns.applyThemePayload = function applyThemePayload(payload, fromHostMessage = false) {
     if (!payload || typeof payload.cssVariables !== 'object') return;
     if (fromHostMessage) {
@@ -23,32 +34,43 @@
       lastConfigThemeSig = sig;
     }
     const rootStyle = document.documentElement.style;
-    const hasHostFollowVars = Boolean(payload.cssVariables['--background'] || payload.cssVariables['--foreground'] || payload.cssVariables['--card']);
+    const hasHostFollowVars = Boolean(
+      payload.cssVariables['--background'] ||
+      payload.cssVariables['--foreground'] ||
+      payload.cssVariables['--card'],
+    );
     for (const [key, val] of Object.entries(payload.cssVariables)) {
       if (!val) continue;
-      if (hasHostFollowVars && key.startsWith('--agy-')) rootStyle.removeProperty?.(key);
-      else rootStyle.setProperty(key, val);
+      if (hasHostFollowVars && key.startsWith('--agy-')) {
+        rootStyle.removeProperty?.(key);
+      } else {
+        rootStyle.setProperty(key, val);
+      }
     }
     const isLight = payload.themeType === 'light' || payload.isDark === false;
     rootStyle.colorScheme = isLight ? 'light' : 'dark';
     (ns.applyAgyThemeFromPayload || window.AgyShell?.applyAgyThemeFromPayload)?.(payload);
     if (document.body) {
-      document.body.style.fontFamily = payload.cssVariables['--vscode-font-family'] || 'var(--font-sans, var(--vscode-font-family, system-ui, sans-serif))';
+      document.body.style.fontFamily = payload.cssVariables['--vscode-font-family'] ||
+        'var(--font-sans, var(--vscode-font-family, system-ui, sans-serif))';
       document.body.classList.toggle('theme-light', isLight);
       document.body.classList.toggle('theme-dark', !isLight);
     }
     latestThemeEvent = { type: 'theme-change', payload };
     broadcastToChildFrames(latestThemeEvent);
   };
+
   const isFromChildFrame = (src) => Boolean(src && [...deckFrames.values()].some((f) => f.contentWindow === src));
+
   ns.initPostMessageRelayBridge = function initPostMessageRelayBridge() {
     window.addEventListener('message', (event) => {
       const type = event.data?.type;
       if (!type) return;
       const isToggle = type === 'toggle-aux-pane' || type === 'toggle-conversation';
       if (isToggle ? !isFromChildFrame(event.source) : !ns.isHostMessage(event.source)) return;
-      if (type === 'theme-change' && event.data?.payload) ns.applyThemePayload(event.data.payload, true);
-      else if (type === 'workspace-change') {
+      if (type === 'theme-change' && event.data?.payload) {
+        ns.applyThemePayload(event.data.payload, true);
+      } else if (type === 'workspace-change') {
         latestWorkspaceEvent = event.data;
         broadcastToChildFrames(event.data);
       } else if (isToggle && window.parent && window.parent !== window) {
@@ -56,23 +78,40 @@
       }
     });
   };
+
   function postFrameVisibility(frame) {
-    try { frame.contentWindow?.postMessage({ type: ns.VISIBILITY_MESSAGE_TYPE, payload: { visible: frame.dataset.visible === '1' } }, '*'); } catch { /* ignore */ }
+    try {
+      frame.contentWindow?.postMessage(
+        { type: ns.VISIBILITY_MESSAGE_TYPE, payload: { visible: frame.dataset.visible === '1' } },
+        '*',
+      );
+    } catch {
+      /* ignore */
+    }
   }
+
   function setFrameVisibility(frame, visible) {
     const next = visible ? '1' : '0';
     if (frame.dataset.visible === next) return;
     frame.dataset.visible = next;
     postFrameVisibility(frame);
   }
+
   function stripConversationParam(rawUrl = '') {
     try {
       const parsed = new URL(rawUrl);
       parsed.searchParams.delete('conversationId');
       return parsed.toString();
-    } catch { return rawUrl; }
+    } catch {
+      return rawUrl;
+    }
   }
-  ns.clampSplitHeight = (rawPx) => Math.max(80, Math.min(Math.max(120, (window.innerHeight || 600) - 150), Math.round(Number(rawPx) || 185)));
+
+  ns.clampSplitHeight = (rawPx) => Math.max(
+    80,
+    Math.min(Math.max(120, (window.innerHeight || 600) - 150), Math.round(Number(rawPx) || 185)),
+  );
+
   function cleanupAllDragGhosts() {
     Object.assign(ns, { isPointerOnTab: false, pointerTermInstanceId: '', pointerSideChatInstanceId: '' });
     ns.clearAllTermDropIndicators?.();
@@ -84,7 +123,9 @@
     document.body?.classList?.remove('dragging-tab');
     document.querySelectorAll?.('.split-drop-target').forEach((el) => el.classList.remove('split-drop-target'));
   }
+
   window.addEventListener?.('blur', cleanupAllDragGhosts);
+
   ns.bindHangarTabDrag = function bindHangarTabDrag(btn, sc) {
     const d = { pane: 'single', beforeId: null, drop: null, timer: null, hoverId: '', previewId: '' };
     const clearHover = () => {
@@ -92,7 +133,8 @@
       Object.assign(d, { timer: null, hoverId: '' });
     };
     window.AgyUI?.bindTabDragController?.(btn, {
-      tabSelector: '.agy-tab[data-sidecar-id]', pinnedRole: 'hub-add-tab',
+      tabSelector: '.agy-tab[data-sidecar-id]',
+      pinnedRole: 'hub-add-tab',
       onDragStart: () => {
         ns.isPointerOnTab = true;
         Object.assign(d, { pane: btn._opts?.pane || 'single', beforeId: null, drop: null });
@@ -102,13 +144,16 @@
         const splitEnabled = Boolean(btn._opts?.splitEnabled);
         const curId = btn._sc?.sidecarId || sc.sidecarId;
         const handleRect = splitEnabled ? document.getElementById('split-resize-handle')?.getBoundingClientRect() : null;
-        d.pane = !splitEnabled ? 'single' : e.clientY < (handleRect ? handleRect.top + handleRect.height / 2 : window.innerHeight / 2) ? 'top' : 'bottom';
+        const midY = handleRect ? handleRect.top + handleRect.height / 2 : window.innerHeight / 2;
+        d.pane = !splitEnabled ? 'single' : (e.clientY < midY ? 'top' : 'bottom');
         d.drop = btn._sc?.isTerminal
           ? ns.inspectHangarPointerOverTerminal?.(e.clientX, e.clientY, curId, d.pane !== pane)
-          : btn._sc?.isSideChat ? ns.inspectHangarPointerOverSideChat?.(e.clientX, e.clientY, curId, d.pane !== pane) : null;
+          : (btn._sc?.isSideChat ? ns.inspectHangarPointerOverSideChat?.(e.clientX, e.clientY, curId, d.pane !== pane) : null);
         return Boolean(d.drop || d.pane !== pane);
       },
-      getMergeSpanFactor: (sib) => ((btn._sc?.isTerminal && sib?._sc?.isTerminal) || (btn._sc?.isSideChat && sib?._sc?.isSideChat)) ? 0.12 : 1.0,
+      getMergeSpanFactor: (sib) => (
+        (btn._sc?.isTerminal && sib?._sc?.isTerminal) || (btn._sc?.isSideChat && sib?._sc?.isSideChat) ? 0.12 : 1.0
+      ),
       onOutOfRailMove: (e, dragState) => {
         document.querySelectorAll('.split-drop-target').forEach((el) => el.classList.remove('split-drop-target'));
         if (d.drop) {
@@ -119,7 +164,9 @@
               Object.assign(d, { timer: null, previewId: d.drop.targetInstanceTabId });
               btn._opts?.onPreviewTerminalSlot?.(d.drop.targetInstanceTabId, d.drop.pane);
             }, 350);
-          } else if (d.drop.zone !== 'hub-tab') clearHover();
+          } else if (d.drop.zone !== 'hub-tab') {
+            clearHover();
+          }
           return;
         }
         clearHover();
@@ -132,17 +179,22 @@
         const inBar = !tRect || !tRect.height || (e.clientY >= tRect.top - 14 && e.clientY <= tRect.bottom + 4);
         const isPin = Boolean(btn._sc?.isPinned);
         d.beforeId = null;
-        Array.from(document.getElementById(d.pane === 'top' ? 'tab-strip' : 'bottom-tab-strip')?.querySelectorAll('.agy-tab[data-sidecar-id]') || []).forEach((sib) => {
+        const targetStrip = document.getElementById(d.pane === 'top' ? 'tab-strip' : 'bottom-tab-strip');
+        Array.from(targetStrip?.querySelectorAll('.agy-tab[data-sidecar-id]') || []).forEach((sib) => {
           const sibPin = sib.dataset.pinned === 'true';
           const r = ns.getUnshiftedRect ? ns.getUnshiftedRect(sib) : sib.getBoundingClientRect();
-          const sameKind = (btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId)) || (btn._sc?.isSideChat && ns.isSideChatTabId?.(sib.dataset.sidecarId));
-          if (inBar && d.beforeId === null && ((isPin && !sibPin) || (isPin === sibPin && e.clientX < r.left + r.width * (sameKind ? 0.12 : 0.5)))) {
+          const sameKind = (btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId)) ||
+            (btn._sc?.isSideChat && ns.isSideChatTabId?.(sib.dataset.sidecarId));
+          const beforeSib = (isPin && !sibPin) || (isPin === sibPin && e.clientX < r.left + r.width * (sameKind ? 0.12 : 0.5));
+          if (inBar && d.beforeId === null && beforeSib) {
             d.beforeId = sib.dataset.sidecarId;
           }
           ns.setTabShift?.(sib, inBar && d.beforeId !== null ? dragState.draggedSlot : 0);
         });
         tBar?.classList.add('split-drop-target');
-        if (!inBar) document.querySelector(d.pane === 'top' ? '.slot-top:not(.hidden)' : '.slot-bottom:not(.hidden)')?.classList.add('split-drop-target');
+        if (!inBar) {
+          document.querySelector(d.pane === 'top' ? '.slot-top:not(.hidden)' : '.slot-bottom:not(.hidden)')?.classList.add('split-drop-target');
+        }
       },
       onClearPreview: () => {
         clearHover();
@@ -151,10 +203,18 @@
       onDrop: (_e, dragState, cancelled) => {
         const pane = btn._opts?.pane || 'single';
         const curId = btn._sc?.sidecarId || sc.sidecarId;
-        if (cancelled) return void btn._opts?.onPreviewTerminalSlot?.('', pane);
-        if (d.drop && btn._opts?.onDropIntoTerminal) return void btn._opts.onDropIntoTerminal({ sourceSidecarId: curId, ...d.drop });
+        if (cancelled) {
+          btn._opts?.onPreviewTerminalSlot?.('', pane);
+          return;
+        }
+        if (d.drop && btn._opts?.onDropIntoTerminal) {
+          btn._opts.onDropIntoTerminal({ sourceSidecarId: curId, ...d.drop });
+          return;
+        }
         if (dragState?.locked) {
-          const otherIds = dragState.sourceTabs.filter((_, idx) => idx !== dragState.draggedIndex).map((el) => el.dataset.sidecarId);
+          const otherIds = dragState.sourceTabs
+            .filter((_, idx) => idx !== dragState.draggedIndex)
+            .map((el) => el.dataset.sidecarId);
           const dropIdx = dragState.dropIdx ?? dragState.draggedIndex;
           d.beforeId = dropIdx < otherIds.length ? otherIds[dropIdx] : null;
         }
@@ -162,9 +222,14 @@
       },
     });
   };
+
   ns.reconcileIframeDeck = function reconcileIframeDeck({ state, els }) {
     const splitEnabled = Boolean(state.layout?.splitViewEnabled);
-    const { bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(state.sidecars || [], state.layout, state.terminals || []);
+    const { bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
+      state.sidecars || [],
+      state.layout,
+      state.terminals || [],
+    );
     els.mainViewport.classList.toggle('is-split', splitEnabled);
     els.splitDividerGroup?.classList.toggle('hidden', !splitEnabled);
     if (splitEnabled && !state.isResizingSplit) {
@@ -188,7 +253,10 @@
       const baseKey = stripConversationParam(sc.iframeUrl);
       let frame = deckFrames.get(sc.sidecarId);
       if (!frame) {
-        frame = Object.assign(document.createElement('iframe'), { className: 'child-sidecar-frame', src: sc.iframeUrl });
+        frame = Object.assign(document.createElement('iframe'), {
+          className: 'child-sidecar-frame',
+          src: sc.iframeUrl,
+        });
         Object.assign(frame.dataset, { sidecarId: sc.sidecarId, baseKey, loadedUrl: sc.iframeUrl });
         frame.addEventListener('load', () => {
           if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');
@@ -205,7 +273,9 @@
         try {
           const convId = new URL(sc.iframeUrl).searchParams.get('conversationId') || '';
           frame.contentWindow?.postMessage({ type: 'conversation-change', payload: { conversationId: convId } }, '*');
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       const isTop = sc.sidecarId === topSlotId;
       const isBottom = splitEnabled && sc.sidecarId === bottomSlotId;
@@ -223,15 +293,28 @@
       if (!emptyEl) return;
       emptyEl.classList.toggle('hidden', Boolean(mounted));
       if (!mounted) {
-        const msg = slotId ? 'Sidecar is hibernated or stopped — enable it in 🧩 Extensions' : `No tab in ${label} — drag a tab here`;
+        const msg = slotId
+          ? 'Sidecar is hibernated or stopped — enable it in 🧩 Extensions'
+          : `No tab in ${label} — drag a tab here`;
         if (emptyEl.dataset.msg !== msg) {
           emptyEl.dataset.msg = msg;
-          ns.setHtml(emptyEl, ns.html`<div class="empty-split-zone"><span>${ns.escHtml(msg)}</span></div>`);
+          ns.setHtml(emptyEl, ns.html`
+            <div class="empty-split-zone">
+              <span>${ns.escHtml(msg)}</span>
+            </div>
+          `);
         }
       }
     };
-    const hasTop = storeInTop || Boolean(ns.isTerminalTabId?.(topSlotId)) || Boolean(ns.isSideChatTabId?.(topSlotId)) || (topSlotId && deckFrames.has(topSlotId));
-    const hasBot = !splitEnabled || storeInBottom || Boolean(ns.isTerminalTabId?.(bottomSlotId)) || Boolean(ns.isSideChatTabId?.(bottomSlotId)) || (bottomSlotId && deckFrames.has(bottomSlotId));
+    const hasTop = storeInTop ||
+      Boolean(ns.isTerminalTabId?.(topSlotId)) ||
+      Boolean(ns.isSideChatTabId?.(topSlotId)) ||
+      (topSlotId && deckFrames.has(topSlotId));
+    const hasBot = !splitEnabled ||
+      storeInBottom ||
+      Boolean(ns.isTerminalTabId?.(bottomSlotId)) ||
+      Boolean(ns.isSideChatTabId?.(bottomSlotId)) ||
+      (bottomSlotId && deckFrames.has(bottomSlotId));
     syncEmpty(els.emptyTopState, hasTop, topSlotId, 'Top Split');
     syncEmpty(els.emptyDeckState, hasBot, bottomSlotId, 'Bottom Split');
   };

@@ -1,12 +1,20 @@
 /** @fileoverview Plugin badges, port report consent flow, and Installed plugins list. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const SOURCE_LABELS = { claude: 'Claude Code', gemini: 'Gemini CLI', cursor: 'Cursor', roo: 'Roo Code', codex: 'Codex' };
+  const SOURCE_LABELS = {
+    claude: 'Claude Code',
+    gemini: 'Gemini CLI',
+    cursor: 'Cursor',
+    roo: 'Roo Code',
+    codex: 'Codex',
+  };
 
   ns.pluginBadgesHtml = function pluginBadgesHtml({ port, portedFrom } = {}) {
-    const sources = portedFrom?.length ? portedFrom : port?.from && port.from !== 'auto' ? [port.from] : [];
+    const sources = portedFrom?.length ? portedFrom : (port?.from && port.from !== 'auto' ? [port.from] : []);
     const label = sources.map((s) => SOURCE_LABELS[s] || s).join(' + ') || 'another tool';
-    const ported = port || sources.length ? `<span class="agy-badge stopped">Ported from ${ns.escHtml(label)}</span>` : '';
+    const ported = port || sources.length
+      ? `<span class="agy-badge stopped">Ported from ${ns.escHtml(label)}</span>`
+      : '';
     return `<span class="agy-badge starting">Plugin</span>${ported}`;
   };
 
@@ -20,7 +28,9 @@
     const report = res.report || {};
     const tier = ns.formatCapabilityTier(res.scannedTier || report.tier);
     const native = (report.ecosystems || []).includes('antigravity');
-    const flags = (report.flags || []).map((f) => `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${f.line}` : ''}</code>` : ''}`);
+    const flags = (report.flags || []).map(
+      (f) => `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${f.line}` : ''}</code>` : ''}`,
+    );
     const unported = (report.unported || []).map((u) => `<code>${esc(u.item)}</code>: ${esc(u.reason)}`);
     const ported = (report.ported || []).map(esc);
     const summary = native
@@ -39,9 +49,15 @@
   function pluginPayload(pkg, consent = {}) {
     const release = pkg.release || {};
     return {
-      pluginId: pkg.id, gitRepo: release.gitRepo || '', tarballUrl: release.tarballUrl || '',
-      sha256: release.sha256 || '', ref: release.ref || '', path: release.path || '',
-      port: pkg.port || null, version: pkg.latestVersion || '', ...consent,
+      pluginId: pkg.id,
+      gitRepo: release.gitRepo || '',
+      tarballUrl: release.tarballUrl || '',
+      sha256: release.sha256 || '',
+      ref: release.ref || '',
+      path: release.path || '',
+      port: pkg.port || null,
+      version: pkg.latestVersion || '',
+      ...consent,
     };
   }
 
@@ -83,7 +99,10 @@
     if (!card._pluginConsent) return Promise.resolve();
     return runPluginStep(card, els, idleLabel === 'Update' ? 'Updating…' : 'Installing…', idleLabel, async () => {
       const res = await ctx.onInstallPlugin?.(pluginPayload(pkg, card._pluginConsent));
-      if (res?.needsConsent) return showConsent(card, els, res);
+      if (res?.needsConsent) {
+        showConsent(card, els, res);
+        return;
+      }
       card._pluginConsent = null;
       ctx.onSwitchTab?.('installed');
     });
@@ -91,7 +110,13 @@
 
   function countsText(counts) {
     if (!counts) return 'not loaded yet';
-    return [['skills', 'skill'], ['agents', 'agent'], ['rules', 'rule'], ['hooks', 'hook'], ['mcpServers', 'MCP server']]
+    return [
+      ['skills', 'skill'],
+      ['agents', 'agent'],
+      ['rules', 'rule'],
+      ['hooks', 'hook'],
+      ['mcpServers', 'MCP server'],
+    ]
       .filter(([key]) => counts[key] > 0)
       .map(([key, noun]) => `${counts[key]} ${noun}${counts[key] === 1 ? '' : 's'}`)
       .join(', ') || 'empty';
@@ -102,16 +127,43 @@
     card.dataset.pluginDir = dir;
     ns.setHtml(card, ns.html`
       <div class="agy-card-header">
-        <div class="manager-card-title-group"><div class="manager-card-title-row"><span data-role="title" class="manager-card-title"></span><span data-role="badges" class="badge-group"></span></div><div class="agy-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div></div>
-        <div class="agy-card-actions"><button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button><button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">${ns.iconSvg('delete', 14)}</button></div>
+        <div class="manager-card-title-group">
+          <div class="manager-card-title-row">
+            <span data-role="title" class="manager-card-title"></span>
+            <span data-role="badges" class="badge-group"></span>
+          </div>
+          <div class="agy-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div>
+        </div>
+        <div class="agy-card-actions">
+          <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button>
+          <button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">
+            ${ns.iconSvg('delete', 14)}
+          </button>
+        </div>
       </div>
       <div data-role="restart-note" class="agy-banner hidden">Installed. Restart Antigravity to load it.</div>
-      <div data-role="consent-bar" class="agy-consent-bar hidden"><span data-role="consent-text" class="consent-text"></span><div class="consent-actions"><button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Update</button></div></div>
-      <div data-role="uninstall-confirm" class="agy-consent-bar hidden"><span data-role="uninstall-confirm-text"></span><div class="consent-actions"><button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button></div></div>
-      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>`);
+      <div data-role="consent-bar" class="agy-consent-bar hidden">
+        <span data-role="consent-text" class="consent-text"></span>
+        <div class="consent-actions">
+          <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+          <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Update</button>
+        </div>
+      </div>
+      <div data-role="uninstall-confirm" class="agy-consent-bar hidden">
+        <span data-role="uninstall-confirm-text"></span>
+        <div class="consent-actions">
+          <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+          <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
+        </div>
+      </div>
+      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
+    `);
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
     const els = {
-      btn: q('update-btn'), consentBar: q('consent-bar'), consentText: q('consent-text'), errorEl: q('card-error'),
+      btn: q('update-btn'),
+      consentBar: q('consent-bar'),
+      consentText: q('consent-text'),
+      errorEl: q('card-error'),
       reset: (label) => {
         els.btn.disabled = false;
         els.btn.dataset.btnState = '';
@@ -119,12 +171,16 @@
       },
     };
     els.reset('Update');
-    els.btn.addEventListener('click', () => card._regPkg && ns.previewPluginInstall(card, els, card._ctx, card._regPkg, 'Update'));
+    els.btn.addEventListener('click', () => {
+      if (card._regPkg) ns.previewPluginInstall(card, els, card._ctx, card._regPkg, 'Update');
+    });
     q('consent-cancel').addEventListener('click', () => {
       card._pluginConsent = null;
       els.consentBar.classList.add('hidden');
     });
-    q('consent-confirm').addEventListener('click', () => card._regPkg && ns.confirmPluginInstall(card, els, card._ctx, card._regPkg, 'Update'));
+    q('consent-confirm').addEventListener('click', () => {
+      if (card._regPkg) ns.confirmPluginInstall(card, els, card._ctx, card._regPkg, 'Update');
+    });
     const uninstallBtn = q('uninstall-btn');
     const uninstallConfirm = q('uninstall-confirm');
     uninstallBtn.addEventListener('click', () => {
@@ -153,11 +209,24 @@
     const p = card._plugin;
     card.dataset.pluginId = p.pluginId || p.dir || '';
     const diag = card._diag || p.diagnostics || null;
-    const missingBins = (diag?.mcpServers || []).filter((s) => s.transport === 'stdio' && s.commandExists === false).map((s) => s.key);
+    const missingBins = (diag?.mcpServers || [])
+      .filter((s) => s.transport === 'stdio' && s.commandExists === false)
+      .map((s) => s.key);
     const missingVars = Array.from(new Set((diag?.mcpServers || []).flatMap((s) => s.missingEnvVars || [])));
     const managed = Boolean(p.pluginId);
     const tier = p.capabilityTier ? ns.formatCapabilityTier(p.capabilityTier) : null;
-    const sig = JSON.stringify([p.name, p.portedFrom, p.disabled, p.builtin, p.restartRequired, p.capabilityTier, p.installedVersion, p.counts, missingBins, missingVars]);
+    const sig = JSON.stringify([
+      p.name,
+      p.portedFrom,
+      p.disabled,
+      p.builtin,
+      p.restartRequired,
+      p.capabilityTier,
+      p.installedVersion,
+      p.counts,
+      missingBins,
+      missingVars,
+    ]);
     if (card.dataset.sig !== sig) {
       card.dataset.sig = sig;
       card.querySelector('[data-role="title"]').textContent = p.name;
@@ -170,7 +239,9 @@
         missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
         missingVars.length ? `<span class="agy-badge hibernated" title="Unset env vars: ${ns.escHtml(missingVars.join(', '))}">Needs Env (${missingVars.length})</span>` : '',
       ].join(''));
-      const origin = managed ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar') : p.builtin ? 'ships with Antigravity' : 'installed outside Hangar';
+      const origin = managed
+        ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar')
+        : (p.builtin ? 'ships with Antigravity' : 'installed outside Hangar');
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
       card.querySelector('[data-role="restart-note"]').classList.toggle('hidden', !p.restartRequired);
     }
@@ -187,7 +258,18 @@
     sectionEl.classList.toggle('hidden', plugins.length === 0);
     let listEl = sectionEl.querySelector('[data-role="plugin-list"]');
     if (!listEl) {
-      ns.setHtml(sectionEl, ns.html`<div class="store-header plugin-section-header"><div><div class="store-title"><span>Plugins</span><span data-role="plugin-count" class="agy-count-pill"></span></div><div class="store-subtitle">Skills, agents, rules, hooks and MCP servers for the agent. Plugins have no panel, so they don't get a tab.</div></div></div><div data-role="plugin-list"></div>`);
+      ns.setHtml(sectionEl, ns.html`
+        <div class="store-header plugin-section-header">
+          <div>
+            <div class="store-title">
+              <span>Plugins</span>
+              <span data-role="plugin-count" class="agy-count-pill"></span>
+            </div>
+            <div class="store-subtitle">Skills, agents, rules, hooks and MCP servers for the agent. Plugins have no panel, so they don't get a tab.</div>
+          </div>
+        </div>
+        <div data-role="plugin-list"></div>
+      `);
       listEl = sectionEl.querySelector('[data-role="plugin-list"]');
     }
     sectionEl.querySelector('[data-role="plugin-count"]').textContent = String(plugins.length);
@@ -197,7 +279,12 @@
     plugins.forEach((plugin, i) => {
       seen.add(plugin.dir);
       const card = listEl.querySelector(`.agy-card[data-plugin-dir="${CSS.escape(plugin.dir)}"]`) || createPluginCard(plugin.dir);
-      Object.assign(card, { _plugin: plugin, _ctx: ctx, _regPkg: plugin.pluginId ? regMap.get(plugin.pluginId) || null : null, _diag: diagMap.get(plugin.dir) || diagMap.get(plugin.pluginId) || null });
+      Object.assign(card, {
+        _plugin: plugin,
+        _ctx: ctx,
+        _regPkg: plugin.pluginId ? regMap.get(plugin.pluginId) || null : null,
+        _diag: diagMap.get(plugin.dir) || diagMap.get(plugin.pluginId) || null,
+      });
       syncPluginCard(card);
       if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
     });

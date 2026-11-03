@@ -69,8 +69,16 @@ async function migrateLegacySidecarHub() {
   }
 }
 
-// An npx install's permanent copy only bundles antigravity-sidecar-kit. agy-plugin-porter has no dependencies
-// of its own and is loaded on the first plugin install, so copying it in afterwards is enough.
+// Sync local sibling antigravity-sidecar-kit checkout when present, and bundle agy-plugin-porter for npx installs.
+function syncLocalSidecarKit() {
+  const siblingKitLib = join(REPO_ROOT, '..', 'antigravity-sidecar-kit', 'lib');
+  const localKitLib = join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit', 'lib');
+  if (existsSync(siblingKitLib) && existsSync(join(REPO_ROOT, 'node_modules', 'antigravity-sidecar-kit'))) {
+    cpSync(siblingKitLib, localKitLib, { recursive: true });
+    console.log(`[${SIDECAR_ID}] Synced sibling antigravity-sidecar-kit/lib -> ${localKitLib}`);
+  }
+}
+
 function bundlePluginPorter(linkedTo) {
   const target = join(linkedTo || '', 'node_modules', 'agy-plugin-porter');
   if (!linkedTo || linkedTo === REPO_ROOT || existsSync(join(target, 'package.json'))) return;
@@ -109,6 +117,10 @@ runSidecarSetup({
     'ui/components.css',
     'ui/core.js',
     'ui/app.js',
+    'ui/jetbox/jetbox-shared.css',
+    'ui/jetbox/jetbox-chat.css',
+    'ui/jetbox/jetbox-terminal.css',
+    'ui/jetbox/jetbox-bootstrap.js',
     'ui/components/tab-bar.js',
     'ui/components/marketplace-panes.js',
     'ui/components/plugin-panes.js',
@@ -127,6 +139,7 @@ runSidecarSetup({
     'ui/components/layout-controller.js',
   ],
   onBeforeSetup: async () => {
+    syncLocalSidecarKit();
     await migrateLegacySidecarHub();
     if (!existsSync(HANGAR_CONFIG_PATH)) {
       writeJsonNoBom(HANGAR_CONFIG_PATH, DEFAULT_HANGAR_CONFIG);

@@ -5,18 +5,47 @@
   let activeCategory = 'all';
   let sideloadScope = 'project';
   let sideloadFeedback = null;
-  ns.clearSideloadFeedback = () => { sideloadFeedback = null; };
+  ns.clearSideloadFeedback = () => {
+    sideloadFeedback = null;
+  };
   ns.setDiscoverQuery = (query = '') => {
     searchQuery = String(query);
     activeCategory = 'all';
   };
-  ns.scannedTierConsentHtml = (tierId, verb = 'Install') => `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Hangar's scan of the downloaded code found it needs this access. ${verb} anyway?`;
-  const declaredTierConsentHtml = (tierId) => `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Grants local CLI or agent cascade access. Proceed?`;
+  ns.scannedTierConsentHtml = (tierId, verb = 'Install') => (
+    `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Hangar's scan of the downloaded code found it needs this access. ${verb} anyway?`
+  );
+  const declaredTierConsentHtml = (tierId) => (
+    `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Grants local CLI or agent cascade access. Proceed?`
+  );
 
   function createDiscoverCard(pkgId, paneEl) {
     const card = Object.assign(document.createElement('div'), { className: 'agy-card' });
     card.dataset.pkgId = pkgId;
-    ns.setHtml(card, ns.html`<div class="agy-card-header"><div class="manager-card-title-group"><div class="manager-card-title-row"><span data-role="pkg-title" class="manager-card-title"></span><span data-role="pkg-tier" class="agy-badge" title="Capability Tier"></span><span data-role="pkg-kind" class="badge-group"></span></div><div data-role="pkg-meta" class="agy-card-meta"></div></div><div class="agy-card-actions"><button type="button" data-role="pkg-install-btn" class="agy-btn has-icon"></button></div></div><div data-role="pkg-desc" class="manager-card-desc"></div><div data-role="consent-bar" class="agy-consent-bar hidden"><span data-role="consent-text" class="consent-text"></span><div class="consent-actions"><button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button></div></div><div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>`);
+    ns.setHtml(card, ns.html`
+      <div class="agy-card-header">
+        <div class="manager-card-title-group">
+          <div class="manager-card-title-row">
+            <span data-role="pkg-title" class="manager-card-title"></span>
+            <span data-role="pkg-tier" class="agy-badge" title="Capability Tier"></span>
+            <span data-role="pkg-kind" class="badge-group"></span>
+          </div>
+          <div data-role="pkg-meta" class="agy-card-meta"></div>
+        </div>
+        <div class="agy-card-actions">
+          <button type="button" data-role="pkg-install-btn" class="agy-btn has-icon"></button>
+        </div>
+      </div>
+      <div data-role="pkg-desc" class="manager-card-desc"></div>
+      <div data-role="consent-bar" class="agy-consent-bar hidden">
+        <span data-role="consent-text" class="consent-text"></span>
+        <div class="consent-actions">
+          <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+          <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
+        </div>
+      </div>
+      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
+    `);
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
     const btn = q('pkg-install-btn');
     const consentBar = q('consent-bar');
@@ -27,7 +56,11 @@
       ns.setHtml(btn, tpl);
       btn.dataset.btnState = state;
     };
-    const resetInstallBtn = (label) => setBtn(false, label === 'Install' ? 'install' : 'retry', ns.html`${ns.iconSvg('download', 13)}<span>${label}</span>`);
+    const resetInstallBtn = (label) => setBtn(
+      false,
+      label === 'Install' ? 'install' : 'retry',
+      ns.html`${ns.iconSvg('download', 13)}<span>${label}</span>`,
+    );
     const pluginEls = { btn, consentBar, consentText, errorEl, reset: resetInstallBtn };
     const runInstall = async () => {
       if (card._isInstalling || card._isInstalled) return;
@@ -41,16 +74,22 @@
         const wsPath = ctx.activeWorkspace?.workspacePath;
         const isGlobalPkg = (curPkg.workspaceTriggers?.files || []).includes('*');
         const res = await ctx.onInstallRemote?.({
-          sidecarId: curPkg.id, gitRepo: curPkg.release?.gitRepo || '', tarballUrl: curPkg.release?.tarballUrl || '',
-          sha256: curPkg.release?.sha256 || '', version: curPkg.latestVersion || '1.0.0', scope: isGlobalPkg ? 'global' : 'project',
-          workspaces: isGlobalPkg ? ['*'] : (wsPath ? [wsPath] : ['*']), acceptedTier: card._acceptedTier || curPkg.capabilityTier || 'TIER_1_TELEMETRY',
+          sidecarId: curPkg.id,
+          gitRepo: curPkg.release?.gitRepo || '',
+          tarballUrl: curPkg.release?.tarballUrl || '',
+          sha256: curPkg.release?.sha256 || '',
+          version: curPkg.latestVersion || '1.0.0',
+          scope: isGlobalPkg ? 'global' : 'project',
+          workspaces: isGlobalPkg ? ['*'] : (wsPath ? [wsPath] : ['*']),
+          acceptedTier: card._acceptedTier || curPkg.capabilityTier || 'TIER_1_TELEMETRY',
         });
         card._isInstalling = false;
         if (res?.needsConsent) {
           card._pendingTier = res.scannedTier;
           ns.setHtml(consentText, ns.scannedTierConsentHtml(res.scannedTier));
           consentBar.classList.remove('hidden');
-          return void resetInstallBtn('Install');
+          resetInstallBtn('Install');
+          return;
         }
         ctx.onSwitchTab?.('installed');
       } catch (err) {
@@ -62,18 +101,27 @@
     };
     btn.addEventListener('click', () => {
       if (card._isInstalled || card._isInstalling) return;
-      if (card._pkg.kind === 'plugin') return ns.previewPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
+      if (card._pkg.kind === 'plugin') {
+        ns.previewPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
+        return;
+      }
       Object.assign(card, { _pendingTier: '', _acceptedTier: '' });
       ns.setHtml(consentText, declaredTierConsentHtml(card._pkg.capabilityTier));
-      if (card._requiresConsent) consentBar.classList.remove('hidden');
-      else runInstall();
+      if (card._requiresConsent) {
+        consentBar.classList.remove('hidden');
+      } else {
+        runInstall();
+      }
     });
     q('consent-cancel').addEventListener('click', () => {
       card._pendingTier = '';
       consentBar.classList.add('hidden');
     });
     q('consent-confirm').addEventListener('click', () => {
-      if (card._pkg.kind === 'plugin') return ns.confirmPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
+      if (card._pkg.kind === 'plugin') {
+        ns.confirmPluginInstall?.(card, pluginEls, paneEl._ctx || {}, card._pkg);
+        return;
+      }
       card._acceptedTier = card._pendingTier || card._pkg.capabilityTier || 'TIER_1_TELEMETRY';
       runInstall();
     });
@@ -88,7 +136,10 @@
     const q = searchQuery.toLowerCase().trim();
     const filtered = registryPackages.filter((pkg) => {
       const matchesCat = activeCategory === 'all' || (pkg.categories || []).includes(activeCategory);
-      const matchesQuery = !q || pkg.name.toLowerCase().includes(q) || pkg.id.toLowerCase().includes(q) || (pkg.tagline || '').toLowerCase().includes(q);
+      const matchesQuery = !q ||
+        pkg.name.toLowerCase().includes(q) ||
+        pkg.id.toLowerCase().includes(q) ||
+        (pkg.tagline || '').toLowerCase().includes(q);
       return matchesCat && matchesQuery;
     });
     const seenIds = new Set();
@@ -101,7 +152,18 @@
       const card = listEl.querySelector(`.agy-card[data-pkg-id="${CSS.escape(pkg.id)}"]`) || createDiscoverCard(pkg.id, paneEl);
       Object.assign(card, { _pkg: pkg, _isInstalled: isInstalled, _requiresConsent: requiresConsent });
       const isPlugin = pkg.kind === 'plugin';
-      const metaSig = JSON.stringify([pkg.name, pkg.kind || 'sidecar', pkg.port?.from || '', tier.state, tier.label, Boolean(pkg.author?.verified), pkg.author?.name || 'Community', pkg.latestVersion || '1.0.0', (pkg.categories || []).join(', '), pkg.tagline || '']);
+      const metaSig = JSON.stringify([
+        pkg.name,
+        pkg.kind || 'sidecar',
+        pkg.port?.from || '',
+        tier.state,
+        tier.label,
+        Boolean(pkg.author?.verified),
+        pkg.author?.name || 'Community',
+        pkg.latestVersion || '1.0.0',
+        (pkg.categories || []).join(', '),
+        pkg.tagline || '',
+      ]);
       if (card.dataset.metaSig !== metaSig) {
         card.dataset.metaSig = metaSig;
         card.querySelector('[data-role="pkg-title"]').textContent = pkg.name;
@@ -109,9 +171,17 @@
         tierEl.className = `agy-badge ${tier.state}`;
         ns.setHtml(tierEl, ns.html`${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.label)}</span>`);
         ns.setHtml(card.querySelector('[data-role="pkg-kind"]'), isPlugin ? ns.pluginBadgesHtml?.(pkg) || '' : '');
-        ns.setHtml(card.querySelector('[data-role="pkg-meta"]'), ns.html`${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}<span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>`);
+        ns.setHtml(
+          card.querySelector('[data-role="pkg-meta"]'),
+          ns.html`${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}<span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>`,
+        );
         card.querySelector('[data-role="pkg-desc"]').textContent = pkg.tagline || '';
-        if (!isPlugin) ns.setHtml(card.querySelector('[data-role="consent-text"]'), card._pendingTier ? ns.scannedTierConsentHtml(card._pendingTier) : declaredTierConsentHtml(pkg.capabilityTier));
+        if (!isPlugin) {
+          ns.setHtml(
+            card.querySelector('[data-role="consent-text"]'),
+            card._pendingTier ? ns.scannedTierConsentHtml(card._pendingTier) : declaredTierConsentHtml(pkg.capabilityTier),
+          );
+        }
       }
       if (!card._isInstalling) {
         const btn = card.querySelector('[data-role="pkg-install-btn"]');
@@ -119,8 +189,14 @@
         if (isInstalled) card.querySelector('[data-role="consent-bar"]')?.classList.add('hidden');
         if (btn.dataset.btnState !== targetState) {
           btn.dataset.btnState = targetState;
-          Object.assign(btn, { className: `agy-btn ${isInstalled ? 'agy-btn-outline' : 'agy-btn-primary'} has-icon`, disabled: isInstalled });
-          ns.setHtml(btn, ns.html`${ns.iconSvg(isInstalled ? 'check' : 'download', 13)}<span>${isInstalled ? 'Installed' : 'Install'}</span>`);
+          Object.assign(btn, {
+            className: `agy-btn ${isInstalled ? 'agy-btn-outline' : 'agy-btn-primary'} has-icon`,
+            disabled: isInstalled,
+          });
+          ns.setHtml(
+            btn,
+            ns.html`${ns.iconSvg(isInstalled ? 'check' : 'download', 13)}<span>${isInstalled ? 'Installed' : 'Install'}</span>`,
+          );
           if (isInstalled) btn.removeAttribute('title');
         }
       }
@@ -137,7 +213,21 @@
     let shell = paneEl.querySelector('[data-role="discover-shell"]');
     if (!shell) {
       const categories = ['all', 'telemetry', 'devops', 'productivity'];
-      ns.setHtml(paneEl, ns.html`<div data-role="discover-shell"><div class="discover-toolbar"><div class="agy-search-box"><span class="agy-search-icon">${ns.iconSvg('search', 14)}</span><input type="search" data-role="discover-search" class="agy-search-input" placeholder="Search sidecars and plugins…" /></div><agy-toggle-group class="agy-toggle-group">${categories.map((c) => `<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`).join('')}</agy-toggle-group></div><div data-role="discover-list"></div></div>`);
+      const catButtons = categories
+        .map((c) => `<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`)
+        .join('');
+      ns.setHtml(paneEl, ns.html`
+        <div data-role="discover-shell">
+          <div class="discover-toolbar">
+            <div class="agy-search-box">
+              <span class="agy-search-icon">${ns.iconSvg('search', 14)}</span>
+              <input type="search" data-role="discover-search" class="agy-search-input" placeholder="Search sidecars and plugins…" />
+            </div>
+            <agy-toggle-group class="agy-toggle-group">${catButtons}</agy-toggle-group>
+          </div>
+          <div data-role="discover-list"></div>
+        </div>
+      `);
       shell = paneEl.querySelector('[data-role="discover-shell"]');
       const searchInput = shell.querySelector('[data-role="discover-search"]');
       searchInput.value = searchQuery;
@@ -145,14 +235,18 @@
         searchQuery = e.target.value;
         reconcileDiscoverList(paneEl);
       });
-      shell.querySelectorAll('[data-cat]').forEach((btn) => btn.addEventListener('click', () => {
-        activeCategory = btn.dataset.cat;
-        shell.querySelectorAll('[data-cat]').forEach((b) => b.classList.toggle('active', b.dataset.cat === activeCategory));
-        reconcileDiscoverList(paneEl);
-      }));
+      shell.querySelectorAll('[data-cat]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeCategory = btn.dataset.cat;
+          shell.querySelectorAll('[data-cat]').forEach((b) => b.classList.toggle('active', b.dataset.cat === activeCategory));
+          reconcileDiscoverList(paneEl);
+        });
+      });
     }
     const searchInput = shell.querySelector('[data-role="discover-search"]');
-    if (searchInput && document.activeElement !== searchInput && searchInput.value !== searchQuery) searchInput.value = searchQuery;
+    if (searchInput && document.activeElement !== searchInput && searchInput.value !== searchQuery) {
+      searchInput.value = searchQuery;
+    }
     shell.querySelectorAll('[data-cat]').forEach((btn) => btn.classList.toggle('active', btn.dataset.cat === activeCategory));
     reconcileDiscoverList(paneEl);
   };
@@ -163,7 +257,9 @@
     const wsName = paneEl._ctx?.activeWorkspace?.workspaceName || 'Current Workspace';
     const bannerEl = shell.querySelector('[data-role="sideload-banner"]');
     if (bannerEl) {
-      bannerEl.className = sideloadFeedback ? `agy-banner ${sideloadFeedback.tone === 'err' ? 'is-error' : 'is-success'}` : 'agy-banner hidden';
+      bannerEl.className = sideloadFeedback
+        ? `agy-banner ${sideloadFeedback.tone === 'err' ? 'is-error' : 'is-success'}`
+        : 'agy-banner hidden';
       bannerEl.textContent = sideloadFeedback ? sideloadFeedback.text : '';
     }
     const wsLabelEl = shell.querySelector('[data-role="ws-scope-label"]');
@@ -176,17 +272,79 @@
     paneEl._ctx = ctx;
     let shell = paneEl.querySelector('[data-role="sideload-shell"]');
     if (!shell) {
-      ns.setHtml(paneEl, ns.html`<div data-role="sideload-shell"><div data-role="sideload-banner" class="agy-banner hidden"></div><div class="agy-card"><div class="agy-card-header"><div class="manager-card-title-group"><div class="manager-card-title-row"><span class="manager-card-title">Link Local Sidecar Folder</span><span class="agy-badge running">Development</span></div><div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div></div><agy-toggle-group class="agy-toggle-group"><button type="button" data-scope="project" class="agy-toggle-item">${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span></button><button type="button" data-scope="global" class="agy-toggle-item">${ns.iconSvg('globe', 13)}<span>Global (*)</span></button></agy-toggle-group></div><div class="ws-add-row"><input type="text" data-role="local-path-input" class="ws-input" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" /><button type="button" data-role="validate-btn" class="agy-btn agy-btn-outline has-icon">${ns.iconSvg('shield', 13)}<span>Validate</span></button><button type="button" data-role="link-btn" class="agy-btn agy-btn-primary has-icon">${ns.iconSvg('link', 13)}<span>Link Folder</span></button></div></div><div class="agy-card"><div class="agy-card-header"><div class="manager-card-title-group"><div class="manager-card-title-row"><span class="manager-card-title">Install from GitHub Repository</span><span class="agy-badge starting">Git Clone</span></div><div class="agy-card-meta">Clones into ~/.gemini/hangar/packages/ with --ignore-scripts protection</div></div></div><div class="ws-add-row"><input type="text" data-role="github-repo-input" class="ws-input" placeholder="https://github.com/owner/repo or owner/repo…" /><button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">${ns.iconSvg('download', 13)}<span>Install</span></button></div><div data-role="gh-consent-bar" class="agy-consent-bar hidden"><span data-role="gh-consent-text"></span><div class="consent-actions"><button type="button" data-role="gh-consent-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="gh-consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button></div></div></div></div>`);
+      ns.setHtml(paneEl, ns.html`
+        <div data-role="sideload-shell">
+          <div data-role="sideload-banner" class="agy-banner hidden"></div>
+          <div class="agy-card">
+            <div class="agy-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Link Local Sidecar Folder</span>
+                  <span class="agy-badge running">Development</span>
+                </div>
+                <div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div>
+              </div>
+              <agy-toggle-group class="agy-toggle-group">
+                <button type="button" data-scope="project" class="agy-toggle-item">
+                  ${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span>
+                </button>
+                <button type="button" data-scope="global" class="agy-toggle-item">
+                  ${ns.iconSvg('globe', 13)}<span>Global (*)</span>
+                </button>
+              </agy-toggle-group>
+            </div>
+            <div class="ws-add-row">
+              <input type="text" data-role="local-path-input" class="ws-input" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" />
+              <button type="button" data-role="validate-btn" class="agy-btn agy-btn-outline has-icon">
+                ${ns.iconSvg('shield', 13)}<span>Validate</span>
+              </button>
+              <button type="button" data-role="link-btn" class="agy-btn agy-btn-primary has-icon">
+                ${ns.iconSvg('link', 13)}<span>Link Folder</span>
+              </button>
+            </div>
+          </div>
+          <div class="agy-card">
+            <div class="agy-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Install from GitHub Repository</span>
+                  <span class="agy-badge starting">Git Clone</span>
+                </div>
+                <div class="agy-card-meta">Clones into ~/.gemini/hangar/packages/ with --ignore-scripts protection</div>
+              </div>
+            </div>
+            <div class="ws-add-row">
+              <input type="text" data-role="github-repo-input" class="ws-input" placeholder="https://github.com/owner/repo or owner/repo…" />
+              <button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">
+                ${ns.iconSvg('download', 13)}<span>Install</span>
+              </button>
+            </div>
+            <div data-role="gh-consent-bar" class="agy-consent-bar hidden">
+              <span data-role="gh-consent-text"></span>
+              <div class="consent-actions">
+                <button type="button" data-role="gh-consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
+                <button type="button" data-role="gh-consent-confirm" class="agy-btn agy-btn-primary">Confirm Install</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
       shell = paneEl.querySelector('[data-role="sideload-shell"]');
       const q = (role) => shell.querySelector(`[data-role="${role}"]`);
       const runSideload = async (fn) => {
-        try { await fn(paneEl._ctx || {}); } catch (err) { sideloadFeedback = { tone: 'err', text: err.message }; }
+        try {
+          await fn(paneEl._ctx || {});
+        } catch (err) {
+          sideloadFeedback = { tone: 'err', text: err.message };
+        }
         syncSideloadState(paneEl);
       };
-      shell.querySelectorAll('[data-scope]').forEach((btn) => btn.addEventListener('click', () => {
-        sideloadScope = btn.dataset.scope;
-        syncSideloadState(paneEl);
-      }));
+      shell.querySelectorAll('[data-scope]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          sideloadScope = btn.dataset.scope;
+          syncSideloadState(paneEl);
+        });
+      });
       const localInput = q('local-path-input');
       q('validate-btn').addEventListener('click', () => {
         const folderPath = localInput.value.trim();
@@ -194,7 +352,10 @@
         runSideload(async (curCtx) => {
           const res = await curCtx.onInspectLocal?.(folderPath);
           const tier = ns.formatCapabilityTier(res.capabilityTier);
-          sideloadFeedback = { tone: 'ok', text: `Verified "${res.displayName}" (${res.id}@${res.version}) • ${tier.label}${res.hasLifecycleScripts ? ' • ⚠️ Has lifecycle scripts' : ''}` };
+          sideloadFeedback = {
+            tone: 'ok',
+            text: `Verified "${res.displayName}" (${res.id}@${res.version}) • ${tier.label}${res.hasLifecycleScripts ? ' • ⚠️ Has lifecycle scripts' : ''}`,
+          };
         });
       });
       q('link-btn').addEventListener('click', () => {
@@ -202,7 +363,11 @@
         if (!folderPath) return;
         runSideload(async (curCtx) => {
           const wsPath = curCtx.activeWorkspace?.workspacePath || '';
-          const res = await curCtx.onLinkLocal?.({ folderPath, scope: sideloadScope, workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']) });
+          const res = await curCtx.onLinkLocal?.({
+            folderPath,
+            scope: sideloadScope,
+            workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']),
+          });
           localInput.value = '';
           sideloadFeedback = { tone: 'ok', text: `Linked ${res.sidecarId} and enabled via Language Server.` };
           curCtx.onSwitchTab?.('installed');
@@ -229,13 +394,16 @@
         runSideload(async (curCtx) => {
           const wsPath = curCtx.activeWorkspace?.workspacePath || '';
           const res = await curCtx.onInstallRemote?.({
-            gitRepo, scope: sideloadScope, workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']),
+            gitRepo,
+            scope: sideloadScope,
+            workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']),
             acceptedTier: ghPendingTier || 'TIER_1_TELEMETRY',
           });
           if (res?.needsConsent) {
             ghPendingTier = res.scannedTier;
             ns.setHtml(ghConsentText, ns.scannedTierConsentHtml(res.scannedTier));
-            return void ghConsentBar.classList.remove('hidden');
+            ghConsentBar.classList.remove('hidden');
+            return;
           }
           ghPendingTier = '';
           ghInput.value = '';

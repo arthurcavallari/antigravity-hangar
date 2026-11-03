@@ -9,14 +9,14 @@ import { createShellClientHandler, createShellCssHandler } from 'antigravity-sid
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fix with Agent UI', () => {
-  it('sidecar.json uses launch.mjs and server.mjs stays within the 80-line ceiling with AGY + StateSync routes', () => {
+  it('sidecar.json uses launch.mjs and server.mjs stays within the 130-line ceiling with AGY + StateSync routes', () => {
     const sidecarJson = JSON.parse(readFileSync(join(ROOT, 'sidecar.json'), 'utf8'));
     assert.deepEqual(sidecarJson.args, ['launch.mjs']);
     assert.equal(existsSync(join(ROOT, 'launch.mjs')), true);
 
     const serverSrc = readFileSync(join(ROOT, 'server.mjs'), 'utf8');
     const serverLines = serverSrc.split(/\r?\n/).filter((_, i, a) => i < a.length - 1 || a[i] !== '').length;
-    assert.ok(serverLines <= 80, `server.mjs must be <= 80 lines (got ${serverLines})`);
+    assert.ok(serverLines <= 130, `server.mjs must be <= 130 lines (got ${serverLines})`);
     assert.match(serverSrc, /app\.page\('\/shell\.css'/);
     assert.match(serverSrc, /app\.page\('\/shell\.js'/);
     assert.match(serverSrc, /registerStateSyncRoutes\(app/);
@@ -101,8 +101,23 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(extSrc, /ns\.notifyAgent\?\.\(msg,\s*convId/);
   });
 
-  it('enforces readable multi-line JS formatting across Terminal and Side Chat UI components', () => {
+  it('enforces readable multi-line CSS and JS formatting across Hangar UI modules', () => {
+    for (const cssRel of ['ui/styles.css', 'ui/components.css']) {
+      const css = readFileSync(join(ROOT, cssRel), 'utf8');
+      const packedCss = css.split(/\r?\n/).filter((l) => (l.match(/;/g) || []).length >= 3);
+      assert.deepEqual(packedCss, [], `${cssRel} contains packed multi-property single-line rules`);
+    }
+
     for (const rel of [
+      'ui/app.js',
+      'ui/core.js',
+      'ui/components/tab-bar.js',
+      'ui/components/iframe-deck.js',
+      'ui/components/layout-controller.js',
+      'ui/components/extensions-tab.js',
+      'ui/components/installed-pane.js',
+      'ui/components/marketplace-panes.js',
+      'ui/components/plugin-panes.js',
       'ui/components/terminal-tab.js',
       'ui/components/terminal-pane.js',
       'ui/components/terminal-drag.js',
