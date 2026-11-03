@@ -100,4 +100,28 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(extSrc, /data-role="fix-agent-btn"/);
     assert.match(extSrc, /ns\.notifyAgent\?\.\(msg,\s*convId/);
   });
+
+  it('enforces readable multi-line JS formatting across Terminal and Side Chat UI components', () => {
+    for (const rel of [
+      'ui/components/terminal-tab.js',
+      'ui/components/terminal-pane.js',
+      'ui/components/terminal-drag.js',
+      'ui/components/terminal-groups.js',
+      'ui/components/terminal-quote.js',
+      'ui/components/terminal-emulator.js',
+      'ui/components/sidechat-pane.js',
+      'ui/components/sidechat-store.js',
+      'ui/components/sidechat-strip.js',
+    ]) {
+      const src = readFileSync(join(ROOT, rel), 'utf8');
+      const commaDecls = src
+        .split(/\r?\n/)
+        .filter((l) => /^\s*(let|const)\s+[A-Za-z0-9_$]+\s*=\s*[^,;(]+,\s*[A-Za-z0-9_$]+\s*=/.test(l));
+      assert.deepEqual(commaDecls, [], `${rel} contains comma-chained variable declarations`);
+      const multiStmt = src
+        .split(/\r?\n/)
+        .filter((l) => !l.includes('for (') && (l.match(/;/g) || []).length >= 3);
+      assert.deepEqual(multiStmt, [], `${rel} contains packed multi-statement lines`);
+    }
+  });
 });
