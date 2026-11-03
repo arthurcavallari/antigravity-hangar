@@ -1,15 +1,8 @@
-/**
- * @fileoverview Plugin parts of Hangar's Extensions view: the Plugin and ported-from badges, the port
- * report shown before consent, the preview -> consent -> install flow, and the Installed plugins list.
- * Plugins have no web UI, so they never get a tab.
- */
-
+/** @fileoverview Plugin badges, port report consent flow, and Installed plugins list. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-
   const SOURCE_LABELS = { claude: 'Claude Code', gemini: 'Gemini CLI', cursor: 'Cursor', roo: 'Roo Code', codex: 'Codex' };
 
-  // "Plugin", plus where a port came from. Takes a registry package ({ port }) or an installed plugin ({ portedFrom }).
   ns.pluginBadgesHtml = function pluginBadgesHtml({ port, portedFrom } = {}) {
     const sources = portedFrom?.length ? portedFrom : port?.from && port.from !== 'auto' ? [port.from] : [];
     const label = sources.map((s) => SOURCE_LABELS[s] || s).join(' + ') || 'another tool';
@@ -22,14 +15,12 @@
     return `<div class="port-report-title">${ns.escHtml(title)} (${items.length})</div><ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
   }
 
-  // The consent text for a plugin: its scanned tier, what will and won't port, audit findings, and the restart
   ns.pluginConsentHtml = function pluginConsentHtml(res = {}) {
     const esc = ns.escHtml;
     const report = res.report || {};
     const tier = ns.formatCapabilityTier(res.scannedTier || report.tier);
     const native = (report.ecosystems || []).includes('antigravity');
-    const flags = (report.flags || []).map((f) =>
-      `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${f.line}` : ''}</code>` : ''}`);
+    const flags = (report.flags || []).map((f) => `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${f.line}` : ''}</code>` : ''}`);
     const unported = (report.unported || []).map((u) => `<code>${esc(u.item)}</code>: ${esc(u.reason)}`);
     const ported = (report.ported || []).map(esc);
     const summary = native
@@ -40,10 +31,7 @@
       <div><strong>${esc(tier.label)}:</strong> ${esc(why)}. Install anyway?</div>
       <details class="port-report"${flags.length || unported.length ? ' open' : ''}>
         <summary>${native ? 'Scan' : 'Port report'}: ${esc(summary)}</summary>
-        ${reportList('Audit findings', flags)}
-        ${reportList('Not ported', unported)}
-        ${reportList('Ported', ported)}
-        ${reportList('Warnings', (report.warnings || []).map(esc))}
+        ${reportList('Audit findings', flags)}${reportList('Not ported', unported)}${reportList('Ported', ported)}${reportList('Warnings', (report.warnings || []).map(esc))}
       </details>
       <div class="port-report-note">Antigravity lists a new plugin as soon as it is installed. If it does not appear, restart Antigravity.</div>`;
   };
@@ -51,32 +39,24 @@
   function pluginPayload(pkg, consent = {}) {
     const release = pkg.release || {};
     return {
-      pluginId: pkg.id,
-      gitRepo: release.gitRepo || '',
-      tarballUrl: release.tarballUrl || '',
-      sha256: release.sha256 || '',
-      ref: release.ref || '',
-      path: release.path || '',
-      port: pkg.port || null,
-      version: pkg.latestVersion || '',
-      ...consent,
+      pluginId: pkg.id, gitRepo: release.gitRepo || '', tarballUrl: release.tarballUrl || '',
+      sha256: release.sha256 || '', ref: release.ref || '', path: release.path || '',
+      port: pkg.port || null, version: pkg.latestVersion || '', ...consent,
     };
   }
 
   function showConsent(card, els, res) {
-    // Installing with exactly what the user saw: a different scan comes back as needsConsent again
     card._pluginConsent = { acceptedTier: res.scannedTier, acceptedFlags: res.flagsDigest || '' };
-    els.consentText.innerHTML = ns.pluginConsentHtml(res);
+    ns.setHtml(els.consentText, ns.pluginConsentHtml(res));
     els.consentBar.classList.remove('hidden');
   }
 
-  // els: { btn, consentBar, consentText, errorEl, reset(label) } of a Discover or Installed card
   async function runPluginStep(card, els, busyLabel, idleLabel, step) {
     if (card._isInstalling) return;
     card._isInstalling = true;
     els.btn.disabled = true;
     els.btn.dataset.btnState = 'installing';
-    els.btn.innerHTML = `<span>${busyLabel}</span>`;
+    ns.setHtml(els.btn, ns.html`<span>${busyLabel}</span>`);
     els.consentBar.classList.add('hidden');
     els.errorEl.classList.add('hidden');
     let failed = false;
@@ -92,7 +72,6 @@
     }
   }
 
-  // Step 1: a dry-run port, whose report fills the consent bar
   ns.previewPluginInstall = function previewPluginInstall(card, els, ctx, pkg, idleLabel = 'Install') {
     card._pluginConsent = null;
     return runPluginStep(card, els, 'Checking…', idleLabel, async () => {
@@ -100,7 +79,6 @@
     });
   };
 
-  // Step 2, on Confirm: the real install
   ns.confirmPluginInstall = function confirmPluginInstall(card, els, ctx, pkg, idleLabel = 'Install') {
     if (!card._pluginConsent) return Promise.resolve();
     return runPluginStep(card, els, idleLabel === 'Update' ? 'Updating…' : 'Installing…', idleLabel, async () => {
@@ -113,80 +91,45 @@
 
   function countsText(counts) {
     if (!counts) return 'not loaded yet';
-    const parts = [['skills', 'skill'], ['agents', 'agent'], ['rules', 'rule'], ['hooks', 'hook'], ['mcpServers', 'MCP server']]
+    return [['skills', 'skill'], ['agents', 'agent'], ['rules', 'rule'], ['hooks', 'hook'], ['mcpServers', 'MCP server']]
       .filter(([key]) => counts[key] > 0)
-      .map(([key, noun]) => `${counts[key]} ${noun}${counts[key] === 1 ? '' : 's'}`);
-    return parts.join(', ') || 'empty';
+      .map(([key, noun]) => `${counts[key]} ${noun}${counts[key] === 1 ? '' : 's'}`)
+      .join(', ') || 'empty';
   }
 
   function createPluginCard(dir) {
-    const card = document.createElement('div');
-    card.className = 'agy-card';
+    const card = Object.assign(document.createElement('div'), { className: 'agy-card' });
     card.dataset.pluginDir = dir;
-    card.innerHTML = `
+    ns.setHtml(card, ns.html`
       <div class="agy-card-header">
-        <div class="manager-card-title-group">
-          <div class="manager-card-title-row">
-            <span data-role="title" class="manager-card-title"></span>
-            <span data-role="badges" class="badge-group"></span>
-          </div>
-          <div class="agy-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div>
-        </div>
-        <div class="agy-card-actions">
-          <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button>
-          <button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">
-            ${ns.iconSvg('delete', 14)}
-          </button>
-        </div>
+        <div class="manager-card-title-group"><div class="manager-card-title-row"><span data-role="title" class="manager-card-title"></span><span data-role="badges" class="badge-group"></span></div><div class="agy-card-meta">${ns.iconSvg('extension', 13)}<span data-role="meta"></span></div></div>
+        <div class="agy-card-actions"><button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button><button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">${ns.iconSvg('delete', 14)}</button></div>
       </div>
       <div data-role="restart-note" class="agy-banner hidden">Installed. Restart Antigravity to load it.</div>
-      <div data-role="consent-bar" class="agy-consent-bar hidden">
-        <span data-role="consent-text" class="consent-text"></span>
-        <div class="consent-actions">
-          <button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button>
-          <button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Update</button>
-        </div>
-      </div>
-      <div data-role="uninstall-confirm" class="agy-consent-bar hidden">
-        <span data-role="uninstall-confirm-text"></span>
-        <div class="consent-actions">
-          <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
-          <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
-        </div>
-      </div>
-      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
-    `;
-
+      <div data-role="consent-bar" class="agy-consent-bar hidden"><span data-role="consent-text" class="consent-text"></span><div class="consent-actions"><button type="button" data-role="consent-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="consent-confirm" class="agy-btn agy-btn-primary">Confirm Update</button></div></div>
+      <div data-role="uninstall-confirm" class="agy-consent-bar hidden"><span data-role="uninstall-confirm-text"></span><div class="consent-actions"><button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button><button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button></div></div>
+      <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>`);
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
     const els = {
-      btn: q('update-btn'),
-      consentBar: q('consent-bar'),
-      consentText: q('consent-text'),
-      errorEl: q('card-error'),
+      btn: q('update-btn'), consentBar: q('consent-bar'), consentText: q('consent-text'), errorEl: q('card-error'),
       reset: (label) => {
         els.btn.disabled = false;
         els.btn.dataset.btnState = '';
-        els.btn.innerHTML = `${ns.iconSvg('download', 13)}<span>${ns.escHtml(label)}</span>`;
+        ns.setHtml(els.btn, ns.html`${ns.iconSvg('download', 13)}<span>${ns.escHtml(label)}</span>`);
       },
     };
     els.reset('Update');
-    els.btn.addEventListener('click', () => {
-      if (card._regPkg) ns.previewPluginInstall(card, els, card._ctx, card._regPkg, 'Update');
-    });
+    els.btn.addEventListener('click', () => card._regPkg && ns.previewPluginInstall(card, els, card._ctx, card._regPkg, 'Update'));
     q('consent-cancel').addEventListener('click', () => {
       card._pluginConsent = null;
       els.consentBar.classList.add('hidden');
     });
-    q('consent-confirm').addEventListener('click', () => {
-      if (card._regPkg) ns.confirmPluginInstall(card, els, card._ctx, card._regPkg, 'Update');
-    });
-
+    q('consent-confirm').addEventListener('click', () => card._regPkg && ns.confirmPluginInstall(card, els, card._ctx, card._regPkg, 'Update'));
     const uninstallBtn = q('uninstall-btn');
     const uninstallConfirm = q('uninstall-confirm');
     uninstallBtn.addEventListener('click', () => {
       const p = card._plugin;
-      q('uninstall-confirm-text').textContent =
-        `Uninstall ${p.name}?${p.disabled ? ' Hangar turns it back on first, so a later reinstall is not left disabled.' : ''}`;
+      q('uninstall-confirm-text').textContent = `Uninstall ${p.name}?${p.disabled ? ' Hangar turns it back on first, so a later reinstall is not left disabled.' : ''}`;
       uninstallConfirm.classList.remove('hidden');
     });
     q('uninstall-cancel').addEventListener('click', () => uninstallConfirm.classList.add('hidden'));
@@ -218,7 +161,7 @@
     if (card.dataset.sig !== sig) {
       card.dataset.sig = sig;
       card.querySelector('[data-role="title"]').textContent = p.name;
-      card.querySelector('[data-role="badges"]').innerHTML = [
+      ns.setHtml(card.querySelector('[data-role="badges"]'), [
         ns.pluginBadgesHtml(p),
         tier ? `<span class="agy-badge ${tier.state}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
         p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
@@ -226,7 +169,7 @@
         p.builtin ? '<span class="agy-badge stopped">Built-in</span>' : '',
         missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
         missingVars.length ? `<span class="agy-badge hibernated" title="Unset env vars: ${ns.escHtml(missingVars.join(', '))}">Needs Env (${missingVars.length})</span>` : '',
-      ].join('');
+      ].join(''));
       const origin = managed ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar') : p.builtin ? 'ships with Antigravity' : 'installed outside Hangar';
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
       card.querySelector('[data-role="restart-note"]').classList.toggle('hidden', !p.restartRequired);
@@ -244,29 +187,17 @@
     sectionEl.classList.toggle('hidden', plugins.length === 0);
     let listEl = sectionEl.querySelector('[data-role="plugin-list"]');
     if (!listEl) {
-      sectionEl.innerHTML = `
-        <div class="store-header plugin-section-header">
-          <div>
-            <div class="store-title"><span>Plugins</span><span data-role="plugin-count" class="agy-count-pill"></span></div>
-            <div class="store-subtitle">Skills, agents, rules, hooks and MCP servers for the agent. Plugins have no panel, so they don't get a tab.</div>
-          </div>
-        </div>
-        <div data-role="plugin-list"></div>
-      `;
+      ns.setHtml(sectionEl, ns.html`<div class="store-header plugin-section-header"><div><div class="store-title"><span>Plugins</span><span data-role="plugin-count" class="agy-count-pill"></span></div><div class="store-subtitle">Skills, agents, rules, hooks and MCP servers for the agent. Plugins have no panel, so they don't get a tab.</div></div></div><div data-role="plugin-list"></div>`);
       listEl = sectionEl.querySelector('[data-role="plugin-list"]');
     }
     sectionEl.querySelector('[data-role="plugin-count"]').textContent = String(plugins.length);
-
     const regMap = new Map((ctx.registryPackages || []).map((p) => [p.id, p]));
     const diagMap = new Map((ctx.pluginDiagnostics || []).map((d) => [d.id, d]));
     const seen = new Set();
     plugins.forEach((plugin, i) => {
       seen.add(plugin.dir);
       const card = listEl.querySelector(`.agy-card[data-plugin-dir="${CSS.escape(plugin.dir)}"]`) || createPluginCard(plugin.dir);
-      card._plugin = plugin;
-      card._ctx = ctx;
-      card._regPkg = plugin.pluginId ? regMap.get(plugin.pluginId) || null : null;
-      card._diag = diagMap.get(plugin.dir) || diagMap.get(plugin.pluginId) || null;
+      Object.assign(card, { _plugin: plugin, _ctx: ctx, _regPkg: plugin.pluginId ? regMap.get(plugin.pluginId) || null : null, _diag: diagMap.get(plugin.dir) || diagMap.get(plugin.pluginId) || null });
       syncPluginCard(card);
       if (listEl.children[i] !== card) listEl.insertBefore(card, listEl.children[i] || null);
     });

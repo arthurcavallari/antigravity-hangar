@@ -1,465 +1,247 @@
-/** @fileoverview Dual-engine Interactive Terminal view (Direct VT100 + Native jetbox_web) with iTerm2-style TabGroups and per-pane split headers. */
+/** @fileoverview Dual-engine Interactive Terminal view (Direct VT100 + Native jetbox_web) with TabGroups and split panes. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  ns.TERMINAL_TAB_ID = '__terminal__'; ns.TERMINAL_TAB_PREFIX = 'terminal__';
-  ns.isTerminalTabId = ns.isTerminalTabId || ((tabId = '') => tabId === ns.TERMINAL_TAB_ID || String(tabId || '').startsWith(ns.TERMINAL_TAB_PREFIX));
-  const instanceControllers = new Map(), sharedPanes = new Map(), closingIds = new Set();
-  ns.isTerminalClosing = (tid) => closingIds.has(tid);
-  ns.startInlineRename = function startInlineRename(pillEl, labelEl, opts = {}) {
-    if (window.AgyUI?.startInlineRename) {
-      return window.AgyUI.startInlineRename(pillEl, labelEl, opts);
-    }
-    if (!pillEl) return null;
-    if (labelEl && typeof labelEl === 'object' && !(labelEl.tagName || labelEl.nodeType || typeof labelEl.replaceWith === 'function' || labelEl.classList || labelEl.textContent !== undefined)) {
-      opts = labelEl;
-      labelEl = pillEl.querySelector?.('.agy-tab-label');
-    }
-    if (!labelEl) return null;
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.className = opts.inputClassName || 'agy-rename-input';
-    inp.value = opts.initialValue ?? labelEl.textContent ?? '';
-    let done = false;
-    pillEl._isRenaming = true;
-    const finish = (commit) => {
-      if (done) return;
-      done = true;
-      pillEl._isRenaming = false;
-      try { inp.replaceWith?.(labelEl); } catch {}
-      try { inp.remove?.(); } catch {}
-      if (commit) opts.onCommit?.(inp.value);
-      else opts.onCancel?.();
-    };
-    inp.addEventListener('keydown', (e) => {
-      e.stopPropagation?.();
-      if (e.key === 'Enter') finish(true);
-      else if (e.key === 'Escape') finish(false);
-    });
-    inp.addEventListener('blur', () => finish(true));
-    ['pointerdown', 'click', 'dblclick'].forEach((ev) => inp.addEventListener(ev, (e) => e.stopPropagation?.()));
-    labelEl.replaceWith?.(inp);
-    inp.focus?.();
-    inp.select?.();
-    return inp;
-  };
-
+  const instanceControllers = ns._termInstances, sharedPanes = ns._termSharedPanes;
   function createInstanceController(instanceTabId, rootId = '') {
-    let tabGroups = ns.readTabGroups(instanceTabId), activeGroupId = tabGroups[0]?.groupId || rootId || '', pendingSplit = null, engineMode = ns.readEngineMode();
-    let terminals = [], workspacePath = '', conversationId = '', callbacks = {}, pollBusy = false, isInstanceVisible = false, pendingFocus = false, currentSlotKey = 'top', isRenaming = false;
-    const panes = sharedPanes, rootEl = document.createElement('div');
-    rootEl.className = 'term-shell'; rootEl.dataset.instanceTabId = instanceTabId;
-    rootEl.innerHTML = `<div class="term-toolbar"><div class="agy-tab-strip" data-role="sessions"></div><div class="term-toolbar-actions">
-      <button type="button" class="agy-icon-btn" data-action="split" data-testid="terminal-split-button" title="Split Terminal">${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
-      <button type="button" class="agy-icon-btn" data-action="popout" title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}">${ns.iconSvg('dock_to_right', 14)}</button>
-    </div></div><div class="term-stage" data-role="stage"></div>`;
-    const toolbarEl = rootEl.querySelector('.term-toolbar'), actionsEl = rootEl.querySelector('.term-toolbar-actions'), sessionsEl = rootEl.querySelector('[data-role="sessions"]'), stageEl = rootEl.querySelector('[data-role="stage"]');
-    const popoutBtn = rootEl.querySelector('[data-action="popout"]'), splitBtn = rootEl.querySelector('[data-action="split"]');
-    const getActiveGroup = () => tabGroups.find((g) => g.groupId === activeGroupId) || tabGroups[0] || null, getActiveTerminalId = () => getActiveGroup()?.focusedPaneId || terminals[0]?.terminalId || '';
-    const getActiveTermObj = () => terminals.find((t) => t.terminalId === getActiveTerminalId()) || terminals[0] || null, getVisibleIds = () => getActiveGroup()?.paneIds || [];
-    const focusPane = (tid) => {
-      const run = () => {
-        const p = panes.get(tid);
-        if (engineMode === 'jetbox') { p?.frame?.focus?.(); p?.frame?.contentWindow?.focus?.(); try { p?.frame?.contentWindow?.postMessage({ type: 'hangar-jetbox-focus' }, '*'); } catch {} }
-        else p?.emu?.focus();
-      };
-      run(); setTimeout(run, 0);
+    let tabGroups = ns.readTabGroups(instanceTabId), activeGroupId = tabGroups[0]?.groupId || rootId || '', pendingSplit = null, engineMode = ns.readEngineMode(), terminals = [], workspacePath = '', conversationId = '', callbacks = {}, pollBusy = false, isVisible = false, pendingFocus = false, slotKey = 'top', isRenaming = false;
+    const rootEl = Object.assign(document.createElement('div'), { className: 'term-shell' });
+    rootEl.dataset.instanceTabId = instanceTabId;
+    ns.setHtml(rootEl, ns.html`<div class="term-toolbar"><agy-tab-strip class="agy-tab-strip" data-role="sessions"></agy-tab-strip><div class="term-toolbar-actions"><button type="button" class="agy-icon-btn" data-action="split" data-testid="terminal-split-button" title="Split Terminal">${ns.iconSvg('splitscreen_vertical_add', 15)}</button><button type="button" class="agy-icon-btn" data-action="popout" title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}">${ns.iconSvg('dock_to_right', 14)}</button></div></div><div class="term-stage" data-role="stage"></div>`);
+    const toolbarEl = rootEl.querySelector('.term-toolbar'), actionsEl = rootEl.querySelector('.term-toolbar-actions'), sessionsEl = rootEl.querySelector('[data-role="sessions"]'), stageEl = rootEl.querySelector('[data-role="stage"]'), popoutBtn = rootEl.querySelector('[data-action="popout"]'), splitBtn = rootEl.querySelector('[data-action="split"]');
+    const getActiveGroup = () => tabGroups.find((g) => g.groupId === activeGroupId) || tabGroups[0] || null;
+    const getActiveTid = () => getActiveGroup()?.focusedPaneId || terminals[0]?.terminalId || '';
+    const getActiveTerm = () => terminals.find((t) => t.terminalId === getActiveTid()) || terminals[0] || null;
+    const getVisibleIds = () => getActiveGroup()?.paneIds || [];
+    const resolveTitle = (tid, fb = 'pwsh') => ns.readCustomTermTitles?.()?.[tid] || ns.formatTermTitle(sharedPanes.get(tid)?.title || terminals.find((x) => x.terminalId === tid)?.title || fb);
+    const saveGroups = () => {
+      ns.setActiveGroupId?.(instanceTabId, activeGroupId);
+      ns.saveTabGroups(instanceTabId, tabGroups);
     };
-    function applyDropResult(drag, dropTarget) {
-      if (drag?.instanceTabId && drag.instanceTabId !== instanceTabId) { const res = ns.mergeTermDragIntoInstance?.(drag, { ...dropTarget, targetInstanceTabId: instanceTabId, pane: currentSlotKey }); if (res) callbacks.onCrossInstanceMerge?.(res); return; }
+    const refreshView = (notify = false) => {
+      renderToolbar();
+      renderStage();
+      if (notify && rootId) callbacks.onSessionChange?.();
+    };
+    const focusPane = (tid) => ns._focusTermPane(tid, engineMode);
+    const applyDropResult = (drag, dropTarget) => {
+      if (drag?.instanceTabId && drag.instanceTabId !== instanceTabId) return void callbacks.onCrossInstanceMerge?.(ns.mergeTermDragIntoInstance?.(drag, { ...dropTarget, targetInstanceTabId: instanceTabId, pane: slotKey }));
       const res = ns.applyTerminalDrop(tabGroups, drag, dropTarget);
-      tabGroups = res.groups; if (res.activeGroupId) activeGroupId = res.activeGroupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); ns.saveTabGroups(instanceTabId, tabGroups);
-      renderToolbar(); renderStage(); focusPane(getActiveTerminalId()); pollVisiblePanes(); if (rootId) callbacks.onSessionChange?.();
-    }
-    sessionsEl.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && sessionsEl.scrollWidth > sessionsEl.clientWidth) { e.preventDefault(); sessionsEl.scrollLeft += e.deltaY; } }, { passive: false });
+      tabGroups = res.groups;
+      activeGroupId = res.activeGroupId || activeGroupId;
+      saveGroups();
+      refreshView(true);
+      focusPane(getActiveTid());
+      pollVisiblePanes();
+    };
+    sessionsEl.addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && sessionsEl.scrollWidth > sessionsEl.clientWidth) e.preventDefault();
+      if (e.defaultPrevented) sessionsEl.scrollLeft += e.deltaY;
+    }, { passive: false });
     function normalizeGroupState() {
       const prevIds = tabGroups.map((g) => g.groupId), prevAct = activeGroupId || ns.getActiveGroupId?.(instanceTabId) || '';
       const res = ns.reconcileTabGroups(ns.readTabGroups(instanceTabId), terminals, pendingSplit), storedAct = ns.getActiveGroupId?.(instanceTabId);
-      tabGroups = res.groups; if (res.consumedPending) pendingSplit = null;
-      const nextSet = new Set(tabGroups.map((g) => g.groupId));
-      if (storedAct && nextSet.has(storedAct)) activeGroupId = storedAct;
-      if (!activeGroupId || !nextSet.has(activeGroupId)) {
-        const idx = prevAct ? prevIds.indexOf(prevAct) : -1;
-        activeGroupId = (idx >= 0 ? prevIds.slice(idx + 1).find((id) => nextSet.has(id)) : '') || tabGroups[idx >= 0 ? tabGroups.length - 1 : 0]?.groupId || '';
-      }
-      ns.setActiveGroupId?.(instanceTabId, activeGroupId); ns.saveTabGroups(instanceTabId, tabGroups);
+      tabGroups = res.groups;
+      if (res.consumedPending) pendingSplit = null;
+      const nextSet = new Set(tabGroups.map((g) => g.groupId)), idx = prevAct ? prevIds.indexOf(prevAct) : -1;
+      activeGroupId = (storedAct && nextSet.has(storedAct)) ? storedAct : (activeGroupId && nextSet.has(activeGroupId) ? activeGroupId : ((idx >= 0 ? prevIds.slice(idx + 1).find((id) => nextSet.has(id)) : '') || tabGroups[idx >= 0 ? tabGroups.length - 1 : 0]?.groupId || ''));
+      saveGroups();
     }
     function setFocusedPane(tid, focusInput = false) {
-      const g = tabGroups.find((grp) => grp.paneIds.includes(tid)); if (!g) return;
+      const g = tabGroups.find((grp) => grp.paneIds.includes(tid));
+      if (!g) return;
       const changed = activeGroupId !== g.groupId || g.focusedPaneId !== tid;
-      activeGroupId = g.groupId; g.focusedPaneId = tid; ns.setActiveGroupId?.(instanceTabId, activeGroupId); ns.saveTabGroups(instanceTabId, tabGroups);
+      activeGroupId = Object.assign(g, { focusedPaneId: tid }).groupId;
+      saveGroups();
       const vis = getVisibleIds();
-      for (const id of vis) { const p = panes.get(id); if (p) { p.wrap.classList.toggle('is-focused-pane', id === tid && vis.length > 1); p.dotEl?.classList.toggle('active', id === tid); } }
-      if (changed) { renderToolbar(); if (rootId) callbacks.onSessionChange?.(); }
+      vis.forEach((id) => sharedPanes.get(id)?.wrap.classList.toggle('is-focused-pane', id === tid && vis.length > 1));
+      vis.forEach((id) => sharedPanes.get(id)?.dotEl?.classList.toggle('active', id === tid));
+      if (changed) refreshView(true);
       if (focusInput) focusPane(tid);
     }
-    async function closeTerminalsByIds(tids = []) {
-      const targetIds = tids.filter(Boolean); if (!targetIds.length) return;
-      const popped = ns.getPoppedTerminalIds(), groupMap = ns.readGroupMap(), rmSet = new Set(targetIds);
-      for (const tid of targetIds) { closingIds.add(tid); delete groupMap[tid]; panes.get(tid)?.emu?.dispose(); panes.get(tid)?.wrap?.remove(); panes.delete(tid); }
-      terminals = terminals.filter((t) => !rmSet.has(t.terminalId));
-      if (!rootId && !terminals.length) ns.setMainTerminalOpen?.(false);
-      normalizeGroupState();
-      if (rootId) {
-        if (!terminals.length) {
-          popped.delete(rootId); for (const [k, v] of Object.entries(groupMap)) { if (v === rootId) delete groupMap[k]; }
-          ns.setPoppedTerminalIds(popped); ns.saveGroupMap(groupMap);
-          if (callbacks.onCrossInstanceMerge) callbacks.onCrossInstanceMerge({ removedSidecarId: instanceTabId, targetInstanceTabId: '', targetPane: currentSlotKey });
-          else callbacks.onSelectTab?.('', currentSlotKey);
-        } else if (rmSet.has(rootId)) {
-          const nextRoot = terminals[0].terminalId, nextTabId = `${ns.TERMINAL_TAB_PREFIX}${nextRoot}`, nextPopped = new Set([...popped].map((id) => (id === rootId ? nextRoot : id)));
-          delete groupMap[nextRoot];
-          for (const [k, v] of Object.entries(groupMap)) { if (v === rootId) groupMap[k] = nextRoot; }
-          ns.setPoppedTerminalIds(nextPopped); ns.saveGroupMap(groupMap);
-          ns.migrateTabGroups(instanceTabId, nextTabId, new Set(terminals.map((t) => t.terminalId)));
-          if (callbacks.onCrossInstanceMerge) callbacks.onCrossInstanceMerge({ replacedSidecarId: { from: instanceTabId, to: nextTabId }, targetInstanceTabId: nextTabId, targetPane: currentSlotKey });
-          else callbacks.onSelectTab?.(nextTabId, currentSlotKey);
-        } else ns.saveGroupMap(groupMap);
-      } else {
-        for (const tid of targetIds) popped.delete(tid);
-        ns.setPoppedTerminalIds(popped);
-        ns.saveGroupMap(groupMap);
-        if (!terminals.length) {
-          if (callbacks.onCrossInstanceMerge) callbacks.onCrossInstanceMerge({ removedSidecarId: ns.TERMINAL_TAB_ID, targetInstanceTabId: '', targetPane: currentSlotKey });
-          else callbacks.onSelectTab?.('', currentSlotKey);
-        }
-      }
-      renderToolbar(); renderStage(); const nextFoc = getActiveTerminalId(); if (nextFoc) focusPane(nextFoc);
-      await Promise.all(targetIds.map((tid) => ns.apiCall('/api/terminal/close', { terminalId: tid }).catch(() => {})));
-      await callbacks.onRefreshState?.(); setTimeout(() => targetIds.forEach((id) => closingIds.delete(id)), 1500);
-    }
-    const resolveTitle = (tid, fallback = 'pwsh') => ns.readCustomTermTitles?.()?.[tid] || ns.formatTermTitle(panes.get(tid)?.title || terminals.find((x) => x.terminalId === tid)?.title || fallback);
-    function startInlineRename(pill, tid) {
-      if (isRenaming) return;
-      const livePill = pill?.isConnected === false ? Array.from(sessionsEl.children || sessionsEl.childNodes || []).find((c) => c.dataset?.termTid === tid) : pill;
-      const lbl = livePill?.isConnected !== false ? (livePill?._slots?.labelEl || livePill?.querySelector?.('.agy-tab-label')) : null;
-      if (!lbl) return;
-      isRenaming = true;
-      ns.startInlineRename(livePill, lbl, {
-        initialValue: resolveTitle(tid),
-        inputClassName: 'agy-rename-input',
-        onCommit: (rawNext) => {
-          isRenaming = false;
-          const next = String(rawNext || '').trim();
-          ns.saveCustomTermTitle?.(tid, next);
-          ns.apiCall?.('/api/terminal/rename', { terminalId: tid, title: next })?.catch?.(() => {});
-          lbl.textContent = resolveTitle(tid);
-          renderToolbar(); renderStage(); if (rootId) callbacks.onSessionChange?.();
-        },
-        onCancel: () => {
-          isRenaming = false;
-          lbl.textContent = resolveTitle(tid);
-          renderToolbar(); renderStage();
-        },
-      });
-    }
-    function ensureDirectPane(tid) {
-      const bindHost = (pane) => {
-        pane.host = { close: (ids) => closeTerminalsByIds(ids), focus: (id) => setFocusedPane(id, false), onTitle: (id, next) => { const t = terminals.find((x) => x.terminalId === id); if (t) t.title = next; renderToolbar(); }, getTitle: (id) => resolveTitle(id, pane.title) };
-        Object.assign(pane.dragCfg, { kind: 'pane', groupId: () => getActiveGroup()?.groupId || '', terminalId: tid, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => currentSlotKey, getTitle: () => pane.host.getTitle(tid), onClick: () => setFocusedPane(tid, true), onSameInstanceDrop: applyDropResult });
-        return pane;
-      };
-      let p = panes.get(tid); if (p) return bindHost(p);
-      const wrap = document.createElement('div'), headerEl = document.createElement('div'), resizerEl = document.createElement('div');
-      wrap.className = 'term-pane'; wrap.dataset.terminalId = tid; wrap.dataset.testid = `terminal-pane-${tid}`; headerEl.className = 'term-pane-header hidden'; resizerEl.className = 'term-pane-resizer';
-      headerEl.innerHTML = `<div class="term-pane-header-title"><span class="term-pane-dot" data-role="pane-dot"></span><span class="term-pane-title" data-role="pane-title">pwsh</span></div><button type="button" class="term-pane-close" data-role="pane-close" title="Close Split Pane">${ns.iconSvg('close', 12)}</button>`;
-      wrap.append(resizerEl, headerEl);
-      let rPid = null, rStartX = 0, rPrevEl = null, rPrevW = 0, rCurW = 0;
-      resizerEl.addEventListener('pointerdown', (e) => { const prev = wrap._prevVisibleWrap || wrap.previousElementSibling; if (e.button !== 0 || !prev) return; e.preventDefault(); e.stopPropagation(); rPid = e.pointerId; rStartX = e.clientX; rPrevEl = prev; rPrevW = prev.getBoundingClientRect().width; rCurW = wrap.getBoundingClientRect().width; document.body?.classList?.add('resizing-split'); resizerEl.setPointerCapture?.(e.pointerId); });
-      resizerEl.addEventListener('pointermove', (e) => { if (rPid !== e.pointerId || !rPrevEl) return; const dx = Math.max(80 - rPrevW, Math.min(rCurW - 80, e.clientX - rStartX)); rPrevEl.style.flex = `${rPrevW + dx} 1 0%`; wrap.style.flex = `${rCurW - dx} 1 0%`; });
-      ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => resizerEl.addEventListener(ev, (e) => { if (rPid === e.pointerId) { rPid = null; rPrevEl = null; document.body?.classList?.remove('resizing-split'); try { resizerEl.releasePointerCapture?.(e.pointerId); } catch {} } }));
-      const titleEl = headerEl.querySelector('[data-role="pane-title"]'), dotEl = headerEl.querySelector('[data-role="pane-dot"]'), closeBtn = headerEl.querySelector('[data-role="pane-close"]');
-      closeBtn?.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
-      closeBtn?.addEventListener('click', (e) => { e.stopPropagation(); p?.host?.close([tid]); });
-      const emu = ns.createTerminalEmulator(wrap, {
-        onInput: (data) => ns.apiCall('/api/terminal/input', { terminalId: tid, data }).catch(() => {}),
-        onResize: (cols, rows) => { if (engineMode === 'direct') ns.apiCall('/api/terminal/input', { terminalId: tid, cols, rows }).catch(() => {}); },
-        onTitleChange: (nextTitle) => { const clean = ns.formatTermTitle(nextTitle); if (p) p.title = clean; if (titleEl) titleEl.textContent = resolveTitle(tid, clean); p?.host?.onTitle(tid, clean); },
-        onSelectionChange: (selInfo) => p?.quoteCtrl?.show(selInfo), onQuoteShortcut: (text) => p?.quoteCtrl?.triggerQuote(text),
-      });
-      const quoteCtrl = ns.createQuotePopupController(wrap, { getTerminalMeta: () => ({ terminalId: tid, title: resolveTitle(tid, p?.title || 'pwsh'), conversationId: conversationId && conversationId !== '_new' ? conversationId : '' }), onQuoted: () => p?.emu?.clearSelection() });
-      wrap.addEventListener('mousedown', (e) => { if (!e.target?.closest?.('.term-pane-close')) p?.host?.focus(tid); });
-      wrap.addEventListener('focusin', () => p?.host?.focus(tid));
-      p = bindHost({ wrap, headerEl, titleEl, dotEl, viewportEl: wrap.querySelector?.('.term-viewport'), frame: null, emu, quoteCtrl, dragCfg: {}, afterSeq: 0, lastWasScrollback: false, title: '', jetboxSelection: '' });
-      ns.bindTermPointerDrag?.(headerEl, p.dragCfg); panes.set(tid, p); return p;
-    }
+    const closeTerminalsByIds = (tids = []) => ns._closeInstanceTerminalsByIds(tids, { rootId, instanceTabId, slotKey: () => slotKey, getTerminals: () => terminals, setTerminals: (next) => (terminals = next), normalizeGroupState, refreshView, getActiveTid, focusPane, callbacks: () => callbacks });
+    const commitRename = (tid, rawNext) => {
+      const next = String(rawNext || '').trim();
+      isRenaming = false;
+      ns.saveCustomTermTitle?.(tid, next);
+      ns.apiCall?.('/api/terminal/rename', { terminalId: tid, title: next })?.catch?.(() => {});
+      refreshView(true);
+    };
+    const ensureDirectPane = (tid) => ns._ensureDirectTermPane(tid, {
+      instanceTabId, sessionsEl, stageEl, close: closeTerminalsByIds, focus: setFocusedPane, getTitle: resolveTitle, getEngineMode: () => engineMode,
+      getConversationId: () => (conversationId && conversationId !== '_new' ? conversationId : ''), getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => slotKey, onSameInstanceDrop: applyDropResult,
+      onTitle: (id, next) => renderToolbar(Object.assign(terminals.find((x) => x.terminalId === id) || {}, { title: next })),
+    });
     function renderToolbar() {
       if (ns.activeTermDrag?.instanceTabId === instanceTabId || ns.pointerTermInstanceId === instanceTabId || isRenaming) return;
       engineMode = ns.readEngineMode();
       const activeGrp = getActiveGroup(), visibleIds = getVisibleIds(), hasSessions = tabGroups.length > 0;
-      toolbarEl?.classList.toggle('hidden', !hasSessions); actionsEl?.classList.toggle('hidden', !hasSessions);
-      popoutBtn?.classList.toggle('active', Boolean(rootId)); splitBtn?.classList.toggle('active', visibleIds.length > 1);
-      const togglePin = (grp) => { grp.pinned = !grp.pinned; tabGroups = [...tabGroups.filter((g) => g.pinned), ...tabGroups.filter((g) => !g.pinned)]; ns.saveTabGroups(instanceTabId, tabGroups); renderToolbar(); };
-      const openPillContextMenu = (e, pill, grp, gIdx) => {
-        const focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
-        const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
-        const others = tabGroups.filter((g) => g.groupId !== grp.groupId && !g.pinned), right = tabGroups.slice(gIdx + 1).filter((g) => !g.pinned);
-        ns.openTabContextMenu?.(e, [
-          { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(grp) },
-          { id: 'rename-tab', label: 'Rename Terminal…', onClick: () => startInlineRename(pill, focTid) },
-          { id: 'split-tab', label: 'Split Terminal Right', onClick: () => spawnTerminal(focTid) },
-          { id: 'quote-tab', label: 'Quote Terminal in Chat', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.showTerminalQuoteToast?.(rootEl, `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`); } },
-          { id: 'quote-ask-tab', label: 'Quote & Ask Agent…', onClick: () => { const sel = (engineMode === 'jetbox' ? panes.get(focTid)?.jetboxSelection : panes.get(focTid)?.emu?.getSelection()) || '', qp = ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: cleanTitle, selectionContent: sel }); ns.openTerminalQuoteComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || '') }); } },
-          { id: 'toggle-engine', label: engineMode === 'jetbox' ? 'Switch to Direct VT100 Engine' : 'Switch to Native Terminal Engine', onClick: () => { ns.saveEngineMode(engineMode === 'jetbox' ? 'direct' : 'jetbox'); renderToolbar(); renderStage(); } },
-          { separator: true },
-          { id: 'close-tab', label: 'Close Tab', disabled: isPinned, onClick: () => closeTerminalsByIds(grp.paneIds) },
-          { id: 'close-other-tabs', label: 'Close Other Tabs', disabled: !others.length, onClick: () => { activeGroupId = grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); closeTerminalsByIds(others.flatMap((g) => g.paneIds)); } },
-          { id: 'close-tabs-to-the-right', label: 'Close Tabs to the Right', disabled: !right.length, onClick: () => closeTerminalsByIds(right.flatMap((g) => g.paneIds)) },
-        ]);
+      [toolbarEl, actionsEl].forEach((el) => el?.classList.toggle('hidden', !hasSessions));
+      popoutBtn?.classList.toggle('active', Boolean(rootId));
+      splitBtn?.classList.toggle('active', visibleIds.length > 1);
+      const togglePin = (grp) => {
+        grp.pinned = !grp.pinned;
+        tabGroups = [...tabGroups.filter((g) => g.pinned), ...tabGroups.filter((g) => !g.pinned)];
+        ns.saveTabGroups(instanceTabId, tabGroups);
+        renderToolbar();
       };
-      if (window.AgyUI?.reconcileTabStrip) {
-        const stripItems = tabGroups.map((grp, gIdx) => {
-          const isCurrent = grp.groupId === activeGrp?.groupId, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
-          const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
-          const isExternal = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal);
-          return {
-            id: focTid,
-            grp,
-            gIdx,
-            label: cleanTitle,
-            icon: 'terminal',
-            iconSize: 16,
-            active: isCurrent,
-            pinned: isPinned,
-            closable: !isPinned,
-            renamable: true,
-            badgeText: grp.paneIds.length > 1 ? `(${grp.paneIds.length})` : '',
-            externalBadge: isExternal,
-            title: `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`,
-            dataset: { termTid: focTid, pinned: isPinned ? 'true' : 'false', external: isExternal ? 'true' : 'false', testid: `terminal-tab-${focTid}` },
-          };
-        });
-        window.AgyUI.reconcileTabStrip(sessionsEl, stripItems, {
-          idDatasetKey: 'termTid',
-          emptyHint: 'Drop a terminal tab here',
-          addButton: hasSessions
-            ? { role: 'term-add-tab', testId: 'aux-pane-new-tab-button', title: 'New Terminal Tab', onClick: (e) => { e?.stopPropagation?.(); spawnTerminal(''); } }
-            : null,
-          onClose: (_id, item) => closeTerminalsByIds(item.grp.paneIds),
-          onUnpin: (_id, item) => togglePin(item.grp),
-          onRenameStart: () => { isRenaming = true; },
-          onRenameCancel: () => { isRenaming = false; },
-          onRename: (id, rawNext) => {
-            isRenaming = false;
-            const next = String(rawNext || '').trim();
-            ns.saveCustomTermTitle?.(id, next);
-            ns.apiCall?.('/api/terminal/rename', { terminalId: id, title: next })?.catch?.(() => {});
-            renderToolbar(); renderStage(); if (rootId) callbacks.onSessionChange?.();
-          },
-          onContextMenu: (_id, item, e, pill) => openPillContextMenu(e, pill, item.grp, item.gIdx),
-          bindDrag: (pill, item) => {
-            ns.bindTermPointerDrag?.(pill, {
-              kind: 'tab', groupId: () => item.grp.groupId, terminalId: item.id, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => currentSlotKey,
-              onClick: () => { if (activeGroupId !== item.grp.groupId) { activeGroupId = item.grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); for (const c of Array.from(sessionsEl.children || sessionsEl.childNodes || [])) c.classList?.toggle?.('active', c === pill); renderStage(); if (rootId) callbacks.onSessionChange?.(); } focusPane(getActiveTerminalId()); pollVisiblePanes(); }, onSameInstanceDrop: applyDropResult,
-            });
-          },
-        });
-        return;
-      }
-      ns.clear(sessionsEl);
-      if (Array.isArray(sessionsEl.childNodes)) sessionsEl.childNodes.length = 0;
-      if (!hasSessions) {
-        const hint = document.createElement('span'); hint.className = 'agy-tab-drop-hint'; hint.textContent = 'Drop a terminal tab here';
-        sessionsEl.appendChild(hint);
-        return;
-      }
-      tabGroups.forEach((grp, gIdx) => {
-        const isCurrent = grp.groupId === activeGrp?.groupId, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
-        const t = terminals.find((x) => x.terminalId === focTid), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
-        const isExternal = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal);
-        const pill = document.createElement('button');
-        pill.type = 'button'; pill.className = `agy-tab${isCurrent ? ' active' : ''}`; pill.dataset.pinned = isPinned ? 'true' : 'false'; pill.dataset.termTid = focTid; pill.dataset.external = isExternal ? 'true' : 'false'; pill.dataset.testid = `terminal-tab-${focTid}`;
-        pill.title = `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`;
-        const badgeHtml = grp.paneIds.length > 1 ? `<span class="agy-tab-badge">(${grp.paneIds.length})</span>` : '';
-        const extBadgeHtml = isExternal ? `<span class="agy-tab-ext-badge" title="Opened outside Hangar (shared with Antigravity)">${ns.iconSvg('open_in_new', 11)}</span>` : '';
-        const trailHtml = isPinned ? `<span class="agy-tab-pin" data-pin-gid="${ns.escHtml(grp.groupId)}" title="Unpin Tab">${ns.iconSvg('keep', 16)}</span>` : `<span class="agy-tab-close-wrap"><span class="agy-tab-close" data-close-gid="${ns.escHtml(grp.groupId)}" title="Close Tab">${ns.iconSvg('close', 14)}</span></span>`;
-        pill.innerHTML = `<span class="agy-tab-icon">${ns.iconSvg('terminal', 16)}</span><span class="agy-tab-label">${ns.escHtml(cleanTitle)}</span>${badgeHtml}${extBadgeHtml}${trailHtml}`;
-        pill.querySelector('[data-close-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); closeTerminalsByIds(grp.paneIds); });
-        pill.querySelector('[data-pin-gid]')?.addEventListener('click', (e) => { e.stopPropagation(); togglePin(grp); });
-        pill.addEventListener('dblclick', (e) => { e.stopPropagation(); startInlineRename(pill, focTid); });
-        pill.addEventListener('auxclick', (e) => { if (e.button === 1 && !isPinned) { e.preventDefault(); e.stopPropagation(); closeTerminalsByIds(grp.paneIds); } });
-        pill.addEventListener('contextmenu', (e) => openPillContextMenu(e, pill, grp, gIdx));
-        ns.bindTermPointerDrag?.(pill, {
-          kind: 'tab', groupId: grp.groupId, terminalId: focTid, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => currentSlotKey,
-          onClick: () => { if (activeGroupId !== grp.groupId) { activeGroupId = grp.groupId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); for (const c of Array.from(sessionsEl.children || [])) c.classList?.toggle('active', c === pill); renderStage(); if (rootId) callbacks.onSessionChange?.(); } focusPane(getActiveTerminalId()); pollVisiblePanes(); }, onSameInstanceDrop: applyDropResult,
-        });
-        sessionsEl.appendChild(pill);
+      const startRename = (pill, tid) => {
+        const live = pill?.isConnected === false ? Array.from(sessionsEl.children || sessionsEl.childNodes || []).find((c) => c.dataset?.termTid === tid) : pill;
+        const lbl = !isRenaming && live?.isConnected !== false ? (live?._slots?.labelEl || live?.querySelector?.('.agy-tab-label')) : null;
+        if (lbl && (isRenaming = true)) ns.startInlineRename?.(live, lbl, { initialValue: resolveTitle(tid), inputClassName: 'agy-rename-input', onCommit: (v) => commitRename(tid, v), onCancel: () => refreshView((isRenaming = false)) });
+      };
+      const stripItems = tabGroups.map((grp, gIdx) => {
+        const focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
+        const t = terminals.find((x) => x.terminalId === focTid), isExt = grp.paneIds.some((pid) => terminals.find((x) => x.terminalId === pid)?.isExternal), cleanTitle = resolveTitle(focTid, t?.title || 'pwsh');
+        return {
+          id: focTid, grp, gIdx, label: cleanTitle, icon: 'terminal', iconSize: 16, active: grp.groupId === activeGrp?.groupId, pinned: isPinned, closable: !isPinned, renamable: true, badgeText: grp.paneIds.length > 1 ? `(${grp.paneIds.length})` : '', externalBadge: isExt,
+          title: `${cleanTitle}${t?.cwd ? ` — ${t.cwd}` : ''}${isExt ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${isPinned ? ' · Pinned' : ''} (Drag to reorder, split, or move across Hangar)`,
+          dataset: { termTid: focTid, pinned: isPinned ? 'true' : 'false', external: isExt ? 'true' : 'false', testid: `terminal-tab-${focTid}` },
+        };
       });
-      const addTabBtn = document.createElement('button');
-      addTabBtn.type = 'button'; addTabBtn.className = 'agy-icon-btn agy-tab-add-btn'; addTabBtn.dataset.testid = 'aux-pane-new-tab-button'; addTabBtn.title = 'New Terminal Tab';
-      addTabBtn.innerHTML = ns.iconSvg('add', 16); addTabBtn.addEventListener('click', (e) => { e.stopPropagation(); spawnTerminal(''); });
-      sessionsEl.appendChild(addTabBtn);
-    }
-    function renderStage() {
-      const active = getActiveTermObj(), activeTid = getActiveTerminalId();
-      stageEl.dataset.testid = 'terminal-split-container';
-      if (!active) {
-        stageEl.innerHTML = `<div class="empty-split-zone"><button type="button" class="agy-btn agy-btn-primary has-icon" data-role="spawn-empty">${ns.iconSvg('add', 14)}<span>Launch Interactive Terminal</span></button></div>`;
-        stageEl.querySelector('[data-role="spawn-empty"]')?.addEventListener('click', () => spawnTerminal()); return;
-      }
-      const visibleIds = getVisibleIds(), visSet = new Set(visibleIds), instanceIds = new Set(terminals.map((t) => t.terminalId));
-      const isSplit = visibleIds.length > 1, isJetbox = engineMode === 'jetbox';
-      const isLight = document.body.classList.contains('theme-light'), uiTok = new URLSearchParams(window.location?.search || '').get('token') || '';
-      for (const ch of Array.from(stageEl.children || [])) {
-        const cid = ch.dataset?.terminalId;
-        if (!cid || !instanceIds.has(cid)) { ch._mountedParent = null; ch.remove?.(); }
-        else if (!visSet.has(cid)) { ch.classList.add('hidden'); ch.classList.remove('is-split-secondary', 'is-focused-pane'); ch.dataset.active = 'false'; }
-      }
-      stageEl.querySelectorAll('.empty-split-zone, .agy-empty-state').forEach((el) => el.remove());
-      visibleIds.forEach((tid, idx) => {
-        const p = ensureDirectPane(tid), t = terminals.find((x) => x.terminalId === tid), cleanTitle = resolveTitle(tid, p.title || t?.title || 'pwsh'), isFoc = tid === activeTid;
-        const wasHidden = p.wrap.classList.contains('hidden');
-        p.wrap.classList.remove('hidden');
-        p.wrap.classList.toggle('is-split-secondary', isSplit && idx > 0);
-        p.wrap._prevVisibleWrap = isSplit && idx > 0 ? panes.get(visibleIds[idx - 1])?.wrap || null : null;
-        if (p.wrap?.style) { p.wrap.style.order = String(idx); if (!isSplit) p.wrap.style.flex = ''; }
-        p.headerEl?.classList.toggle('hidden', !isSplit); if (p.titleEl && p.titleEl.textContent !== cleanTitle) p.titleEl.textContent = cleanTitle;
-        p.dotEl?.classList.toggle('active', isFoc); p.wrap.dataset.active = isFoc ? 'true' : 'false';
-        p.wrap.classList.toggle('is-focused-pane', isFoc && isSplit); p.viewportEl?.classList.toggle('hidden', isJetbox);
-        if (isJetbox) {
-          const effCid = (conversationId && conversationId !== '_new') ? conversationId : (t?.conversationId || tid), src = `/jetbox-terminal?cascadeId=${encodeURIComponent(effCid)}&terminalId=${encodeURIComponent(tid)}&hostTheme=${isLight ? 'light' : 'dark'}&v=11${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
-          if (!p.frame) {
-            p.frame = document.createElement('iframe'); p.frame.className = 'term-jetbox-frame'; p.frame.dataset.loadedSrc = src; p.frame.src = src;
-            p.frame.addEventListener?.('load', () => { const te = ns.getLatestThemeEvent?.(); if (te) try { p.frame.contentWindow?.postMessage(te, '*'); } catch {} if (isInstanceVisible && tid === getActiveTerminalId()) focusPane(tid); });
-            p.wrap.appendChild(p.frame);
-          } else if (p.frame.dataset.loadedSrc !== src) { p.frame.dataset.loadedSrc = src; p.frame.src = src; }
-          else if (wasHidden) { try { p.frame.contentWindow?.postMessage({ type: 'hangar-jetbox-shown', focus: isFoc }, '*'); } catch {} }
-        } else if (p.frame) { p.frame.remove?.(); p.frame = null; }
-        if (p.wrap.parentElement !== stageEl && p.wrap._mountedParent !== stageEl) { p.wrap._mountedParent = stageEl; stageEl.appendChild(p.wrap); }
+      const toggleEngine = () => refreshView(ns.saveEngineMode(engineMode === 'jetbox' ? 'direct' : 'jetbox'));
+      const closeOthers = (grpId, others) => {
+        ns.setActiveGroupId?.(instanceTabId, (activeGroupId = grpId));
+        closeTerminalsByIds(others.flatMap((g) => g.paneIds));
+      };
+      window.AgyUI?.reconcileTabStrip?.(sessionsEl, stripItems, {
+        idDatasetKey: 'termTid', emptyHint: 'Drop a terminal tab here',
+        addButton: hasSessions ? { role: 'term-add-tab', testId: 'aux-pane-new-tab-button', title: 'New Terminal Tab', onClick: () => spawnTerminal('') } : null,
+        onClose: (_id, item) => closeTerminalsByIds(item.grp.paneIds), onUnpin: (_id, item) => togglePin(item.grp),
+        onRenameStart: () => (isRenaming = true), onRenameCancel: () => (isRenaming = false), onRename: commitRename,
+        onContextMenu: (_id, item, e, pill) => {
+          const grp = item.grp, focTid = grp.focusedPaneId || grp.paneIds[0], isPinned = Boolean(grp.pinned);
+          const t = terminals.find((x) => x.terminalId === focTid), others = tabGroups.filter((g) => g.groupId !== grp.groupId && !g.pinned), right = tabGroups.slice(item.gIdx + 1).filter((g) => !g.pinned);
+          const getQuote = () => ns.copyTerminalQuoteToClipboard({ terminalId: focTid, title: resolveTitle(focTid, t?.title || 'pwsh'), selectionContent: (engineMode === 'jetbox' ? sharedPanes.get(focTid)?.jetboxSelection : sharedPanes.get(focTid)?.emu?.getSelection()) || '' });
+          ns.openTabContextMenu?.(e, [
+            { id: isPinned ? 'unpin-tab' : 'pin-tab', label: isPinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(grp) },
+            { id: 'rename-tab', label: 'Rename Terminal…', onClick: () => startRename(pill, focTid) },
+            { id: 'split-tab', label: 'Split Terminal Right', onClick: () => spawnTerminal(focTid) },
+            { id: 'quote-tab', label: 'Quote Terminal in Chat', onClick: () => ns.showTerminalQuoteToast?.(rootEl, `Copied @${getQuote().cleanName} mention pill — press Ctrl+V in chat`) },
+            { id: 'quote-ask-tab', label: 'Quote & Ask Agent…', onClick: () => ns.openTerminalQuoteComposer?.(rootEl, getQuote(), { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || '') }) },
+            { id: 'toggle-engine', label: engineMode === 'jetbox' ? 'Switch to Direct VT100 Engine' : 'Switch to Native Terminal Engine', onClick: toggleEngine },
+            { separator: true },
+            { id: 'close-tab', label: 'Close Tab', disabled: isPinned, onClick: () => closeTerminalsByIds(grp.paneIds) },
+            { id: 'close-other-tabs', label: 'Close Other Tabs', disabled: !others.length, onClick: () => closeOthers(grp.groupId, others) },
+            { id: 'close-tabs-to-the-right', label: 'Close Tabs to the Right', disabled: !right.length, onClick: () => closeTerminalsByIds(right.flatMap((g) => g.paneIds)) },
+          ]);
+        },
+        bindDrag: (pill, item) => ns.bindTermPointerDrag?.(pill, {
+          kind: 'tab', groupId: () => item.grp.groupId, terminalId: item.id, instanceTabId, sessionsEl, stageEl, getActiveGroupId: () => getActiveGroup()?.groupId || '', getSlotKey: () => slotKey,
+          onClick: () => {
+            if (activeGroupId !== item.grp.groupId) {
+              ns.setActiveGroupId?.(instanceTabId, (activeGroupId = item.grp.groupId));
+              Array.from(sessionsEl.children || sessionsEl.childNodes || []).forEach((c) => c.classList?.toggle?.('active', c === pill));
+              renderStage();
+              if (rootId) callbacks.onSessionChange?.();
+            }
+            focusPane(getActiveTid());
+            pollVisiblePanes();
+          },
+          onSameInstanceDrop: applyDropResult,
+        }),
       });
     }
+    const renderStage = () => ns._renderTermStagePanes({ stageEl, active: getActiveTerm(), activeTid: getActiveTid(), visibleIds: getVisibleIds(), terminals, engineMode, conversationId, isVisible: () => isVisible, getActiveTid, resolveTitle, focusPane, ensurePane: ensureDirectPane, onSpawnEmpty: () => spawnTerminal() });
     async function spawnTerminal(splitFromId = '') {
-      const activeTid = getActiveTerminalId(), activeGrp = getActiveGroup(), sRect = stageEl.getBoundingClientRect?.() || { width: 0, height: 0 };
+      const activeTid = getActiveTid(), activeGrp = getActiveGroup(), sRect = stageEl.getBoundingClientRect?.() || { width: 0, height: 0 };
       const paneW = sRect.width > 80 ? (splitFromId ? sRect.width / ((activeGrp?.paneIds?.length || 1) + 1) : sRect.width) : 0;
-      const dims = engineMode === 'direct' && panes.get(activeTid)?.emu ? panes.get(activeTid).emu.getDimensions() : { cols: paneW ? Math.max(24, Math.min(240, Math.floor((paneW - 24) / 7.6))) : 0, rows: sRect.height > 40 ? Math.max(6, Math.min(120, Math.floor((sRect.height - 16) / 17))) : 0 };
+      const dims = engineMode === 'direct' && sharedPanes.get(activeTid)?.emu ? sharedPanes.get(activeTid).emu.getDimensions() : { cols: paneW ? Math.max(24, Math.min(240, Math.floor((paneW - 24) / 7.6))) : 0, rows: sRect.height > 40 ? Math.max(6, Math.min(120, Math.floor((sRect.height - 16) / 17))) : 0 };
       if (splitFromId && activeGrp) pendingSplit = { groupId: activeGrp.groupId, afterPaneId: splitFromId };
       const created = await ns.apiCall('/api/terminal/create', { workspacePath, conversationId, splitFromTerminalId: splitFromId || '', cols: dims.cols, rows: dims.rows });
-      if (created?.terminalId) {
-        created.title = ns.formatTermTitle(created.title || 'pwsh');
-        if (rootId) { const groupMap = ns.readGroupMap(); groupMap[created.terminalId] = rootId; ns.saveGroupMap(groupMap); }
-        terminals = [...terminals.filter((t) => t.terminalId !== created.terminalId), created];
-        if (splitFromId && activeGrp) { tabGroups = ns.insertSplitPane(tabGroups, activeGrp.groupId, splitFromId, created.terminalId); activeGroupId = activeGrp.groupId; pendingSplit = null; ns.setActiveGroupId?.(instanceTabId, activeGroupId); ns.saveTabGroups(instanceTabId, tabGroups); }
-        else { activeGroupId = created.terminalId; ns.setActiveGroupId?.(instanceTabId, activeGroupId); normalizeGroupState(); }
-        renderToolbar(); renderStage(); focusPane(created.terminalId); pollVisiblePanes(); await callbacks.onRefreshState?.();
-      } else pendingSplit = null;
+      if (!created?.terminalId) return void (pendingSplit = null);
+      created.title = ns.formatTermTitle(created.title || 'pwsh');
+      if (rootId) ns.saveGroupMap({ ...ns.readGroupMap(), [created.terminalId]: rootId });
+      terminals = [...terminals.filter((t) => t.terminalId !== created.terminalId), created];
+      if (splitFromId && activeGrp) {
+        tabGroups = ns.insertSplitPane(tabGroups, (activeGroupId = activeGrp.groupId), splitFromId, created.terminalId);
+        pendingSplit = null;
+        saveGroups();
+      } else {
+        ns.setActiveGroupId?.(instanceTabId, (activeGroupId = created.terminalId));
+        normalizeGroupState();
+      }
+      refreshView();
+      focusPane(created.terminalId);
+      pollVisiblePanes();
+      await callbacks.onRefreshState?.();
     }
-    rootEl.querySelector('[data-action="split"]')?.addEventListener('click', () => { const tid = getActiveTerminalId(); if (tid) spawnTerminal(tid); });
-    rootEl.querySelector('[data-action="popout"]')?.addEventListener('click', () => {
-      const activeGrp = getActiveGroup(); if (!activeGrp || !activeGrp.paneIds.length) return;
+    splitBtn?.addEventListener('click', () => getActiveTid() && spawnTerminal(getActiveTid()));
+    popoutBtn?.addEventListener('click', () => {
+      const activeGrp = getActiveGroup();
+      if (!activeGrp?.paneIds.length) return;
       if (rootId) {
         ns.demoteHangarTabIntoInstance(instanceTabId, { targetInstanceTabId: ns.TERMINAL_TAB_ID, zone: 'strip' });
-        if (callbacks.onCrossInstanceMerge) callbacks.onCrossInstanceMerge({ removedSidecarId: instanceTabId, targetInstanceTabId: ns.TERMINAL_TAB_ID, targetPane: currentSlotKey });
-        else callbacks.onSelectTab?.(ns.TERMINAL_TAB_ID, currentSlotKey);
-      } else {
-        const paneSet = new Set(activeGrp.paneIds), res = ns.promoteDragToHangarBar({ kind: 'tab', groupId: activeGrp.groupId, terminalId: getActiveTerminalId(), instanceTabId });
-        for (const tid of paneSet) { const p = panes.get(tid); if (p?.wrap) { p.wrap._mountedParent = null; p.wrap.remove?.(); } }
-        terminals = terminals.filter((t) => !paneSet.has(t.terminalId)); normalizeGroupState(); renderToolbar(); renderStage();
-        if (res?.newSidecarId) {
-          if (callbacks.onPromoteToHangarTab) callbacks.onPromoteToHangarTab({ sidecarId: res.newSidecarId, replacedSidecarId: res.replacedSidecarId, targetPane: currentSlotKey, afterTabId: instanceTabId });
-          else callbacks.onSelectTab?.(res.newSidecarId, currentSlotKey);
-        }
+        return void (callbacks.onCrossInstanceMerge ? callbacks.onCrossInstanceMerge({ removedSidecarId: instanceTabId, targetInstanceTabId: ns.TERMINAL_TAB_ID, targetPane: slotKey }) : callbacks.onSelectTab?.(ns.TERMINAL_TAB_ID, slotKey));
       }
+      const paneSet = new Set(activeGrp.paneIds), res = ns.promoteDragToHangarBar({ kind: 'tab', groupId: activeGrp.groupId, terminalId: getActiveTid(), instanceTabId });
+      paneSet.forEach((tid) => {
+        if (sharedPanes.get(tid)?.wrap) sharedPanes.get(tid).wrap._mountedParent = null;
+        sharedPanes.get(tid)?.wrap?.remove?.();
+      });
+      terminals = terminals.filter((t) => !paneSet.has(t.terminalId));
+      normalizeGroupState();
+      refreshView();
+      if (res?.newSidecarId) (callbacks.onPromoteToHangarTab ? callbacks.onPromoteToHangarTab({ sidecarId: res.newSidecarId, replacedSidecarId: res.replacedSidecarId, targetPane: slotKey, afterTabId: instanceTabId }) : callbacks.onSelectTab?.(res.newSidecarId, slotKey));
     });
     async function pollVisiblePanes() {
-      if (pollBusy || !isInstanceVisible || engineMode !== 'direct') return;
+      if (pollBusy || !isVisible || engineMode !== 'direct') return;
       pollBusy = true;
-      try {
-        for (const tid of getVisibleIds()) {
-          const p = panes.get(tid); if (!p) continue;
-          try {
-            const data = await ns.apiCall('/api/terminal/poll', { terminalId: tid, afterSeq: p.afterSeq }), nextTitle = data.title ? ns.formatTermTitle(data.title) : '';
-            if (nextTitle && nextTitle !== p.title) { p.title = nextTitle; if (p.titleEl) p.titleEl.textContent = resolveTitle(tid, nextTitle); const t = terminals.find((x) => x.terminalId === tid); if (t) { t.title = nextTitle; renderToolbar(); } }
-            for (const chunk of data.chunks || []) {
-              if ((chunk.seq || 0) <= p.afterSeq) continue;
-              const isReset = Boolean(chunk.isScrollback && !p.lastWasScrollback); p.lastWasScrollback = Boolean(chunk.isScrollback); p.afterSeq = chunk.seq || p.afterSeq;
-              if (chunk.text) p.emu.write(chunk.text, { reset: isReset });
-            }
-          } catch {}
-        }
-      } finally { pollBusy = false; }
+      try { await ns._pollVisibleTermPanes({ visibleIds: getVisibleIds(), terminals, resolveTitle, renderToolbar }); } finally { pollBusy = false; }
     }
     const pollTimer = setInterval(pollVisiblePanes, 70);
     return {
-      rootEl, setVisible(vis) { if (vis && !isInstanceVisible) pendingFocus = true; isInstanceVisible = Boolean(vis); },
-      focusTerminal(tid) { tabGroups = ns.readTabGroups(instanceTabId); const g = tabGroups.find((grp) => grp.paneIds.includes(tid)); if (g) { activeGroupId = g.groupId; g.focusedPaneId = tid; ns.setActiveGroupId?.(instanceTabId, activeGroupId); ns.saveTabGroups(instanceTabId, tabGroups); pendingFocus = true; } },
-      mountInto(slotEl, slotKey) { currentSlotKey = slotKey; if (!slotEl.contains?.(rootEl)) slotEl.appendChild(rootEl); for (const ch of Array.from(slotEl.children || [])) ch.classList?.toggle?.('hidden', ch !== rootEl); },
-      sync({ nextTerminals, nextWorkspacePath, nextConversationId, cb }) {
-        terminals = Array.isArray(nextTerminals) ? nextTerminals.map((t) => { const clean = ns.formatTermTitle(t.title || 'pwsh'), p = panes.get(t.terminalId); if (p && t.title) p.title = clean; return { ...t, title: clean }; }) : [];
-        workspacePath = nextWorkspacePath || ''; conversationId = nextConversationId || ''; callbacks = cb || {};
-        normalizeGroupState(); renderToolbar(); renderStage(); if (pendingFocus && isInstanceVisible) { pendingFocus = false; const actTid = getActiveTerminalId(); if (actTid) focusPane(actTid); } pollVisiblePanes();
+      rootEl,
+      setVisible: (vis) => {
+        pendingFocus = Boolean(pendingFocus || (vis && !isVisible));
+        isVisible = Boolean(vis);
       },
-      handleJetboxEvent(type, payload = {}, sourceWin) {
-        const tid = payload?.terminalId; if (!tid || !getVisibleIds().includes(tid)) return;
-        const p = panes.get(tid), fWin = p?.frame?.contentWindow; if (sourceWin && fWin && fWin !== sourceWin) return;
-        if (type !== 'hangar-jetbox-title-changed') setFocusedPane(tid, false);
-        if (type === 'hangar-jetbox-selection-changed' && p) p.jetboxSelection = String(payload.selectionContent || '');
-        else if (type === 'hangar-jetbox-title-changed' && payload.title) {
-          const clean = ns.formatTermTitle(payload.title); if (p) p.title = clean;
-          const t = terminals.find((x) => x.terminalId === tid); if (t) t.title = clean;
-          if (p?.titleEl) p.titleEl.textContent = resolveTitle(tid, clean); renderToolbar();
-        } else if (type === 'hangar-jetbox-quote-clicked') {
-          const t = terminals.find((x) => x.terminalId === tid) || getActiveTermObj(); if (!t) return;
-          const sel = String(payload.selectionContent || p?.jetboxSelection || ''), qp = ns.copyTerminalQuoteToClipboard({ terminalId: t.terminalId, title: resolveTitle(t.terminalId, payload.title || t.title || 'terminal'), selectionContent: sel, alreadyCopied: Boolean(payload.copied) });
-          if (p) p.jetboxSelection = '';
-          if (payload.askAgent) {
-            ns.openTerminalMiniComposer?.(rootEl, qp, { conversationId: conversationId && conversationId !== '_new' ? conversationId : (t.conversationId || '') });
-          } else {
-            ns.showTerminalQuoteToast?.(rootEl, sel ? `Quoted selection from "${qp.cleanName}" — press Ctrl+V in chat` : `Copied @${qp.cleanName} mention pill — press Ctrl+V in chat`);
-          }
-        } else if (type === 'hangar-jetbox-quote-dragend') {
-          const t = terminals.find((x) => x.terminalId === tid) || getActiveTermObj(); if (!t) return;
-          const sel = String(payload.selectionContent || p?.jetboxSelection || '').trim(); if (!sel) return;
-          const cleanTitle = resolveTitle(t.terminalId, payload.title || t.title || 'terminal');
-          if (p) p.jetboxSelection = '';
-          const fRect = p?.frame?.getBoundingClientRect?.() || { left: 0, top: 0, right: 0, bottom: 0 };
-          const hx = fRect.left + (Number(payload.clientX) || 0), hy = fRect.top + (Number(payload.clientY) || 0);
-          const scBoxes = [...(document.querySelectorAll?.('.term-quote-composer:not(.hidden)') || []), ...(ns._sideChatBox && !ns._sideChatBox.classList?.contains?.('hidden') ? [ns._sideChatBox] : [])];
-          for (const scBox of new Set(scBoxes)) {
-            const sRect = scBox.getBoundingClientRect?.() || { left: 0, top: 0, right: 0, bottom: 0 };
-            if (hx >= sRect.left && hx <= sRect.right && hy >= sRect.top && hy <= sRect.bottom) {
-              const qp = ns.buildTerminalScopePayload({ terminalId: t.terminalId, title: cleanTitle, selectionContent: sel });
-              try { scBox._els?.chatFrame?.contentWindow?.postMessage({ type: 'hangar-inject-terminal-quote', payload: qp }, '*'); } catch {}
-              return;
-            }
-          }
-          const winW = Number(window.innerWidth) || fRect.right || 0, winH = Number(window.innerHeight) || fRect.bottom || 0;
-          if (hx < 0 || hy < 0 || (winW > 0 && hx > winW) || (winH > 0 && hy > winH)) {
-            const effCid = conversationId && conversationId !== '_new' ? conversationId : (t.conversationId || '');
-            ns.apiCall?.('/api/terminal/ls-rpc', { method: 'InjectQuoteDrop', conversationId: effCid, terminalId: t.terminalId, title: cleanTitle, selectionContent: sel })?.catch?.(() => {});
-          }
-        }
+      focusTerminal: (tid) => {
+        tabGroups = ns.readTabGroups(instanceTabId);
+        const g = tabGroups.find((grp) => grp.paneIds.includes(tid));
+        if (g && Object.assign(g, { focusedPaneId: tid }) && (activeGroupId = g.groupId) && (pendingFocus = true)) saveGroups();
       },
-      dispose() { clearInterval(pollTimer); rootEl.remove?.(); },
+      mountInto: (slotEl, nextSlotKey) => {
+        slotKey = nextSlotKey;
+        if (!slotEl.contains?.(rootEl)) slotEl.appendChild(rootEl);
+        Array.from(slotEl.children || []).forEach((ch) => ch.classList?.toggle?.('hidden', ch !== rootEl));
+      },
+      sync: ({ nextTerminals, nextWorkspacePath = '', nextConversationId = '', cb = {} }) => {
+        terminals = (Array.isArray(nextTerminals) ? nextTerminals : []).map((t) => ({ ...t, title: sharedPanes.get(t.terminalId) && t.title ? (sharedPanes.get(t.terminalId).title = ns.formatTermTitle(t.title || 'pwsh')) : ns.formatTermTitle(t.title || 'pwsh') }));
+        workspacePath = nextWorkspacePath;
+        conversationId = (callbacks = cb) && nextConversationId;
+        normalizeGroupState();
+        refreshView();
+        if (pendingFocus && isVisible && !(pendingFocus = false) && getActiveTid()) focusPane(getActiveTid());
+        pollVisiblePanes();
+      },
+      handleJetboxEvent: (type, payload = {}, sourceWin) => ns._handleJetboxTermEvent(type, payload, sourceWin, { visibleIds: getVisibleIds(), terminals, rootEl, conversationId, getActiveTerm, setFocusedPane, resolveTitle, renderToolbar }),
+      dispose: () => {
+        clearInterval(pollTimer);
+        rootEl.remove?.();
+      },
     };
   }
-  window.addEventListener('message', (e) => { if (e.data?.type?.startsWith?.('hangar-jetbox-')) for (const ctrl of instanceControllers.values()) ctrl.handleJetboxEvent(e.data.type, e.data.payload, e.source); });
-  ns.disposeTerminalInstance = (tabId) => { instanceControllers.get(tabId)?.dispose(); instanceControllers.delete(tabId); };
-  ns.closeTerminalInstance = async (tabId, allTerminals = []) => {
-    const rId = String(tabId || '').startsWith(ns.TERMINAL_TAB_PREFIX) ? String(tabId).slice(ns.TERMINAL_TAB_PREFIX.length) : '';
-    const tids = ns.getInstanceTerminals(allTerminals, rId).map((t) => t.terminalId); if (rId && !tids.includes(rId)) tids.push(rId);
-    const popped = ns.getPoppedTerminalIds(), groupMap = ns.readGroupMap(); if (rId) popped.delete(rId);
-    for (const tid of tids) { closingIds.add(tid); popped.delete(tid); delete groupMap[tid]; sharedPanes.get(tid)?.emu?.dispose(); sharedPanes.get(tid)?.wrap?.remove(); sharedPanes.delete(tid); }
-    ns.setPoppedTerminalIds(popped); ns.saveGroupMap(groupMap); ns.saveTabGroups(tabId, []); ns.disposeTerminalInstance(tabId);
-    await Promise.all(tids.map((tid) => ns.apiCall?.('/api/terminal/close', { terminalId: tid }).catch(() => {})));
-    setTimeout(() => tids.forEach((id) => closingIds.delete(id)), 1500);
-  };
-  ns.focusTerminalInInstance = (tabId, tid) => { const grps = ns.readTabGroups(tabId), g = grps.find((grp) => grp.paneIds.includes(tid)); if (g) { g.focusedPaneId = tid; ns.setActiveGroupId?.(tabId, g.groupId); ns.saveTabGroups(tabId, grps); } instanceControllers.get(tabId)?.focusTerminal(tid); };
-  ns.renderTerminalSlots = function renderTerminalSlots({ topTermEl, bottomTermEl, topSlotId, bottomSlotId, splitEnabled, terminals = [], workspacePath = '', conversationId = '', onRefreshState, onSelectTab, onPromoteToHangarTab, onCrossInstanceMerge, onSessionChange }) {
-    const liveTerms = (terminals || []).filter((t) => !closingIds.has(t.terminalId)), liveIds = new Set(liveTerms.map((t) => t.terminalId));
-    if (liveTerms.length > 0) { for (const [tid, p] of sharedPanes.entries()) { if (!liveIds.has(tid)) { p.emu?.dispose(); p.wrap?.remove(); sharedPanes.delete(tid); } } }
-    const slots = [{ key: 'top', el: topTermEl, tabId: topSlotId, slotClass: 'slot-top' }, { key: 'bottom', el: bottomTermEl, tabId: splitEnabled && bottomSlotId !== topSlotId ? bottomSlotId : '', slotClass: 'slot-bottom' }], activeTabIds = new Set();
+  ns.renderTerminalSlots = function renderTerminalSlots({ topTermEl, bottomTermEl, topSlotId, bottomSlotId, splitEnabled, terminals = [], workspacePath = '', conversationId = '', ...cb }) {
+    const liveTerms = (terminals || []).filter((t) => !ns.isTerminalClosing(t.terminalId)), activeTabIds = new Set(), popped = ns.getPoppedTerminalIds(), liveIds = new Set(liveTerms.map((t) => t.terminalId));
+    if (liveTerms.length > 0) ns._disposeTermPanes([...sharedPanes.keys()].filter((tid) => !liveIds.has(tid)));
+    const slots = [{ key: 'top', el: topTermEl, tabId: topSlotId, slotClass: 'slot-top' }, { key: 'bottom', el: bottomTermEl, tabId: splitEnabled && bottomSlotId !== topSlotId ? bottomSlotId : '', slotClass: 'slot-bottom' }];
     for (const s of slots) {
       if (!s.el) continue;
-      const isVisible = ns.isTerminalTabId(s.tabId); s.el.classList.toggle('hidden', !isVisible); s.el.classList.toggle(s.slotClass, isVisible);
-      if (!isVisible) continue;
+      const vis = ns.isTerminalTabId(s.tabId);
+      s.el.classList.toggle('hidden', !vis);
+      s.el.classList.toggle(s.slotClass, vis);
+      if (!vis) continue;
       activeTabIds.add(s.tabId);
       const rootId = String(s.tabId).startsWith(ns.TERMINAL_TAB_PREFIX) ? String(s.tabId).slice(ns.TERMINAL_TAB_PREFIX.length) : '';
-      let ctrl = instanceControllers.get(s.tabId); if (!ctrl) { ctrl = createInstanceController(s.tabId, rootId); instanceControllers.set(s.tabId, ctrl); }
-      ctrl.mountInto(s.el, s.key); ctrl.setVisible(true);
-      ctrl.sync({ nextTerminals: ns.getInstanceTerminals(liveTerms, rootId), nextWorkspacePath: workspacePath, nextConversationId: conversationId, cb: { onRefreshState, onSelectTab, onPromoteToHangarTab, onCrossInstanceMerge, onSessionChange } });
+      if (!instanceControllers.has(s.tabId)) instanceControllers.set(s.tabId, createInstanceController(s.tabId, rootId));
+      const ctrl = instanceControllers.get(s.tabId);
+      ctrl.mountInto(s.el, s.key);
+      ctrl.setVisible(true);
+      ctrl.sync({ nextTerminals: ns.getInstanceTerminals(liveTerms, rootId), nextWorkspacePath: workspacePath, nextConversationId: conversationId, cb });
     }
-    const popped = ns.getPoppedTerminalIds();
     for (const [tabId, ctrl] of instanceControllers.entries()) {
-      if (!activeTabIds.has(tabId)) { ctrl.setVisible(false); if (tabId !== ns.TERMINAL_TAB_ID && !popped.has(tabId.slice(ns.TERMINAL_TAB_PREFIX.length))) { ctrl.dispose(); instanceControllers.delete(tabId); } }
+      if (!activeTabIds.has(tabId)) ctrl.setVisible(false);
+      if (!activeTabIds.has(tabId) && tabId !== ns.TERMINAL_TAB_ID && !popped.has(tabId.slice(ns.TERMINAL_TAB_PREFIX.length))) ns.disposeTerminalInstance(tabId);
     }
   };
 })();

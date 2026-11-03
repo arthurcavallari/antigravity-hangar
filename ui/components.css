@@ -8,8 +8,6 @@
 .consent-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .consent-text { flex: 1 1 260px; min-width: 0; }
 .agy-count-pill { background: var(--hub-muted-bg); color: var(--hub-muted); }
-
-/* Plugin badges, the port report on a plugin's consent bar, and the Installed plugins section */
 .badge-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .badge-group:empty { display: none; }
 .manager-card-title-row:has(.badge-group:not(:empty)) { flex-wrap: wrap; row-gap: 4px; }
@@ -22,14 +20,12 @@
 .port-report-title { margin-top: 6px; font-weight: var(--font-weight-medium, 500); color: var(--hub-fg); }
 .port-report-note { margin-top: 6px; color: var(--hub-muted); }
 .plugin-section-header { margin-top: 16px; }
-
 .workspace-suggestions { margin-bottom: 10px; padding: 8px; border-radius: var(--radius-xl, 0.75rem); border: 1px solid var(--hub-border); background: var(--hub-card); display: flex; flex-direction: column; gap: 4px; }
 .popover-sug-header { padding: 2px 8px; font-size: 11px; font-weight: var(--font-weight-semibold, 600); color: var(--hub-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .popover-sug-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: var(--radius-md, 0.375rem); background: color-mix(in srgb, var(--hub-primary) 8%, transparent); }
 .popover-sug-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .popover-sug-name { font-size: var(--text-xs, 0.75rem); font-weight: var(--font-weight-medium, 500); color: var(--hub-fg); }
 .popover-sug-reason { font-family: var(--hub-mono-font); font-size: 10px; color: var(--hub-muted); }
-
 .manager-card-title-group { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .manager-card-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .manager-card-title { font-size: var(--text-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); color: var(--hub-fg); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -37,7 +33,6 @@
 .manager-section-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; padding-top: 8px; border-top: 1px solid var(--hub-border); }
 .manager-scope-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .manager-section-label { font-size: var(--text-xs, 0.75rem); font-weight: var(--font-weight-medium, 500); color: var(--hub-secondary-fg); }
-
 .ws-rule-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .ws-rule-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: var(--radius-md, 0.375rem); border: 1px solid var(--hub-border); background: var(--hub-bg); font-size: var(--text-xs, 0.75rem); line-height: 1rem; color: var(--hub-secondary-fg); }
 .ws-rule-code { font-family: var(--hub-mono-font); font-size: 11px; color: var(--hub-fg); word-break: break-all; flex: 1; }
@@ -47,7 +42,6 @@
 .ws-input { flex: 1; width: 100%; height: 28px; padding: 4px 10px; border-radius: var(--radius-lg, 0.5rem); border: 1px solid var(--hub-border); background: var(--hub-bg); color: var(--hub-fg); font-family: var(--hub-font-sans); font-size: var(--text-xs, 0.75rem); line-height: 1.25rem; outline: none; transition: border-color var(--dur-agy) var(--ease-agy); }
 .ws-input::placeholder { color: var(--hub-muted); }
 .ws-input:focus { border-color: var(--hub-primary); }
-
 /* Native Interactive Terminal AuxPane & y9b Selection Quote Popup */
 .terminal-view { width: 100%; height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--hub-bg); }
 .term-shell { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
@@ -59,7 +53,6 @@
 .term-pane-close { display: flex; align-items: center; justify-content: center; padding: 2px; border: none; background: transparent; color: var(--hub-muted); border-radius: 4px; cursor: pointer; outline: none; flex-shrink: 0; transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy); }
 .term-pane-close:hover { color: var(--hub-fg); background: var(--hub-border); }
 .term-toolbar-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-
 .term-stage { display: flex; flex-direction: row; flex: 1; width: 100%; height: 100%; min-height: 0; overflow: hidden; position: relative; }
 .term-pane { position: relative; flex: 1; min-width: 80px; height: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--hub-bg); outline: none; }
 .term-stage > .term-pane.hidden { display: flex !important; position: absolute !important; inset: 0 !important; visibility: hidden !important; pointer-events: none !important; z-index: -1 !important; }
@@ -87,7 +80,6 @@
 .term-input-sink { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .term-jetbox-frame, .term-sidechat-frame { flex: 1; width: 100%; height: 100%; min-height: 0; border: none; background: var(--hub-bg); }
 body.resizing-split .term-jetbox-frame, body.dragging-tab .term-jetbox-frame, body.resizing-split .term-sidechat-frame, body.dragging-tab .term-sidechat-frame { pointer-events: none; }
-
 .term-quote-popup { position: absolute; z-index: 60; display: inline-flex; border-radius: var(--radius-md, 0.375rem); background: var(--hub-card); color: var(--hub-fg); border: 1px solid var(--hub-border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28); overflow: hidden; user-select: none; }
 .term-quote-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: none; background: transparent; color: var(--hub-fg); font-family: var(--hub-font-sans); font-size: 12px; cursor: grab; -webkit-user-drag: element; transition: background-color var(--dur-agy) var(--ease-agy); }
 .term-quote-btn > * { pointer-events: none; }
@@ -114,8 +106,6 @@ body.resizing-split .term-jetbox-frame, body.dragging-tab .term-jetbox-frame, bo
 .term-quote-composer-input { flex: 1; min-height: 36px; max-height: 96px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--hub-border); background: var(--hub-bg); color: var(--hub-fg); font-family: var(--hub-font-sans); font-size: 12px; line-height: 16px; resize: vertical; outline: none; }
 .term-quote-composer-input:focus { border-color: var(--hub-primary); }
 .term-quote-composer-send { height: 28px; padding: 0 10px; font-size: 12px; flex-shrink: 0; }
-.term-sidechat-frame { flex: 1; width: 100%; height: 100%; min-height: 0; border: none; border-radius: 0; background: var(--hub-bg); }
-
 .term-mini-composer { position: absolute; left: 12px; right: 12px; bottom: 12px; max-width: 680px; margin: 0 auto; z-index: 55; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--radius-lg, 0.5rem); background: var(--hub-card); border: 1px solid var(--hub-primary); color: var(--hub-fg); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38); }
 .term-mini-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .term-mini-header-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }

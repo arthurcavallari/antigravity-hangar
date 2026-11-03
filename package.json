@@ -53,6 +53,9 @@
     "agy-plugin-porter": "^0.1.0",
     "antigravity-sidecar-kit": "^1.4.0"
   },
+  "devDependencies": {
+    "linkedom": "^0.18.15"
+  },
   "scripts": {
     "start": "node server.mjs",
     "setup": "node setup.mjs",

@@ -67,8 +67,8 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     const clientJs = createShellClientHandler()().body;
     vm.runInNewContext(clientJs, sandbox);
 
-    assert.equal(typeof sandbox.Hangar.applyAgyThemeFromPayload, 'function');
-    const isDark = sandbox.Hangar.applyAgyThemeFromPayload({
+    assert.equal(typeof sandbox.AgyShell.applyAgyThemeFromPayload, 'function');
+    const isDark = sandbox.AgyShell.applyAgyThemeFromPayload({
       themeType: 'dark',
       cssVariables: { '--background': '#101114', '--foreground': '#e6e8ec' },
     });
@@ -77,24 +77,26 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.equal(attrs.get('data-follow-host'), true);
     assert.ok(storage.get('agy.theme.v1')?.includes('#101114'));
 
-    const isDarkForLight = sandbox.Hangar.applyAgyThemeFromPayload({
+    const isDarkForLight = sandbox.AgyShell.applyAgyThemeFromPayload({
       themeType: 'light',
       cssVariables: { '--background': '#fbfbfa', '--foreground': '#1f2124' },
     });
     assert.equal(isDarkForLight, false);
     assert.equal(docEl.dataset.theme, 'light');
 
-    await sandbox.Hangar.notifyAgent('Sidecar error diagnostic', 'conv-42', 'Sidecar Error: demo');
+    await sandbox.AgyShell.notifyAgent('Sidecar error diagnostic', 'conv-42', 'Sidecar Error: demo');
     assert.equal(postedCalls.length, 1);
     assert.equal(postedCalls[0].url, '/api/notify');
     assert.equal(postedCalls[0].body.conversationId, 'conv-42');
 
     sandbox.sidecar = { conversationId: 'conv-from-sdk', fetch: sandbox.fetch };
-    await sandbox.Hangar.notifyAgent('Fallback conv diagnostic', '', 'Sidecar Error: fallback');
+    await sandbox.AgyShell.notifyAgent('Fallback conv diagnostic', '', 'Sidecar Error: fallback');
     assert.equal(postedCalls.length, 2);
     assert.equal(postedCalls[1].body.conversationId, 'conv-from-sdk');
 
-    const extSrc = readFileSync(join(ROOT, 'ui', 'components', 'extensions-tab.js'), 'utf8');
+    const extSrc =
+      readFileSync(join(ROOT, 'ui', 'components', 'extensions-tab.js'), 'utf8') +
+      readFileSync(join(ROOT, 'ui', 'components', 'installed-pane.js'), 'utf8');
     assert.match(extSrc, /data-role="fix-agent-btn"/);
     assert.match(extSrc, /ns\.notifyAgent\?\.\(msg,\s*convId/);
   });

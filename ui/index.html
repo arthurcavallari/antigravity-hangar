@@ -16,19 +16,25 @@
   <script defer src="/components/tab-bar.js"></script>
   <script defer src="/components/marketplace-panes.js"></script>
   <script defer src="/components/plugin-panes.js"></script>
+  <script defer src="/components/installed-pane.js"></script>
   <script defer src="/components/extensions-tab.js"></script>
   <script defer src="/components/iframe-deck.js"></script>
   <script defer src="/components/terminal-emulator.js"></script>
+  <script defer src="/components/sidechat-store.js"></script>
+  <script defer src="/components/sidechat-strip.js"></script>
+  <script defer src="/components/sidechat-pane.js"></script>
   <script defer src="/components/terminal-quote.js"></script>
   <script defer src="/components/terminal-groups.js"></script>
+  <script defer src="/components/terminal-drag.js"></script>
+  <script defer src="/components/terminal-pane.js"></script>
   <script defer src="/components/terminal-tab.js"></script>
+  <script defer src="/components/layout-controller.js"></script>
   <script defer src="/app.js"></script>
 </head>
 <body>
   <div id="hub-shell" class="hub-shell">
     <header id="chrome-bar" class="agy-chrome-bar">
-      <nav id="tab-strip" class="agy-tab-strip" aria-label="Primary or Top Pane Sidecar Tabs"></nav>
-
+      <agy-tab-strip id="tab-strip" class="agy-tab-strip" aria-label="Primary or Top Pane Sidecar Tabs"></agy-tab-strip>
       <button
         id="top-overflow-btn"
         type="button"
@@ -40,7 +46,6 @@
           <path d="M240-400q-33 0-56.5-23.5T160-480q0-33 23.5-56.5T240-560q33 0 56.5 23.5T320-480q0 33-23.5 56.5T240-400Zm240 0q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm240 0q-33 0-56.5-23.5T640-480q0-33 23.5-56.5T720-560q33 0 56.5 23.5T800-480q0 33-23.5 56.5T720-400Z"/>
         </svg>
       </button>
-
       <div class="chrome-actions">
         <button
           id="terminal-toggle-btn"
@@ -79,23 +84,22 @@
         </button>
       </div>
     </header>
-
     <div id="tab-overflow-popover" popover="auto" class="agy-tab-overflow-popover"></div>
-
     <main id="main-viewport" class="main-viewport">
       <section id="empty-top-state" class="empty-deck-state slot-top hidden"></section>
       <div id="split-divider-group" class="split-divider-group hidden">
-        <div
+        <agy-split-sash
           id="split-resize-handle"
           class="agy-split-sash"
+          direction="vertical"
           role="separator"
           aria-orientation="horizontal"
           title="Drag to resize split pane"
         >
           <div class="sash-line"></div>
-        </div>
+        </agy-split-sash>
         <div id="bottom-tab-bar" class="agy-chrome-bar bottom-tab-bar">
-          <nav id="bottom-tab-strip" class="agy-tab-strip" aria-label="Bottom Pane Sidecar Tabs"></nav>
+          <agy-tab-strip id="bottom-tab-strip" class="agy-tab-strip" aria-label="Bottom Pane Sidecar Tabs"></agy-tab-strip>
           <button
             id="bottom-overflow-btn"
             type="button"

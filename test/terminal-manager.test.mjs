@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import vm from 'node:vm';
 import { closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
+import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
@@ -210,16 +211,50 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const makeEl = (rect = { left: 0, right: 80, top: 0, bottom: 22, width: 80, height: 22 }) => {
       const listeners = {}, classes = new Set(), childNodes = [];
       let html = '';
-      return {
-        className: '', style: {}, dataset: {}, value: '', scrollTop: 0, scrollLeft: 0, scrollWidth: 200, clientWidth: 200, scrollHeight: 100, clientHeight: 100, childNodes,
-        get innerHTML() { return html; },
+      const el = {
+        className: '', style: {}, dataset: {}, value: '', textContent: '', scrollTop: 0, scrollLeft: 0, scrollWidth: 200, clientWidth: 200, scrollHeight: 100, clientHeight: 100, childNodes, children: childNodes, parentElement: null,
+        get innerHTML() {
+          if (html) return html;
+          if (this._slots) {
+            const label = this._slots.labelEl?.textContent || '';
+            const ext = this._slots.extBadge && !this._slots.extBadge.classList.contains('hidden') ? '<span class="agy-tab-ext-badge"></span>' : '';
+            return `${label}${ext}`;
+          }
+          return '';
+        },
         set innerHTML(v) { html = v; if (v === '') childNodes.length = 0; },
         classList: { toggle: (c, v) => (v ? classes.add(c) : classes.delete(c)), remove: (...cs) => cs.forEach((c) => classes.delete(c)), add: (...cs) => cs.forEach((c) => classes.add(c)), contains: (c) => classes.has(c) },
-        setAttribute() {}, focus() { this._focused = true; }, select() {}, replaceWith(el) { children.push(el); }, getBoundingClientRect: () => rect, cloneNode() { return makeEl(rect); }, remove() {}, querySelector: () => makeEl(rect), querySelectorAll: () => [],
+        setAttribute() {}, focus() { this._focused = true; }, select() {}, replaceWith(nextEl) { children.push(nextEl); }, getBoundingClientRect: () => rect, cloneNode() { return makeEl(rect); },
+        remove() {
+          if (this.parentElement?.childNodes) {
+            const idx = this.parentElement.childNodes.indexOf(this);
+            if (idx >= 0) this.parentElement.childNodes.splice(idx, 1);
+          }
+        },
+        querySelector(sel) {
+          if (this._slots?.labelEl && String(sel).includes('tab-label')) return this._slots.labelEl;
+          return makeEl(rect);
+        },
+        querySelectorAll: () => [],
         addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+        removeEventListener(ev, fn) { if (listeners[ev]) listeners[ev] = listeners[ev].filter((f) => f !== fn); },
         emit(ev, payload) { for (const fn of listeners[ev] || []) fn(payload); },
-        append(...els) { childNodes.push(...els); children.push(...els); }, appendChild(el) { childNodes.push(el); children.push(el); }, contains: () => false,
+        append(...els) { els.forEach((c) => { if (c && typeof c === 'object') c.parentElement = el; }); childNodes.push(...els); children.push(...els); },
+        appendChild(c) { if (c && typeof c === 'object') c.parentElement = el; childNodes.push(c); children.push(c); return c; },
+        replaceChildren(...els) { childNodes.length = 0; els.forEach((c) => { if (c && typeof c === 'object') c.parentElement = el; }); childNodes.push(...els); children.push(...els); },
+        insertBefore(c, ref) {
+          if (c && typeof c === 'object') c.parentElement = el;
+          const oldIdx = childNodes.indexOf(c);
+          if (oldIdx >= 0) childNodes.splice(oldIdx, 1);
+          const refIdx = ref ? childNodes.indexOf(ref) : -1;
+          if (refIdx >= 0) childNodes.splice(refIdx, 0, c);
+          else childNodes.push(c);
+          children.push(c);
+          return c;
+        },
+        contains: () => false,
       };
+      return el;
     };
     const store = new Map([['hangar.poppedTerminalIds', JSON.stringify(['term-popped-1'])]]);
     const windowObj = {
@@ -232,12 +267,28 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       createDocumentFragment: () => ({ rows: [], appendChild(r) { this.rows.push(r); } }),
       body: { appendChild() {}, classList: { add() {}, remove() {}, contains: () => false } },
     };
+    windowObj.document = documentObj;
+    windowObj.innerWidth = 800;
+    windowObj.innerHeight = 600;
     const ctx = vm.createContext({
       window: windowObj, document: documentObj, navigator: windowObj.navigator, localStorage: windowObj.localStorage, URLSearchParams,
       requestAnimationFrame: (fn) => { fn(); return 1; }, cancelAnimationFrame() {}, Date,
       JSON, Math, Array, String, Number, Boolean, Set, Map, Object, encodeURIComponent, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {},
     });
-    for (const rel of ['ui/core.js', 'ui/components/tab-bar.js', 'ui/components/terminal-emulator.js', 'ui/components/terminal-quote.js', 'ui/components/terminal-groups.js', 'ui/components/terminal-tab.js']) {
+    vm.runInContext(buildAgyUiJs('all'), ctx);
+    for (const rel of [
+      'ui/core.js',
+      'ui/components/tab-bar.js',
+      'ui/components/terminal-emulator.js',
+      'ui/components/sidechat-store.js',
+      'ui/components/sidechat-strip.js',
+      'ui/components/sidechat-pane.js',
+      'ui/components/terminal-quote.js',
+      'ui/components/terminal-groups.js',
+      'ui/components/terminal-drag.js',
+      'ui/components/terminal-pane.js',
+      'ui/components/terminal-tab.js',
+    ]) {
       vm.runInContext(readFileSync(join(REPO_ROOT, rel), 'utf8'), ctx);
     }
     windowObj.Hangar.apiCall = async (path, body) => { apiCalls.push({ path, body }); return {}; };
@@ -514,7 +565,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
     const freshStore = new Map();
     const freshWin = {
-      Hangar: {}, navigator: { platform: 'Win32' }, addEventListener() {}, location: { search: '?token=tok-restarted' },
+      Hangar: {}, document: documentObj, innerWidth: 800, innerHeight: 600, navigator: { platform: 'Win32' }, addEventListener() {}, location: { search: '?token=tok-restarted' },
       localStorage: { getItem: (k) => freshStore.get(k) || null, setItem: (k, v) => freshStore.set(k, v) },
       getSelection: () => ({ isCollapsed: true, toString: () => '' }),
     };
@@ -523,7 +574,20 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       requestAnimationFrame: (fn) => { fn(); return 1; }, cancelAnimationFrame() {}, Date,
       JSON, Math, Array, String, Number, Boolean, Set, Map, Object, encodeURIComponent, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {},
     });
-    for (const rel of ['ui/core.js', 'ui/components/tab-bar.js', 'ui/components/terminal-emulator.js', 'ui/components/terminal-quote.js', 'ui/components/terminal-groups.js', 'ui/components/terminal-tab.js']) {
+    vm.runInContext(buildAgyUiJs('all'), freshCtx);
+    for (const rel of [
+      'ui/core.js',
+      'ui/components/tab-bar.js',
+      'ui/components/terminal-emulator.js',
+      'ui/components/sidechat-store.js',
+      'ui/components/sidechat-strip.js',
+      'ui/components/sidechat-pane.js',
+      'ui/components/terminal-quote.js',
+      'ui/components/terminal-groups.js',
+      'ui/components/terminal-drag.js',
+      'ui/components/terminal-pane.js',
+      'ui/components/terminal-tab.js',
+    ]) {
       vm.runInContext(readFileSync(join(REPO_ROOT, rel), 'utf8'), freshCtx);
     }
     freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, [...curTerms, { terminalId: 'term-popped-1', title: 'popped' }, { terminalId: 't-spawned-new', title: 'pwsh-new' }]);
@@ -783,13 +847,20 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     }
 
     // HGR-AUD-03: Side-Chat session-strip inline rename routes through /api/sidechat/rename instead of /api/terminal/ls-rpc
-    const quoteSrc = readFileSync(join(REPO_ROOT, 'ui', 'components', 'terminal-quote.js'), 'utf8');
+    const quoteAndSideChatSrc = [
+      'ui/components/terminal-quote.js',
+      'ui/components/sidechat-store.js',
+      'ui/components/sidechat-strip.js',
+      'ui/components/sidechat-pane.js',
+    ]
+      .map((rel) => readFileSync(join(REPO_ROOT, rel), 'utf8'))
+      .join('\n');
     assert.equal(
-      quoteSrc.includes("'/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations'"),
+      quoteAndSideChatSrc.includes("'/api/terminal/ls-rpc', { method: 'UpdateConversationAnnotations'"),
       false,
-      'terminal-quote.js must not call disallowed UpdateConversationAnnotations on /api/terminal/ls-rpc'
+      'terminal-quote / sidechat modules must not call disallowed UpdateConversationAnnotations on /api/terminal/ls-rpc'
     );
-    const sidechatRenameMatches = quoteSrc.match(/\/api\/sidechat\/rename/g) || [];
-    assert.ok(sidechatRenameMatches.length >= 3, 'all 3 session-strip inline rename handlers must call /api/sidechat/rename');
+    const sidechatRenameMatches = quoteAndSideChatSrc.match(/\/api\/sidechat\/rename/g) || [];
+    assert.ok(sidechatRenameMatches.length >= 1, 'session-strip inline rename handler must call /api/sidechat/rename');
   });
 });
