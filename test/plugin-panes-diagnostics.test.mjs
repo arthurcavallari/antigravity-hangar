@@ -39,6 +39,14 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
     assert.equal(handled, true);
     assert.equal(extBtnClicks, 0);
     assert.equal(scrolledCard, 'android-cli-plugin/device-hub');
+    assert.equal(
+      ns.handleHangarNavigateMessage({ origin: '', data: { type: 'hangar-navigate', sidecarId: 'android-cli-plugin/device-hub' } }),
+      false
+    );
+    assert.equal(
+      ns.handleHangarNavigateMessage({ origin: 'http://127.0.0.1:51000', source: null, data: { type: 'hangar-navigate', sidecarId: 'android-cli-plugin/device-hub' } }),
+      false
+    );
 
     ns.getPoppedTerminalIds = () => new Set(['term-root']);
     ns.readTabGroups = () => [{ groupId: 'g1', paneIds: ['term-root', 'term-split-2'], focusedPaneId: 'term-split-2' }];
@@ -80,6 +88,7 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
       assert.equal(isAuthorizedSidecarRequest({ headers: { origin: 'http://127.0.0.1:51000' } }), false);
       assert.equal(isAuthorizedSidecarRequest({ headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'wrong' } }), false);
       assert.equal(isAuthorizedSidecarRequest({ headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'diag-secret-token-777' } }), true);
+      assert.equal(isAuthorizedSidecarRequest({ headers: { origin: 'http://127.0.0.1:51000', 'X-Sidecar-Token': ['diag-secret-token-777'] } }), true);
       assert.equal(isAuthorizedSidecarRequest({ query: { token: 'diag-secret-token-777' } }), true);
     } finally {
       if (prevToken === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;

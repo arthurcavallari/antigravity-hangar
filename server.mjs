@@ -44,16 +44,22 @@ for (const script of UI_SCRIPTS) {
   app.page(`/${script}`, serveAsset(script, 'text/javascript; charset=utf-8'));
 }
 
-const withMutate = (fn) => async (data) => {
-  const res = await fn(data);
+const guardApi = (fn) => async (data, ctx) => (
+  isAuthorizedSidecarRequest(data, ctx)
+    ? fn(data, ctx)
+    : new Response('{"ok":false,"error":"Unauthorized"}', { status: 401, contentType: 'application/json' })
+);
+
+const withMutate = (fn) => guardApi(async (data, ctx) => {
+  const res = await fn(data, ctx);
   stateSync.mutate({ lastMutationTs: Date.now() });
   return res;
-};
+});
 
-app.api('/api/state', async (d) => fetchHangarState({
+app.api('/api/state', guardApi(async (d) => fetchHangarState({
   clientWorkspaceUris: Array.isArray(d?.workspaceUris) ? d.workspaceUris : [],
   conversationId: d?.conversationId ? String(d.conversationId) : '',
-}), 'POST');
+})), 'POST');
 app.api('/api/rules/update', withMutate((d) => updateSidecarRule(String(d?.sidecarId || ''), {
   scope: d?.scope,
   workspaces: d?.workspaces,
@@ -61,15 +67,15 @@ app.api('/api/rules/update', withMutate((d) => updateSidecarRule(String(d?.sidec
 })), 'POST');
 app.api('/api/layout/update', withMutate((d) => updateHangarLayout(d || {})), 'POST');
 app.api('/api/sidecar/manage', withMutate((d) => manageChildSidecar(String(d?.sidecarId || ''), String(d?.action || ''))), 'POST');
-app.api('/api/store/registry', async () => fetchRegistry(), 'POST');
-app.api('/api/store/inspect', async (d) => inspectSidecarDirectory(String(d?.folderPath || '')), 'POST');
-app.api('/api/store/link-local', async (d) => linkLocalSidecar({
+app.api('/api/store/registry', guardApi(async () => fetchRegistry()), 'POST');
+app.api('/api/store/inspect', guardApi(async (d) => inspectSidecarDirectory(String(d?.folderPath || ''))), 'POST');
+app.api('/api/store/link-local', guardApi(async (d) => linkLocalSidecar({
   folderPath: String(d?.folderPath || ''),
   sidecarId: d?.sidecarId ? String(d.sidecarId) : '',
   scope: d?.scope || 'project',
   workspaces: Array.isArray(d?.workspaces) ? d.workspaces : [],
-}), 'POST');
-app.api('/api/store/install', async (d) => installRemoteSidecar({
+})), 'POST');
+app.api('/api/store/install', guardApi(async (d) => installRemoteSidecar({
   sidecarId: d?.sidecarId ? String(d.sidecarId) : '',
   gitRepo: d?.gitRepo ? String(d.gitRepo) : '',
   tarballUrl: d?.tarballUrl ? String(d.tarballUrl) : '',
@@ -78,28 +84,24 @@ app.api('/api/store/install', async (d) => installRemoteSidecar({
   scope: d?.scope || 'project',
   workspaces: Array.isArray(d?.workspaces) ? d.workspaces : [],
   acceptedTier: d?.acceptedTier ? String(d.acceptedTier) : '',
-}), 'POST');
-app.api('/api/store/uninstall', async (d) => uninstallSidecar({ sidecarId: String(d?.sidecarId || '') }), 'POST');
-app.api('/api/store/port-preview', async (d) => previewPluginPort(pluginRequest(d)), 'POST');
-app.api('/api/store/install-plugin', async (d) => installRemotePlugin(pluginRequest(d)), 'POST');
-app.api('/api/store/uninstall-plugin', async (d) => uninstallPlugin({ pluginId: String(d?.pluginId || '') }), 'POST');
-app.api('/api/plugins/diagnostics', async (d, c) => (
-  isAuthorizedSidecarRequest(d, c)
-    ? inspectInstalledPluginHealth()
-    : new Response('{"error":"Unauthorized"}', { status: 401, contentType: 'application/json' })
-), 'GET');
-app.api('/api/store/self-update', async (d) => selfUpdateHangar({
+})), 'POST');
+app.api('/api/store/uninstall', guardApi(async (d) => uninstallSidecar({ sidecarId: String(d?.sidecarId || '') })), 'POST');
+app.api('/api/store/port-preview', guardApi(async (d) => previewPluginPort(pluginRequest(d))), 'POST');
+app.api('/api/store/install-plugin', guardApi(async (d) => installRemotePlugin(pluginRequest(d))), 'POST');
+app.api('/api/store/uninstall-plugin', guardApi(async (d) => uninstallPlugin({ pluginId: String(d?.pluginId || '') })), 'POST');
+app.api('/api/plugins/diagnostics', guardApi(async () => inspectInstalledPluginHealth()), 'GET');
+app.api('/api/store/self-update', guardApi(async (d) => selfUpdateHangar({
   gitRepo: d?.gitRepo ? String(d.gitRepo) : '',
   tarballUrl: d?.tarballUrl ? String(d.tarballUrl) : '',
   version: d?.version ? String(d.version) : 'latest',
   sha256: d?.sha256 ? String(d.sha256) : '',
   deferRestart: true,
-}), 'POST');
-app.api('/api/sidechat/rename', async (ctx) => hangarRpc('UpdateConversationAnnotations', {
+})), 'POST');
+app.api('/api/sidechat/rename', guardApi(async (ctx) => hangarRpc('UpdateConversationAnnotations', {
   cascadeId: String(ctx?.body?.cascadeId || ctx?.cascadeId || ''),
   annotations: { title: String(ctx?.body?.title || ctx?.title || '') },
   mergeAnnotations: true,
-}), 'POST');
+})), 'POST');
 
 registerTerminalRoutes(app, { ResponseClass: Response });
 const stateSync = registerStateSyncRoutes(app, {
