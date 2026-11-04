@@ -405,6 +405,10 @@
       ns.setHtml(runningCountEl, ns.html`<span class="agy-badge-dot"></span><span>${runningCount} Running</span>`);
       runningCountEl.dataset.count = String(runningCount);
     }
+    const subtabGroup = q('subtab-group');
+    if (subtabGroup) {
+      subtabGroup.value = activeSubTab === 'settings' ? '' : activeSubTab;
+    }
     shell.querySelectorAll('[data-subtab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.subtab === activeSubTab);
     });

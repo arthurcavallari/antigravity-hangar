@@ -177,19 +177,24 @@
       runCardAction(card, () => onSaveWorkspaces(card._sc, next));
     });
     const procBtn = q('proc-btn');
+    const syncSwitch = (el, on, dis) => {
+      if (window.AgyUI?.syncSwitchState) {
+        window.AgyUI.syncSwitchState(el, on, dis);
+        return;
+      }
+      el.classList.toggle('on', Boolean(on));
+      el.setAttribute('aria-checked', String(Boolean(on)));
+      if (dis !== undefined) el.disabled = Boolean(dis);
+    };
     procBtn.addEventListener('click', async () => {
       if (procBtn.disabled) return;
       const nextOn = !card._sc.isRunning;
-      procBtn.disabled = true;
-      procBtn.classList.toggle('on', nextOn);
-      procBtn.setAttribute('aria-checked', String(nextOn));
+      syncSwitch(procBtn, nextOn, true);
       await runCardAction(
         card,
         () => onManageSidecar(card._sc.sidecarId, nextOn ? 'SIDECAR_ACTION_ENABLE' : 'SIDECAR_ACTION_DISABLE'),
       );
-      procBtn.disabled = false;
-      procBtn.classList.toggle('on', Boolean(card._sc.isRunning));
-      procBtn.setAttribute('aria-checked', String(Boolean(card._sc.isRunning)));
+      syncSwitch(procBtn, Boolean(card._sc.isRunning), false);
     });
     q('restart-btn').addEventListener('click', () => {
       runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'));
@@ -338,8 +343,12 @@
       });
       const procBtn = q('proc-btn');
       if (!procBtn.disabled) {
-        procBtn.classList.toggle('on', Boolean(sc.isRunning));
-        procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+        if (window.AgyUI?.syncSwitchState) {
+          window.AgyUI.syncSwitchState(procBtn, Boolean(sc.isRunning));
+        } else {
+          procBtn.classList.toggle('on', Boolean(sc.isRunning));
+          procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+        }
       }
     }
     for (const child of Array.from(paneEl.querySelectorAll('.agy-card'))) {

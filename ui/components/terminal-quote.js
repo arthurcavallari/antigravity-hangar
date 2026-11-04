@@ -8,7 +8,7 @@
     }
     const el = Object.assign(document.createElement(tag), { className: cls, ...props });
     if (h !== undefined) {
-      ns.setHtml?.(el, ns.html ? ns.html`${h}` : h);
+      ns.setHtml?.(el, ns.rawHtml ? ns.rawHtml(h) : h);
     }
     return el;
   };
@@ -21,7 +21,7 @@
     quoteFileUri = '',
   } = {}) {
     const cleanName = String(title || 'terminal')
-      .replace(/[\[\]()\r\n]/g, '')
+      .replace(/[\[\]()\r\n]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim() || 'terminal';
     const pid = String(terminalId || '').trim();

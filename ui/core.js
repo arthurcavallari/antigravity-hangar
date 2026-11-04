@@ -11,15 +11,39 @@
     });
   }
   const ui = window.AgyUI || {};
+  const trustedHtml = new Set();
+  const rawHtml = (str = '') => {
+    const s = String(str ?? '');
+    if (/[&<>"']/.test(s)) {
+      if (trustedHtml.has(s)) {
+        trustedHtml.delete(s);
+      } else if (trustedHtml.size >= 10000) {
+        trustedHtml.delete(trustedHtml.values().next().value);
+      }
+      trustedHtml.add(s);
+    }
+    return s;
+  };
+  const escapeRaw = (str = '') => String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  ns.rawHtml = ns.rawHtml || rawHtml;
+  ns.escHtml = ns.escHtml || ((str = '') => rawHtml(ui.escHtml ? ui.escHtml(str) : escapeRaw(str)));
   const toHtml = (v) => {
     if (Array.isArray(v)) return v.map(toHtml).join('');
-    if (v == null || typeof v !== 'object') return String(v ?? '');
-    return v.outerHTML ?? Array.from(v.childNodes || [], (c) => c.outerHTML ?? String(c.textContent ?? '')).join('');
+    if (v == null || typeof v !== 'object') {
+      const s = String(v ?? '');
+      return trustedHtml.has(s) ? s : escapeRaw(s);
+    }
+    return v.outerHTML ?? Array.from(v.childNodes || [], (c) => c.outerHTML ?? escapeRaw(c.textContent ?? '')).join('');
   };
-  ns.html = ns.html || ((strings, ...vals) => strings.reduce(
+  ns.html = ns.html || ((strings, ...vals) => rawHtml(strings.reduce(
     (a, s, i) => a + s + (i < vals.length ? toHtml(vals[i]) : ''),
     '',
-  ));
+  )));
   ns.setHtml = ns.setHtml || function setHtml(target, content) {
     if (!target) return target;
     if (content && typeof content === 'object' && !Array.isArray(content) && ('nodeType' in content || 'childNodes' in content)) {
@@ -31,24 +55,19 @@
       }
       return target;
     }
-    target.innerHTML = toHtml(content ?? '');
+    target.innerHTML = typeof content === 'string' ? content : toHtml(content ?? '');
     return target;
   };
   ns.el = ns.el || ui.el;
   ns.clear = ns.clear || ui.clear || ((target) => ns.setHtml(target, ''));
-  ns.iconSvg = ns.iconSvg || ui.iconSvg || ((name, size = 16, cls = '') => (
+  const baseIconSvg = ui.iconSvg || ((name, size = 16, cls = '') => (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="M120-240v-80h720v80H120Z"/></svg>`
   ));
+  ns.iconSvg = ns.iconSvg || ((name, size = 16, cls = '') => rawHtml(baseIconSvg(name, size, cls)));
   ns.iconEl = ns.iconEl || ui.iconEl || ((name, size = 16, cls = '') => {
     const wrap = Object.assign(document.createElement('span'), { className: 'agy-icon-wrap' });
     return ns.setHtml(wrap, ns.iconSvg(name, size, cls)).firstElementChild;
   });
-  ns.escHtml = ns.escHtml || ui.escHtml || ((str = '') => String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;'));
   ns.getUiToken = ns.getUiToken || (() => {
     try {
       const qTok = new URLSearchParams(window.location?.search || '').get('token');
@@ -117,8 +136,8 @@
   };
   const SAFE_ID_RE = (ns.SAFE_ID_RE = /^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?$/);
   const LOOPBACK_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
-  ns.isTrustedSidecarOrigin = (origin = '') => (
-    !origin || origin === window.location?.origin || LOOPBACK_ORIGIN_RE.test(String(origin))
+  ns.isTrustedSidecarOrigin = (origin) => (
+    origin === undefined || (Boolean(origin) && (origin === window.location?.origin || LOOPBACK_ORIGIN_RE.test(String(origin))))
   );
   const isSafeId = (val) => (
     typeof val === 'string' &&
@@ -127,7 +146,7 @@
   );
   ns.handleHangarNavigateMessage = function handleHangarNavigateMessage(event) {
     const data = event?.data;
-    if (!data || typeof data !== 'object' || data.type !== 'hangar-navigate' || !ns.isTrustedSidecarOrigin(event.origin)) {
+    if (!data || typeof data !== 'object' || data.type !== 'hangar-navigate' || event?.source === null || !ns.isTrustedSidecarOrigin(event.origin)) {
       return false;
     }
     const rawCandidate = (typeof data.pluginId === 'string' && data.pluginId.trim())

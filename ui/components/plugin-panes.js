@@ -15,7 +15,7 @@
     const ported = port || sources.length
       ? `<span class="agy-badge stopped">Ported from ${ns.escHtml(label)}</span>`
       : '';
-    return `<span class="agy-badge starting">Plugin</span>${ported}`;
+    return ns.rawHtml(`<span class="agy-badge starting">Plugin</span>${ported}`);
   };
 
   function reportList(title, items) {
@@ -29,7 +29,7 @@
     const tier = ns.formatCapabilityTier(res.scannedTier || report.tier);
     const native = (report.ecosystems || []).includes('antigravity');
     const flags = (report.flags || []).map(
-      (f) => `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${f.line}` : ''}</code>` : ''}`,
+      (f) => `<strong>${esc(f.severity)}</strong> ${esc(f.kind)}${f.file ? ` in <code>${esc(f.file)}${f.line ? `:${esc(f.line)}` : ''}</code>` : ''}`,
     );
     const unported = (report.unported || []).map((u) => `<code>${esc(u.item)}</code>: ${esc(u.reason)}`);
     const ported = (report.ported || []).map(esc);
@@ -37,13 +37,13 @@
       ? `${flags.length} audit finding${flags.length === 1 ? '' : 's'}`
       : `${ported.length} ported • ${unported.length} not ported • ${flags.length} audit finding${flags.length === 1 ? '' : 's'}`;
     const why = (report.tierReasons || []).join('; ') || 'what Hangar found in the plugin it will install';
-    return `
+    return ns.rawHtml(`
       <div><strong>${esc(tier.label)}:</strong> ${esc(why)}. Install anyway?</div>
       <details class="port-report"${flags.length || unported.length ? ' open' : ''}>
         <summary>${native ? 'Scan' : 'Port report'}: ${esc(summary)}</summary>
         ${reportList('Audit findings', flags)}${reportList('Not ported', unported)}${reportList('Ported', ported)}${reportList('Warnings', (report.warnings || []).map(esc))}
       </details>
-      <div class="port-report-note">Antigravity lists a new plugin as soon as it is installed. If it does not appear, restart Antigravity.</div>`;
+      <div class="port-report-note">Antigravity lists a new plugin as soon as it is installed. If it does not appear, restart Antigravity.</div>`);
   };
 
   function pluginPayload(pkg, consent = {}) {
@@ -230,15 +230,15 @@
     if (card.dataset.sig !== sig) {
       card.dataset.sig = sig;
       card.querySelector('[data-role="title"]').textContent = p.name;
-      ns.setHtml(card.querySelector('[data-role="badges"]'), [
+      ns.setHtml(card.querySelector('[data-role="badges"]'), ns.rawHtml([
         ns.pluginBadgesHtml(p),
-        tier ? `<span class="agy-badge ${tier.state}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
+        tier ? `<span class="agy-badge ${ns.escHtml(tier.state)}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
         p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
         p.disabled ? '<span class="agy-badge stopped">Disabled</span>' : '',
         p.builtin ? '<span class="agy-badge stopped">Built-in</span>' : '',
         missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
         missingVars.length ? `<span class="agy-badge hibernated" title="Unset env vars: ${ns.escHtml(missingVars.join(', '))}">Needs Env (${missingVars.length})</span>` : '',
-      ].join(''));
+      ].join('')));
       const origin = managed
         ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar')
         : (p.builtin ? 'ships with Antigravity' : 'installed outside Hangar');

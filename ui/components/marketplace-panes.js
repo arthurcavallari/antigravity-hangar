@@ -12,12 +12,8 @@
     searchQuery = String(query);
     activeCategory = 'all';
   };
-  ns.scannedTierConsentHtml = (tierId, verb = 'Install') => (
-    `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Hangar's scan of the downloaded code found it needs this access. ${verb} anyway?`
-  );
-  const declaredTierConsentHtml = (tierId) => (
-    `<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Grants local CLI or agent cascade access. Proceed?`
-  );
+  ns.scannedTierConsentHtml = (tierId, verb = 'Install') => ns.html`<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Hangar's scan of the downloaded code found it needs this access. ${verb} anyway?`;
+  const declaredTierConsentHtml = (tierId) => ns.html`<strong>${ns.escHtml(ns.formatCapabilityTier(tierId).label)}:</strong> Grants local CLI or agent cascade access. Proceed?`;
 
   function createDiscoverCard(pkgId, paneEl) {
     const card = Object.assign(document.createElement('div'), { className: 'agy-card' });
@@ -216,9 +212,9 @@
     let shell = paneEl.querySelector('[data-role="discover-shell"]');
     if (!shell) {
       const categories = ['all', 'telemetry', 'devops', 'productivity'];
-      const catButtons = categories
-        .map((c) => `<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`)
-        .join('');
+      const catButtons = categories.map(
+        (c) => ns.html`<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`,
+      );
       ns.setHtml(paneEl, ns.html`
         <div data-role="discover-shell">
           <div class="discover-toolbar">
@@ -242,6 +238,8 @@
         btn.addEventListener('click', () => {
           activeCategory = btn.dataset.cat;
           shell.querySelectorAll('[data-cat]').forEach((b) => b.classList.toggle('active', b.dataset.cat === activeCategory));
+          const catGroup = shell.querySelector('agy-toggle-group');
+          if (catGroup) catGroup.value = activeCategory;
           reconcileDiscoverList(paneEl);
         });
       });
@@ -251,6 +249,8 @@
       searchInput.value = searchQuery;
     }
     shell.querySelectorAll('[data-cat]').forEach((btn) => btn.classList.toggle('active', btn.dataset.cat === activeCategory));
+    const catGroup = shell.querySelector('agy-toggle-group');
+    if (catGroup) catGroup.value = activeCategory;
     reconcileDiscoverList(paneEl);
   };
 
@@ -268,6 +268,8 @@
     const wsLabelEl = shell.querySelector('[data-role="ws-scope-label"]');
     if (wsLabelEl && wsLabelEl.textContent !== wsName) wsLabelEl.textContent = wsName;
     shell.querySelectorAll('[data-scope]').forEach((btn) => btn.classList.toggle('active', btn.dataset.scope === sideloadScope));
+    const scopeGroup = shell.querySelector('agy-toggle-group');
+    if (scopeGroup) scopeGroup.value = sideloadScope;
   }
 
   ns.renderSideloadPane = function renderSideloadPane(paneEl, ctx = {}) {
