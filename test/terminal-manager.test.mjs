@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import vm from 'node:vm';
-import { closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
+import { buildSafeCdInitCommand, closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
-import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow } from '../lib/jetbox-proxy.mjs';
+import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
@@ -78,8 +78,23 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.equal(rpcCalls[0].body.conversationId, 'hangar:conv-abc');
       const initCall = rpcCalls.find((c) => c.method === 'SendTerminalInput' && c.body.inputStreamId === 'hangar-init');
       const initCmdText = initCall ? Buffer.from(initCall.body.input, 'base64').toString('utf8') : '';
-      assert.ok(initCmdText.includes('cd "c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub"'));
+      assert.ok(initCmdText.includes("cd 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub'"));
       assert.ok(initCmdText.includes('[2;1H') && initCmdText.includes('[J') && !/\bclear\b/.test(initCmdText));
+
+      // Verify shell-injection payloads in workspace directory names are safely single-quoted / escaped
+      const psCmd = buildSafeCdInitCommand("C:/repo/$(calc.exe)`n'test", 'pwsh', 'win32');
+      assert.ok(psCmd.startsWith("cd 'C:/repo/$(calc.exe)`n''test' ;"));
+      const posixCmd = buildSafeCdInitCommand("/tmp/$(id)`whoami`'dir", 'zsh', 'linux');
+      assert.ok(posixCmd.startsWith("cd -- '/tmp/$(id)`whoami`'\\''dir' &&"));
+      const cmdExe = buildSafeCdInitCommand('C:/repo/"evil"%PATH%', 'cmd.exe', 'win32');
+      assert.equal(cmdExe, 'cd /d "C:\\repo\\evil%%PATH%%" && cls\r');
+
+      // Verify writeQuoteFile keys files by terminalId and normalizes bracketed titles so concurrent terminals do not collide
+      const qUriA = writeQuoteFile('pwsh [dev]', 'quote A', 'term-alpha-1');
+      const qUriB = writeQuoteFile('pwsh', 'quote B', 'term-beta-2');
+      assert.notEqual(qUriA, qUriB);
+      assert.ok(qUriA.endsWith('/pwsh-dev-term-alpha-1-quote.txt'));
+      assert.ok(qUriB.endsWith('/pwsh-term-beta-2-quote.txt'));
       await new Promise((r) => setTimeout(r, 25));
       const polled = pollTerminalOutput({ terminalId: 'term-live-1', afterSeq: 0, fetchFn: mockFetch });
       assert.equal(polled.title, 'pwsh-custom'); assert.equal(polled.exited, true); assert.equal(polled.exitCode, 0);
@@ -115,7 +130,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const ctx = vm.createContext({ window: windowObj, document: documentObj, navigator: windowObj.navigator, JSON, encodeURIComponent, setTimeout, clearTimeout });
     vm.runInContext(readFileSync(join(REPO_ROOT, 'ui/core.js'), 'utf8'), ctx);
     vm.runInContext(readFileSync(join(REPO_ROOT, 'ui/components/terminal-quote.js'), 'utf8'), ctx);
-    const payload = windowObj.Hangar.buildTerminalScopePayload({ terminalId: 'f49811d2-c03f-4484-aa22-be4aa429211d', title: 'pwsh [main]', selectionContent: 'Error: EADDRINUSE: address already in use' });
+    const payload = windowObj.Hangar.buildTerminalScopePayload({ terminalId: 'f49811d2-c03f-4484-aa22-be4aa429211d', title: 'pwsh[main]', selectionContent: 'Error: EADDRINUSE: address already in use' });
     assert.equal(payload.cleanName, 'pwsh main'); assert.equal(payload.plainText, '[pwsh main](terminal;f49811d2-c03f-4484-aa22-be4aa429211d) ');
     assert.deepEqual(JSON.parse(payload.contextScopeJson), { terminal: { processId: 'f49811d2-c03f-4484-aa22-be4aa429211d', name: 'pwsh main', selectionContent: 'Error: EADDRINUSE: address already in use' } });
     const lexical = JSON.parse(payload.lexicalJson);
@@ -169,6 +184,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     win.requestAnimationFrame(() => { rafFired = true; });
     await new Promise((r) => setTimeout(r, 35));
     assert.equal(rafFired, true);
+    let directRafCalls = 0;
+    win.innerWidth = 800;
+    doc.hidden = false;
+    win.requestAnimationFrame(() => { directRafCalls++; });
+    assert.equal(directRafCalls, 0, 'visible iframe delegates directly to native origRaf without setTimeout');
     const jetboxDragMime = {}, dragOverDt = {}; let dragStopped = false, dragOverStopped = false, dragOverPrevented = false;
     for (const fn of winListeners.mousedown || []) fn({ target: popupBtn, stopPropagation() {}, preventDefault() {} });
     termActiveEl.__reactFiber$xyz.memoizedState.memoizedState.current.clearSelection();
@@ -309,6 +329,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       vm.runInContext(readFileSync(join(REPO_ROOT, rel), 'utf8'), ctx);
     }
     windowObj.Hangar.apiCall = async (path, body) => { apiCalls.push({ path, body }); return {}; };
+    assert.ok(windowObj.Hangar.sideChatStore && typeof windowObj.Hangar.sideChatStore.getState === 'function');
+    assert.ok(windowObj.Hangar.terminalStore && windowObj.Hangar.terminalStore.instances instanceof Map);
     assert.equal(windowObj.Hangar.readEngineMode(), 'jetbox');
     windowObj.Hangar.saveCustomTermTitle('t1', 'build-watcher');
     assert.equal(windowObj.Hangar.readCustomTermTitles().t1, 'build-watcher');
@@ -491,6 +513,19 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(composer._els.overviewBtn.classList.contains('active'), true);
     let lastScDockEvt = null;
     windowObj.Hangar.setSideChatDockCallback((evt) => { lastScDockEvt = evt; });
+    // Untrusted origin, empty origin, detached source === null, or unknown iframe source must be rejected
+    for (const fn of winListeners.message || []) {
+      fn({ origin: 'https://evil.example', data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+      fn({ origin: '', data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+      fn({ source: null, data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+      fn({ source: { foreignFrame: true }, data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
+    }
+    assert.equal(lastScDockEvt, null);
+    // Verify ns.html auto-escapes untrusted strings while preserving escHtml and rawHtml
+    assert.equal(
+      String(windowObj.Hangar.html`<div>${'<img src=x onerror=alert(1)>'}<span>${windowObj.Hangar.escHtml('<b>ok</b>')}</span></div>`),
+      '<div>&lt;img src=x onerror=alert(1)&gt;<span>&lt;b&gt;ok&lt;/b&gt;</span></div>'
+    );
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: windowObj.Hangar.getSideChatState().threads[0].cascadeId } } });
     assert.equal(composer._overviewOpen, false);
     assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
@@ -506,15 +541,35 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Chat #1');
     miniComposer._setTargetCascadeId(windowObj.Hangar.getSideChatState().threads[0].cascadeId);
     assert.ok(miniComposer._els.sideChatBtn.innerHTML.includes('Ask in Side Chat #1'));
+    assert.ok(composer._els.threadSelect.innerHTML.includes('<option value="'), 'threadSelect options must not be HTML-escaped');
+    assert.equal(composer._els.threadSelect.innerHTML.includes('&lt;option'), false);
     miniComposer._els.input.value = 'Follow-up in existing thread';
     miniComposer._submitSideChat();
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
     assert.equal(composer._pendingQuote.promptText, 'Follow-up in existing thread');
+    const firstCid = windowObj.Hangar.getSideChatState().threads[0].cascadeId;
+    const bgFrameWin = { isPooledBgFrame: true };
+    composer._els.chatFrame.contentWindow = bgFrameWin;
     windowObj.Hangar.openTerminalQuoteComposer(vpEl, {}, { conversationId: 'conv-host-1', forceNewThread: true });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 2);
     assert.equal(windowObj.Hangar.getSideChatState().threads[1].title, 'Side Chat #2');
     assert.ok(composer._els.chatFrame.src.includes(encodeURIComponent(windowObj.Hangar.getSideChatState().threads[1].cascadeId)));
+    // Background pooled frame in sc.frames must still be trusted by isTrustedSideChatMessage
+    lastScDockEvt = null;
+    for (const fn of winListeners.message || []) {
+      fn({ source: bgFrameWin, data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: firstCid } } });
+    }
+    assert.equal(lastScDockEvt?.openTerminal, true);
+    // _handleJetboxTermEvent must reject foreign sourceWin even when p.frame is null (Direct VT100 mode)
+    let foreignFocused = false;
+    windowObj.Hangar._handleJetboxTermEvent(
+      'hangar-jetbox-pane-focused',
+      { terminalId: 't1' },
+      { foreign: true },
+      { visibleIds: ['t1'], setFocusedPane: () => { foreignFocused = true; } }
+    );
+    assert.equal(foreignFocused, false, 'foreign sourceWin must be rejected when p.frame is null');
     const scPills = children.filter((c) => c.className?.includes('agy-tab') && c.dataset?.cascadeId).slice(-2);
     assert.equal(scPills.length, 2);
     scPills.at(-1).emit('dblclick', { stopPropagation() {} });
@@ -659,6 +714,38 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       const standalone = await startTerminalSideChat({ parentConversationId: '_new', cascadeId: 'side-cascade-102', rpcFn: mockRpc });
       assert.equal(standalone.cascadeId, 'side-cascade-102');
       assert.equal(rpcCalls[1].body.baseTrajectoryIdentifier, undefined);
+
+      // When parentConversationId is not yet a local LS conversation (501 unimplemented), falls back to standalone StartCascade and replaces legacy sidechat-ts-idx IDs
+      const fallbackRpcCalls = [];
+      const fallbackStarted = await startTerminalSideChat({
+        parentConversationId: 'unstarted-parent-uuid',
+        cascadeId: 'sidechat-1793706743834-1',
+        rpcFn: async (method, body) => {
+          fallbackRpcCalls.push({ method, body });
+          if (body.baseTrajectoryIdentifier) throw new Error('501 unimplemented: not a local conversation');
+          return { cascadeId: body.cascadeId };
+        },
+      });
+      assert.match(fallbackStarted.cascadeId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      assert.equal(fallbackStarted.parentConversationId, '');
+      assert.equal(fallbackRpcCalls.length, 2);
+      assert.equal(fallbackRpcCalls[1].body.baseTrajectoryIdentifier, undefined);
+
+      // When StreamAgentStateUpdates returns not_found for a valid UUID, pollChatStream auto-calls StartCascade instead of locking closed=true
+      const missingUuid = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+      const autoStartCalls = [];
+      const notFoundFrame = encodeConnectFrame({ error: { code: 'not_found', message: 'not_found: trajectory not found' } }, 2);
+      pollChatStream({
+        conversationId: missingUuid,
+        subscriberId: 'sub-heal',
+        afterSeq: 0,
+        fetchFn: async () => ({ ok: true, body: new ReadableStream({ start(c) { c.enqueue(notFoundFrame); c.close(); } }) }),
+        rpcFn: async (method, body) => { autoStartCalls.push({ method, body }); return {}; },
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      assert.equal(autoStartCalls.length, 1);
+      assert.deepEqual(autoStartCalls[0], { method: 'StartCascade', body: { cascadeId: missingUuid, trajectoryType: 22, source: 12 } });
+      await deleteTerminalSideChat({ cascadeId: missingUuid, rpcFn: mockRpc });
 
       pollChatStream({ conversationId: 'side-cascade-101', subscriberId: 'sub-1', afterSeq: 0, fetchFn: mockFetch });
       await new Promise((r) => setTimeout(r, 25));
@@ -807,6 +894,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'https://evil.example', 'x-sidecar-token': 'secret-ui-tok-999' } }).ok, false);
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'wrong-tok' } }).ok, false);
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', 'x-sidecar-token': 'secret-ui-tok-999' } }).ok, true);
+      assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', 'X-Sidecar-Token': ['secret-ui-tok-999'] } }).ok, true);
+      assert.equal(checkJetboxAuth({}, { req: { url: 'http://[invalid', headers: { origin: 'http://127.0.0.1:51000' } } }).ok, false);
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://localhost:51000' }, url: '/jetbox-terminal?token=secret-ui-tok-999' }).ok, true);
       assert.equal(checkJetboxAuth({}, { headers: { origin: 'http://127.0.0.1:51000', referer: 'http://127.0.0.1:51000/jetbox-terminal?token=secret-ui-tok-999' } }).ok, true);
 
@@ -891,5 +980,9 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     );
     const sidechatRenameMatches = quoteAndSideChatSrc.match(/\/api\/sidechat\/rename/g) || [];
     assert.ok(sidechatRenameMatches.length >= 1, 'session-strip inline rename handler must call /api/sidechat/rename');
+
+    // PowerShell paths with wildcard characters ([], *, ?) or leading hyphen use cd -LiteralPath
+    assert.match(buildSafeCdInitCommand('C:\\repo\\app\\[id]', 'pwsh.exe', 'win32'), /^cd -LiteralPath 'C:\\repo\\app\\\[id\]'/);
+    assert.match(buildSafeCdInitCommand('C:\\repo\\normal', 'pwsh.exe', 'win32'), /^cd 'C:\\repo\\normal'/);
   });
 });

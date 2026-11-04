@@ -7,9 +7,10 @@
     ns.isTerminalTabId ||
     ((id = '') => id === ns.TERMINAL_TAB_ID || String(id || '').startsWith(ns.TERMINAL_TAB_PREFIX));
 
-  const instanceControllers = (ns._termInstances = new Map());
-  const sharedPanes = (ns._termSharedPanes = new Map());
-  const closingIds = new Set();
+  const termStore = ns.terminalStore;
+  const instanceControllers = (ns._termInstances = termStore?.instances || ns._termInstances || new Map());
+  const sharedPanes = (ns._termSharedPanes = termStore?.sharedPanes || ns._termSharedPanes || new Map());
+  const closingIds = termStore?.closingIds || new Set();
 
   ns.isTerminalClosing = (tid) => closingIds.has(tid);
 
@@ -333,6 +334,7 @@
   };
 
   ns._pollVisibleTermPanes = async function pollVisibleTermPanes({ visibleIds, terminals, resolveTitle, renderToolbar }) {
+    let hadActivity = false;
     for (const tid of visibleIds) {
       const p = sharedPanes.get(tid);
       if (!p) continue;
@@ -340,6 +342,7 @@
         const data = await ns.apiCall('/api/terminal/poll', { terminalId: tid, afterSeq: p.afterSeq });
         const nextTitle = data.title ? ns.formatTermTitle(data.title) : '';
         if (nextTitle && nextTitle !== p.title) {
+          hadActivity = true;
           p.title = nextTitle;
           if (p.titleEl) {
             p.titleEl.textContent = resolveTitle(tid, nextTitle);
@@ -352,6 +355,7 @@
         }
         for (const chunk of data.chunks || []) {
           if ((chunk.seq || 0) <= p.afterSeq) continue;
+          hadActivity = true;
           const isReset = Boolean(chunk.isScrollback && !p.lastWasScrollback);
           p.lastWasScrollback = Boolean(chunk.isScrollback);
           p.afterSeq = chunk.seq || p.afterSeq;
@@ -363,13 +367,14 @@
         /* ignore */
       }
     }
+    return hadActivity;
   };
 
   ns._handleJetboxTermEvent = function handleJetboxTermEvent(type, payload = {}, sourceWin, ctx) {
     const tid = payload?.terminalId;
     if (!tid || !ctx.visibleIds.includes(tid)) return;
     const p = sharedPanes.get(tid);
-    if (sourceWin && p?.frame?.contentWindow && p.frame.contentWindow !== sourceWin) return;
+    if (sourceWin === null || (sourceWin !== undefined && sourceWin !== window && p?.frame?.contentWindow !== sourceWin)) return;
     if (type !== 'hangar-jetbox-title-changed') {
       ctx.setFocusedPane(tid, false);
     }
@@ -403,6 +408,13 @@
   };
 
   window.addEventListener('message', (e) => {
+    if (e?.source === null) return;
+    if (e?.origin !== undefined) {
+      const locOrigin = window.location?.origin;
+      if (locOrigin ? e.origin !== locOrigin : !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(String(e.origin))) {
+        return;
+      }
+    }
     if (e.data?.type?.startsWith?.('hangar-jetbox-')) {
       instanceControllers.forEach((c) => c.handleJetboxEvent(e.data.type, e.data.payload, e.source));
     }

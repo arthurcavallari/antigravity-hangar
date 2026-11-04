@@ -194,8 +194,11 @@
   const origCaf = window.cancelAnimationFrame?.bind(window);
   if (origRaf) {
     const rafMap = new Map();
-    let nextRafId = 1;
+    let nextRafId = 0x40000000;
     window.requestAnimationFrame = (cb) => {
+      if (!document.hidden && (Number(window.innerWidth) || 0) > 0) {
+        return origRaf(cb);
+      }
       const id = nextRafId++;
       let done = false;
       const run = (ts) => {
@@ -211,10 +214,12 @@
         }
         cb(ts);
       };
-      rafMap.set(id, {
-        nId: origRaf(run),
-        tId: setTimeout(() => run(window.performance?.now?.() || Date.now()), 20),
-      });
+      const entry = { nId: 0, tId: 0 };
+      rafMap.set(id, entry);
+      entry.nId = origRaf(run);
+      if (!done) {
+        entry.tId = setTimeout(() => run(window.performance?.now?.() || Date.now()), 20);
+      }
       return id;
     };
     window.cancelAnimationFrame = (id) => {
@@ -324,9 +329,11 @@
     let cancelled = false;
     let lastTitle = '';
     let lastCwd = '';
+    let idlePolls = 0;
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
+          let hadChunks = false;
           try {
             const res = await sidecarFetch()('/api/terminal/poll', {
               method: 'POST',
@@ -334,7 +341,9 @@
               body: JSON.stringify({ terminalId: reqTerminalId, afterSeq }),
             });
             const data = await res.json();
-            for (const chunk of data.chunks || []) {
+            const chunks = data.chunks || [];
+            hadChunks = chunks.length > 0;
+            for (const chunk of chunks) {
               afterSeq = Math.max(afterSeq, chunk.seq || 0);
               if (chunk.outputBase64) {
                 controller.enqueue(
@@ -369,7 +378,9 @@
               break;
             }
           } catch {}
-          await new Promise((r) => setTimeout(r, (window.innerWidth === 0 || document.hidden) ? 250 : 45));
+          idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
+          const delayMs = (document.hidden || (Number(window.innerWidth) || 0) <= 0) ? 1500 : (idlePolls >= 4 ? 180 : 45);
+          await new Promise((r) => setTimeout(r, delayMs));
         }
       },
       cancel() {
@@ -381,12 +392,14 @@
   function createChatConnectStream(reqBody) {
     let afterSeq = 0;
     let cancelled = false;
+    let idlePolls = 0;
     const convId = reqBody?.conversationId || effectiveCascadeId;
     const subId = reqBody?.subscriberId || 'sidechat';
     const verbosity = reqBody?.trajectoryVerbosity ?? 1;
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
+          let hadChunks = false;
           try {
             const res = await sidecarFetch()('/api/terminal/chat-poll', {
               method: 'POST',
@@ -399,7 +412,9 @@
               }),
             });
             const data = await res.json();
-            for (const chunk of data.chunks || []) {
+            const chunks = data.chunks || [];
+            hadChunks = chunks.length > 0;
+            for (const chunk of chunks) {
               afterSeq = Math.max(afterSeq, chunk.seq || 0);
               if (chunk.frameData) {
                 controller.enqueue(encodeConnectFrame(chunk.frameData, 0));
@@ -411,7 +426,9 @@
               break;
             }
           } catch {}
-          await new Promise((r) => setTimeout(r, (window.innerWidth === 0 || document.hidden) ? 250 : 45));
+          idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
+          const delayMs = (document.hidden || (Number(window.innerWidth) || 0) <= 0) ? 1500 : (idlePolls >= 4 ? 180 : 45);
+          await new Promise((r) => setTimeout(r, delayMs));
         }
       },
       cancel() {
@@ -425,17 +442,19 @@
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
-          try {
-            const res = await sidecarFetch()('/api/terminal/ls-rpc', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ method: 'GetAllCascadeTrajectories', body: {} }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (data?.trajectorySummaries) {
-              controller.enqueue(encodeConnectFrame({ updates: data.trajectorySummaries, deletes: [] }, 0));
-            }
-          } catch {}
+          if (!document.hidden && (Number(window.innerWidth) || 0) > 0) {
+            try {
+              const res = await sidecarFetch()('/api/terminal/ls-rpc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ method: 'GetAllCascadeTrajectories', body: {} }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (data?.trajectorySummaries) {
+                controller.enqueue(encodeConnectFrame({ updates: data.trajectorySummaries, deletes: [] }, 0));
+              }
+            } catch {}
+          }
           await new Promise((r) => setTimeout(r, 2500));
         }
       },
@@ -506,7 +525,11 @@
           targetConversationId: effectiveCascadeId,
         }),
       });
-      return makeGrpcUnaryResponse(await rpcRes.json().catch(() => ({})));
+      const rpcPayload = await rpcRes.json().catch(() => ({}));
+      if (rpcRes.ok === false) {
+        return new window.Response(encodeGrpcTrailer(2), { status: 200, headers: GRPC_WEB_HEADERS });
+      }
+      return makeGrpcUnaryResponse(rpcPayload);
     }
     return nativeFetch(input, init);
   };
@@ -516,7 +539,12 @@
       .replace(/[\[\]()\r\n]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim() || 'terminal';
-    const safeFile = (cleanName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'terminal') + '-quote.txt';
+    const baseName = cleanName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'terminal';
+    const safeTid = String(tid || terminalId || '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 36);
+    const safeFile = (safeTid ? baseName + '-' + safeTid : baseName) + '-quote.txt';
     const quoteFileUri = quoteDirUri ? quoteDirUri + '/' + encodeURIComponent(safeFile) : '';
     const termObj = {
       processId: String(tid || terminalId || ''),
@@ -694,8 +722,8 @@
   }
 
   window.addEventListener('message', (e) => {
-    if (e.source !== undefined && e.source !== window.parent) return;
-    if (e.origin && e.origin !== window.location?.origin) return;
+    if (e?.source === null || (e?.source !== undefined && e.source !== window.parent)) return;
+    if (e?.origin !== undefined && e.origin !== window.location?.origin) return;
     if (e.data?.type === 'theme-change' && e.data?.payload?.cssVariables) {
       savedThemeVars = e.data.payload.cssVariables;
       applySavedTheme();
@@ -1070,7 +1098,7 @@
         outsideFrame: outside,
         dropEffect: e?.dataTransfer?.dropEffect || 'none',
       });
-      if (outside && (cx < 0 || !window.parent || window.parent === window)) {
+      if (outside && (!window.parent || window.parent === window)) {
         try {
           sidecarFetch()('/api/terminal/ls-rpc', {
             method: 'POST',

@@ -39,6 +39,18 @@
   const readAllStoredGroups = () => readJson(TAB_GROUPS_STORAGE_KEY, {});
   const writeAllStoredGroups = (all) => writeJson(TAB_GROUPS_STORAGE_KEY, all);
   const activeGroupByInstance = new Map();
+  const terminalStore = (ns.terminalStore = {
+    instances: ns._termInstances || (ns._termInstances = new Map()),
+    sharedPanes: ns._termSharedPanes || (ns._termSharedPanes = new Map()),
+    closingIds: new Set(),
+    activeGroupByInstance,
+    getInstance: (tabId) => terminalStore.instances.get(tabId),
+    setInstance: (tabId, ctrl) => terminalStore.instances.set(tabId, ctrl),
+    deleteInstance: (tabId) => terminalStore.instances.delete(tabId),
+    getSharedPane: (tid) => terminalStore.sharedPanes.get(tid),
+    setSharedPane: (tid, pane) => terminalStore.sharedPanes.set(tid, pane),
+    deleteSharedPane: (tid) => terminalStore.sharedPanes.delete(tid),
+  });
 
   ns.setTerminalPersistCallback = (fn) => {
     onPersistTermState = typeof fn === 'function' ? fn : null;

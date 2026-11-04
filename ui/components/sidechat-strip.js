@@ -1,7 +1,7 @@
 /** @fileoverview Side Chat session tab-strip controller, inline rename, and cross-instance drag-and-drop. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const sc = ns._sc;
+  const sc = ns.sideChatStore?.state || ns._sc;
 
   ns.demoteSideChatTabIntoInstance = function demoteSideChatTabIntoInstance(sourceSidecarId, dropTarget = {}) {
     const targetInstanceTabId = dropTarget.targetInstanceTabId || ns.SIDECHAT_TAB_ID;

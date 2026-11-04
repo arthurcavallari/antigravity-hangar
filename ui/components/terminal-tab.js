@@ -1,8 +1,9 @@
 /** @fileoverview Dual-engine Interactive Terminal view (Direct VT100 + Native jetbox_web) with TabGroups and split panes. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const instanceControllers = ns._termInstances;
-  const sharedPanes = ns._termSharedPanes;
+  const termStore = ns.terminalStore;
+  const instanceControllers = termStore?.instances || ns._termInstances;
+  const sharedPanes = termStore?.sharedPanes || ns._termSharedPanes;
 
   function createInstanceController(instanceTabId, rootId = '') {
     let tabGroups = ns.readTabGroups(instanceTabId);
@@ -70,6 +71,7 @@
     };
 
     const refreshView = (notify = false) => {
+      engineMode = ns.readEngineMode();
       renderToolbar();
       renderStage();
       if (notify && rootId) {
@@ -198,6 +200,7 @@
       });
 
     function renderToolbar() {
+      engineMode = ns.readEngineMode();
       if (
         ns.activeTermDrag?.instanceTabId === instanceTabId ||
         ns.pointerTermInstanceId === instanceTabId ||
@@ -205,7 +208,6 @@
       ) {
         return;
       }
-      engineMode = ns.readEngineMode();
       const activeGrp = getActiveGroup();
       const visibleIds = getVisibleIds();
       const hasSessions = tabGroups.length > 0;
@@ -273,6 +275,7 @@
       const toggleEngine = () => {
         ns.saveEngineMode(engineMode === 'jetbox' ? 'direct' : 'jetbox');
         refreshView();
+        schedulePollLoop();
       };
 
       const closeOthers = (grpId, others) => {
@@ -510,25 +513,53 @@
       }
     });
 
+    let pollTimer = null;
+    let idlePollStreak = 0;
+    let disposed = false;
+
+    const stopPollLoop = () => {
+      if (pollTimer !== null) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    };
+
+    const schedulePollLoop = () => {
+      stopPollLoop();
+      engineMode = ns.readEngineMode();
+      if (disposed || !isVisible || engineMode !== 'direct') return;
+      const delayMs = idlePollStreak >= 3 ? 220 : 70;
+      pollTimer = setTimeout(async () => {
+        pollTimer = null;
+        await pollVisiblePanes();
+        schedulePollLoop();
+      }, delayMs);
+      pollTimer?.unref?.();
+    };
+
     async function pollVisiblePanes() {
-      if (pollBusy || !isVisible || engineMode !== 'direct') return;
+      engineMode = ns.readEngineMode();
+      if (pollBusy || !isVisible || engineMode !== 'direct') return false;
       pollBusy = true;
       try {
-        await ns._pollVisibleTermPanes({ visibleIds: getVisibleIds(), terminals, resolveTitle, renderToolbar });
+        const active = await ns._pollVisibleTermPanes({ visibleIds: getVisibleIds(), terminals, resolveTitle, renderToolbar });
+        idlePollStreak = active ? 0 : Math.min(10, idlePollStreak + 1);
+        return active;
       } finally {
         pollBusy = false;
       }
     }
 
-    const pollTimer = setInterval(pollVisiblePanes, 70);
     return {
       rootEl,
       setVisible: (vis) => {
         if (isVisible === false && vis) {
           ns._userActivatedTerminal = true;
           pendingFocus = true;
+          idlePollStreak = 0;
         }
         isVisible = Boolean(vis);
+        schedulePollLoop();
       },
       focusTerminal: (tid) => {
         tabGroups = ns.readTabGroups(instanceTabId);
@@ -569,6 +600,7 @@
           }
         }
         pollVisiblePanes();
+        schedulePollLoop();
       },
       handleJetboxEvent: (type, payload = {}, sourceWin) =>
         ns._handleJetboxTermEvent(type, payload, sourceWin, {
@@ -582,7 +614,8 @@
           renderToolbar,
         }),
       dispose: () => {
-        clearInterval(pollTimer);
+        disposed = true;
+        stopPollLoop();
         rootEl.remove?.();
       },
     };

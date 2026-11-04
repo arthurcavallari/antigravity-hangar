@@ -7,6 +7,15 @@
     tabId === ns.SIDECHAT_TAB_ID || String(tabId || '').startsWith(ns.SIDECHAT_TAB_PREFIX);
 
   const CUSTOM_TITLES_KEY = 'hangar.sideChatCustomTitles';
+  const LEGACY_SIDECHAT_ID_RE = /^sidechat-\d+-\d+$/;
+  const genSideChatUuid = () => (
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        })
+  );
   const sc = (ns._sc = {
     threads: [],
     activeId: '',
@@ -24,6 +33,26 @@
     boxes: new Map(),
     frames: new Map(),
   });
+  ns.sideChatStore = {
+    state: sc,
+    getState: () => sc,
+    getBox: (tabId) => sc.boxes.get(tabId),
+    setBox: (tabId, box) => sc.boxes.set(tabId, box),
+    deleteBox: (tabId) => sc.boxes.delete(tabId),
+    getBoxes: () => sc.boxes,
+    getFrame: (cid) => sc.frames.get(cid),
+    setFrame: (cid, frame) => sc.frames.set(cid, frame),
+    deleteFrame: (cid) => sc.frames.delete(cid),
+    getFrames: () => sc.frames,
+    getThreads: () => sc.threads,
+    markThreadActivity: (cid, active = true) => {
+      const th = sc.threads.find((t) => t.cascadeId === cid);
+      if (th) {
+        th.hasActivity = Boolean(active);
+      }
+      return th;
+    },
+  };
 
   ns._bindAutoTextarea = function bindAutoTextarea(input, minH = 38, maxH = 120) {
     const sync = () => {
@@ -150,6 +179,15 @@
     Object.keys(sc.groupMap).forEach((k) => delete sc.groupMap[k]);
     sc.activeByInstance.clear();
     const raw = wsKey ? layout?.sideChatStateByWorkspace?.[wsKey] : layout?.sideChatState;
+    const legacyIdMap = new Map();
+    const normCid = (rawId) => {
+      const id = String(rawId || '');
+      if (!LEGACY_SIDECHAT_ID_RE.test(id)) return id;
+      if (!legacyIdMap.has(id)) {
+        legacyIdMap.set(id, genSideChatUuid());
+      }
+      return legacyIdMap.get(id);
+    };
     if (raw && typeof raw === 'object') {
       if (raw.customTitles && typeof raw.customTitles === 'object') {
         try {
@@ -165,7 +203,7 @@
         sc.threads = raw.threads
           .filter((t) => t?.cascadeId)
           .map((t) => ({
-            cascadeId: String(t.cascadeId),
+            cascadeId: normCid(t.cascadeId),
             title: String(t.title || 'Side Chat'),
             parentConversationId: String(t.parentConversationId || ''),
             hasActivity: false,
@@ -179,20 +217,22 @@
         sc.threads.length
       );
       if (Array.isArray(raw.poppedIds)) {
-        raw.poppedIds.filter(Boolean).forEach((id) => sc.poppedIds.add(String(id)));
+        raw.poppedIds.filter(Boolean).forEach((id) => sc.poppedIds.add(normCid(id)));
       }
       if (raw.groupMap && typeof raw.groupMap === 'object') {
-        Object.assign(sc.groupMap, raw.groupMap);
+        Object.entries(raw.groupMap).forEach(([k, v]) => {
+          sc.groupMap[normCid(k)] = normCid(v);
+        });
       }
       if (raw.activeByInstance && typeof raw.activeByInstance === 'object') {
         Object.entries(raw.activeByInstance).forEach(([k, v]) => {
           if (v) {
-            sc.activeByInstance.set(k, String(v));
+            sc.activeByInstance.set(k, normCid(v));
           }
         });
       }
       if (raw.activeCascadeId) {
-        sc.activeId = String(raw.activeCascadeId);
+        sc.activeId = normCid(raw.activeCascadeId);
       }
       if (typeof raw.isDocked === 'boolean') {
         sc.isDocked = raw.isDocked;
@@ -276,10 +316,10 @@
     const run = (async () => {
       sc.counter += 1;
       const idx = sc.counter;
-      let cascadeId = `sidechat-${Date.now()}-${idx}`;
+      let cascadeId = genSideChatUuid();
       let createdRemote = false;
       try {
-        const res = await ns.apiCall?.('/api/terminal/sidechat/start', { parentConversationId });
+        const res = await ns.apiCall?.('/api/terminal/sidechat/start', { parentConversationId, cascadeId });
         if (res?.cascadeId) {
           cascadeId = String(res.cascadeId);
           createdRemote = true;

@@ -1,7 +1,8 @@
 /** @fileoverview Docked Side Chat pane controller and iframe lifecycle. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const sc = ns._sc;
+  const store = ns.sideChatStore;
+  const sc = store?.state || ns._sc;
 
   const buildChatFrameSrc = (cascadeId) => {
     const isLight = Boolean(document.body?.classList?.contains?.('theme-light'));
@@ -12,7 +13,7 @@
   const mkEl = (ns._mkSideChatEl = function mkEl(tag, className, { html: rawHtml, ...rest } = {}, ds = {}, onClick = null) {
     const e = Object.assign(document.createElement(tag), { className, ...rest });
     if (rawHtml !== undefined) {
-      ns.setHtml(e, ns.html`${rawHtml}`);
+      ns.setHtml(e, ns.rawHtml ? ns.rawHtml(rawHtml) : rawHtml);
     }
     e.dataset = Object.assign(e.dataset || {}, ds);
     if (onClick) {
@@ -24,15 +25,39 @@
     return e;
   });
 
+  const isTrustedSideChatMessage = (e) => {
+    if (e?.origin !== undefined) {
+      const locOrigin = window.location?.origin;
+      if (locOrigin ? e.origin !== locOrigin : !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(String(e.origin))) {
+        return false;
+      }
+    }
+    if (e?.source === null) return false;
+    if (e?.source === undefined || e.source === window) return true;
+    for (const box of sc.boxes.values()) {
+      const chatWin = box?._els?.chatFrame?.contentWindow;
+      const initWin = box?._els?.initialFrame?.contentWindow;
+      if ((chatWin && chatWin === e.source) || (initWin && initWin === e.source)) return true;
+    }
+    for (const frame of sc.frames?.values?.() || []) {
+      if (frame?.contentWindow && frame.contentWindow === e.source) return true;
+    }
+    return false;
+  };
+
   window.addEventListener?.('message', (e) => {
     const type = e.data?.type;
+    if (!type || !String(type).startsWith('hangar-sidechat-')) return;
+    if (!isTrustedSideChatMessage(e)) return;
     const payload = e.data?.payload || {};
     const tabId = ns._resolveSideChatTabId?.(payload.cascadeId) || ns.SIDECHAT_TAB_ID;
     if (type === 'hangar-sidechat-quote-injected') {
-      const th = sc.threads.find((t) => t.cascadeId === payload.cascadeId);
-      if (th) {
-        th.hasActivity = true;
-      }
+      store ? store.markThreadActivity(payload.cascadeId, true) : (() => {
+        const th = sc.threads.find((t) => t.cascadeId === payload.cascadeId);
+        if (th) {
+          th.hasActivity = true;
+        }
+      })();
       sc.boxes.forEach((b) => {
         if (b._pendingQuote) {
           b._pendingQuote = null;
@@ -374,7 +399,7 @@
           return `<option value="${safeId}"${t.cascadeId === targetCascadeId ? ' selected' : ''}>${safeTitle}</option>`;
         })
         .join('');
-      ns.setHtml(threadSelect, ns.html`${optsMarkup}`);
+      ns.setHtml(threadSelect, ns.rawHtml ? ns.rawHtml(optsMarkup) : optsMarkup);
       threadSelect.value = targetCascadeId;
       const th = sc.threads.find((t) => t.cascadeId === targetCascadeId);
       if (quoteToInject && (quoteToInject.selectionContent || quoteToInject.terminalId)) {
