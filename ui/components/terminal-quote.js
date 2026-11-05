@@ -61,14 +61,23 @@
         },
       ],
     });
-    const textBlockFallback = `[${cleanName}](textBlock;label:${cleanName.replace(/:/g, '-') || 'terminal'}:${encodeURIComponent(sel)}) `;
+    const encodeTermParam = (s) => encodeURIComponent(String(s || '')).replace(/\(/g, '%28').replace(/\)/g, '%29');
+    const queryParts = [];
+    if (lastCommand) {
+      queryParts.push(`cmd=${encodeTermParam(lastCommand)}`);
+    }
+    if (sel) {
+      queryParts.push(`sel=${encodeTermParam(sel)}`);
+    }
+    const termQuery = queryParts.length ? `?${queryParts.join('&')}` : '';
+    const textBlockFallback = `[${cleanName}](textBlock;label:${cleanName.replace(/:/g, '-') || 'terminal'}:${encodeTermParam(sel)}) `;
     return {
       cleanName,
       terminalId: pid,
       selectionContent: sel,
       contextScopeJson,
       lexicalJson,
-      plainText: pid ? `[${cleanName}](terminal;${pid}) ` : textBlockFallback,
+      plainText: pid ? `[${cleanName}](terminal;${pid}${termQuery}) ` : textBlockFallback,
       textBlockFallback,
       quoteFileUri: String(quoteFileUri || ''),
     };

@@ -120,9 +120,13 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const ctx = vm.createContext({ window: windowObj, document: documentObj, navigator: windowObj.navigator, JSON, encodeURIComponent, setTimeout, clearTimeout });
     vm.runInContext(readFileSync(join(REPO_ROOT, 'ui/core.js'), 'utf8'), ctx);
     vm.runInContext(readFileSync(join(REPO_ROOT, 'ui/components/terminal-quote.js'), 'utf8'), ctx);
-    const payload = windowObj.Hangar.buildTerminalScopePayload({ terminalId: 'f49811d2-c03f-4484-aa22-be4aa429211d', title: 'pwsh[main]', selectionContent: 'Error: EADDRINUSE: address already in use' });
-    assert.equal(payload.cleanName, 'pwsh main'); assert.equal(payload.plainText, '[pwsh main](terminal;f49811d2-c03f-4484-aa22-be4aa429211d) ');
-    assert.deepEqual(JSON.parse(payload.contextScopeJson), { terminal: { processId: 'f49811d2-c03f-4484-aa22-be4aa429211d', name: 'pwsh main', selectionContent: 'Error: EADDRINUSE: address already in use' } });
+    const payload = windowObj.Hangar.buildTerminalScopePayload({ terminalId: 'f49811d2-c03f-4484-aa22-be4aa429211d', title: 'pwsh[main]', selectionContent: 'Error: EADDRINUSE: address already in use (port 3000)' });
+    assert.equal(payload.cleanName, 'pwsh main');
+    assert.equal(
+      payload.plainText,
+      '[pwsh main](terminal;f49811d2-c03f-4484-aa22-be4aa429211d?sel=Error%3A%20EADDRINUSE%3A%20address%20already%20in%20use%20%28port%203000%29) '
+    );
+    assert.deepEqual(JSON.parse(payload.contextScopeJson), { terminal: { processId: 'f49811d2-c03f-4484-aa22-be4aa429211d', name: 'pwsh main', selectionContent: 'Error: EADDRINUSE: address already in use (port 3000)' } });
     const lexical = JSON.parse(payload.lexicalJson);
     assert.equal(lexical.namespace, 'Input'); assert.equal(lexical.nodes[0].type, 'contextScopeItemMention');
     assert.equal(lexical.nodes[0].scopeItem, payload.contextScopeJson); assert.equal(lexical.nodes[0].data.data, payload.contextScopeJson); assert.equal(lexical.nodes[1].type, 'text'); assert.equal(lexical.nodes[1].text, ' ');
@@ -188,7 +192,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(dragStopped && dragOverStopped && dragOverPrevented && dragOverDt.dropEffect === 'copy' && html.includes('conversation-view-drag-tint'));
     assert.deepEqual(JSON.parse(jetboxDragMime['application/context-scope-item']), { terminal: { processId: 'term-proc-77', name: 'zsh-split', selectionContent: 'FATAL_ERR_42' } });
     assert.equal(jetboxDragMime['application/context-scope-item-cider'], jetboxDragMime['application/context-scope-item']);
-    assert.equal(jetboxDragMime['text/plain'], '[zsh-split](terminal;term-proc-77) ');
+    assert.equal(jetboxDragMime['text/plain'], '[zsh-split](terminal;term-proc-77?sel=FATAL_ERR_42) ');
     assert.equal(jetboxDragMime['text/uri-list'], undefined);
     for (const fn of winListeners.dragend || []) fn({ clientX: -360, clientY: 719, dataTransfer: { dropEffect: 'copy' } });
     assert.equal(termActiveEl.__reactFiber$xyz.memoizedState.memoizedState.current.cleared, true);

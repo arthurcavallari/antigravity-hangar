@@ -590,12 +590,16 @@
         },
       ],
     });
+    const selStr = selectionContent ? String(selectionContent) : '';
+    const encodedSel = selStr
+      ? '?sel=' + encodeURIComponent(selStr).replace(/\(/g, '%28').replace(/\)/g, '%29')
+      : '';
     return {
       cleanName,
       contextScopeJson,
       lexicalJson,
       quoteFileUri,
-      plainText: '[' + cleanName + '](terminal;' + termObj.processId + ') ',
+      plainText: '[' + cleanName + '](terminal;' + termObj.processId + encodedSel + ') ',
     };
   }
 
