@@ -56,4 +56,73 @@ describe('hangarRpc shared state reads', () => {
     await listPlugins();
     assert.deepEqual(calls, { GetAllPlugins: 3, JetboxWriteState: 1, DeletePlugin: 1 });
   });
+
+  it('caches ListTerminals without invalidating GetSidecars/GetAllPlugins, ignores SendTerminalInput for cache invalidation, and falls back to lastTrajectories on transient error', async () => {
+    const calls = {};
+    let failTrajectories = false;
+    const options = {
+      lsAddress: '127.0.0.1:59992',
+      csrfToken: 'tok',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        calls[method] = (calls[method] || 0) + 1;
+        if (method === 'GetAllCascadeTrajectories') {
+          if (failTrajectories) {
+            return { ok: false, status: 503, text: async () => 'timeout' };
+          }
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ trajectorySummaries: { 'conv-1': { summary: 'Test' } } }),
+          };
+        }
+        return { ok: true, status: 200, text: async () => '{"terminals":[]}' };
+      },
+    };
+    invalidateStateReads();
+
+    const pollFullState = async () => {
+      await Promise.all([
+        hangarRpc('GetSidecars', {}, options),
+        hangarRpc('GetAllCascadeTrajectories', {}, options),
+        hangarRpc('GetAllPlugins', { workspaceUris: [] }, options),
+      ]);
+      await hangarRpc('ListTerminals', {}, options);
+    };
+
+    await pollFullState();
+    await pollFullState();
+    assert.deepEqual(calls, {
+      GetSidecars: 1,
+      GetAllCascadeTrajectories: 1,
+      GetAllPlugins: 1,
+      ListTerminals: 1,
+    });
+
+    await hangarRpc('SendTerminalInput', { terminalId: 't-1', data: 'ZGly' }, options);
+    await pollFullState();
+    assert.deepEqual(calls, {
+      GetSidecars: 1,
+      GetAllCascadeTrajectories: 1,
+      GetAllPlugins: 1,
+      ListTerminals: 1,
+      SendTerminalInput: 1,
+    });
+
+    await hangarRpc('CreateTerminal', { terminalId: 't-2' }, options);
+    await pollFullState();
+    assert.deepEqual(calls, {
+      GetSidecars: 1,
+      GetAllCascadeTrajectories: 1,
+      GetAllPlugins: 1,
+      ListTerminals: 2,
+      SendTerminalInput: 1,
+      CreateTerminal: 1,
+    });
+
+    invalidateStateReads('GetAllCascadeTrajectories');
+    failTrajectories = true;
+    const fallbackTraj = await hangarRpc('GetAllCascadeTrajectories', {}, options);
+    assert.deepEqual(fallbackTraj, { trajectorySummaries: { 'conv-1': { summary: 'Test' } } });
+  });
 });

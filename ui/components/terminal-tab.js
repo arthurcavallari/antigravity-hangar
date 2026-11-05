@@ -357,7 +357,7 @@
               id: 'quote-ask-tab',
               label: 'Quote & Ask Agent…',
               onClick: () =>
-                ns.openTerminalQuoteComposer?.(rootEl, getQuote(), {
+                ns.openTerminalMiniComposer?.(rootEl, getQuote(), {
                   conversationId: conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || ''),
                 }),
             },
@@ -553,12 +553,23 @@
     return {
       rootEl,
       setVisible: (vis) => {
-        if (isVisible === false && vis) {
+        const nextVis = Boolean(vis);
+        if (isVisible === false && nextVis) {
           ns._userActivatedTerminal = true;
           pendingFocus = true;
           idlePollStreak = 0;
         }
-        isVisible = Boolean(vis);
+        if (nextVis !== isVisible) {
+          const msgType = nextVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden';
+          for (const tid of getVisibleIds()) {
+            try {
+              sharedPanes.get(tid)?.frame?.contentWindow?.postMessage({ type: msgType, focus: false }, '*');
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        isVisible = nextVis;
         schedulePollLoop();
       },
       focusTerminal: (tid) => {

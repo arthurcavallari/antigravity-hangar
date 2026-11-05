@@ -235,9 +235,12 @@
     ).then((th) => {
       const tId = th?.cascadeId ? (popOut ? `${ns.SIDECHAT_TAB_PREFIX}${th.cascadeId}` : ns.SIDECHAT_TAB_ID) : '';
       if (tId) {
+        if (!popOut) {
+          openMain();
+        }
         const targetBox = popOut ? Object.assign(ns.ensureSideChatBox(tId, root), { _convId: box._convId }) : box;
         targetBox._syncThreadsUi?.(th.cascadeId, hasQuote ? payload : null);
-        ns.notifySideChatState(popOut ? { activateTab: !opts.skipActivate, targetTabId: tId, pane: opts.pane || '' } : undefined);
+        ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId: tId, pane: opts.pane || '' });
       }
     });
     if (!popOut && !opts.skipActivate) {

@@ -117,14 +117,32 @@
       }
     };
 
-    const applyWorkspaceLayout = (raw = {}, wsKey = getWsStateKey()) => (
-      !wsKey ? { ...raw } : { ...raw, ...WS_LAYOUT_DEFAULTS, ...(raw?.workspaceLayouts?.[wsKey] || {}) }
-    );
+    const applyWorkspaceLayout = (raw = {}, wsKey = getWsStateKey()) => {
+      if (!wsKey) return { ...raw };
+      const wsLayout = raw?.workspaceLayouts?.[wsKey] || {};
+      const merged = { ...raw, ...WS_LAYOUT_DEFAULTS, ...wsLayout };
+      const wsSc = raw?.sideChatStateByWorkspace?.[wsKey];
+      if (
+        wsSc?.isOpen &&
+        Array.isArray(merged.closedTabIds) &&
+        merged.pinnedTopSidecarId === ns.SIDECHAT_TAB_ID
+      ) {
+        merged.closedTabIds = merged.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
+      }
+      return merged;
+    };
 
     const withWindowActiveTab = (layout, wsKey = getWsStateKey()) => {
       let w = '';
       try {
         w = sessionStorage.getItem(getActiveTabStorageKey(wsKey)) || '';
+        if (!w && wsKey) {
+          const fallbackW = sessionStorage.getItem(getActiveTabStorageKey('')) || '';
+          if (fallbackW && isTabValidForWindow(fallbackW)) {
+            w = fallbackW;
+            sessionStorage.setItem(getActiveTabStorageKey(wsKey), fallbackW);
+          }
+        }
       } catch {
         /* ignore */
       }

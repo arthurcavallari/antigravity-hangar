@@ -167,6 +167,12 @@
   ns.hydrateSideChatStateFromLayout = (layout = {}, workspacePath = '') => {
     const wsKey = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
     if (sc.hydrated && sc.hydratedWsKey === wsKey) return;
+    if (sc.hydrated && sc.hydratedWsKey && !wsKey) return;
+    const unpersisted = sc.threads.filter(
+      (t) => t?._unpersisted && (!t._createdWsKey || t._createdWsKey === wsKey || sc.startInFlight || sc._pendingOpen)
+    );
+    const hadPendingOpen = Boolean(sc._pendingOpen || sc.startInFlight || (unpersisted.length > 0 && sc.isOpen));
+    const prevActiveId = sc.activeId;
     Object.assign(sc, {
       hydrated: true,
       hydratedWsKey: wsKey,
@@ -241,7 +247,22 @@
         sc.isOpen = raw.isOpen;
       }
     }
+    for (const ut of unpersisted) {
+      if (!sc.threads.some((t) => t.cascadeId === ut.cascadeId)) {
+        sc.threads.push({ ...ut, _createdWsKey: wsKey || ut._createdWsKey || '' });
+      }
+    }
+    if (unpersisted.length > 0) {
+      sc.counter = Math.max(sc.counter, sc.threads.length);
+      if (!sc.activeId && prevActiveId) {
+        sc.activeId = prevActiveId;
+      }
+    }
     const closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds : []);
+    if (hadPendingOpen) {
+      sc.isOpen = true;
+      closedSet.delete(ns.SIDECHAT_TAB_ID);
+    }
     if (!wsKey) {
       const candidateTabs = [
         ...(layout?.tabOrder || []),
@@ -270,7 +291,10 @@
         }
       }
     }
-    if (ns.getInstanceSideChats(sc.threads, '').length > 0 && !closedSet.has(ns.SIDECHAT_TAB_ID)) {
+    if (
+      ns.getInstanceSideChats(sc.threads, '').length > 0 &&
+      (!closedSet.has(ns.SIDECHAT_TAB_ID) || layout?.pinnedTopSidecarId === ns.SIDECHAT_TAB_ID)
+    ) {
       sc.isOpen = true;
     }
   };
@@ -313,6 +337,9 @@
       }
     }
     const gen = sc.generation;
+    if (!popOut && !rootId) {
+      sc._pendingOpen = true;
+    }
     const run = (async () => {
       sc.counter += 1;
       const idx = sc.counter;
@@ -327,7 +354,7 @@
       } catch {
         /* ignore */
       }
-      if (gen !== sc.generation || (!sc.isOpen && !popOut && !rootId)) {
+      if (gen !== sc.generation) {
         if (createdRemote) {
           ns.apiCall?.('/api/terminal/sidechat/delete', { cascadeId })?.catch?.(() => {});
         }
@@ -340,12 +367,16 @@
         hasActivity: false,
         pinned: false,
         quotePayload: quotePayload || null,
+        _unpersisted: true,
+        _createdWsKey: sc.hydratedWsKey || '',
       };
       sc.threads.push(thread);
       if (popOut) {
         sc.poppedIds.add(cascadeId);
       } else if (rootId) {
         sc.groupMap[cascadeId] = rootId;
+      } else {
+        sc.isOpen = true;
       }
       ns.setActiveSideChatId(popOut ? `${ns.SIDECHAT_TAB_PREFIX}${cascadeId}` : instTabId, cascadeId);
       return thread;
@@ -356,6 +387,7 @@
     } finally {
       if (sc.startInFlight === run) {
         sc.startInFlight = null;
+        sc._pendingOpen = false;
       }
     }
   };

@@ -264,6 +264,13 @@
         ch._mountedParent = null;
         ch.remove?.();
       } else if (!visSet.has(cid)) {
+        if (!ch.classList.contains('hidden')) {
+          try {
+            sharedPanes.get(cid)?.frame?.contentWindow?.postMessage({ type: 'hangar-jetbox-hidden', focus: false }, '*');
+          } catch {
+            /* ignore */
+          }
+        }
         ch.classList.add('hidden');
         ch.classList.remove('is-split-secondary', 'is-focused-pane');
         ch.dataset.active = 'false';

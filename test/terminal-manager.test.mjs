@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import vm from 'node:vm';
-import { buildSafeCdInitCommand, closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
+import { closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
@@ -57,7 +57,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const rpcCalls = [];
     const mockRpc = async (method, body) => {
       rpcCalls.push({ method, body });
-      if (method === 'CreateTerminal') return { terminal: { terminalId: 'term-live-1', pid: 4242, title: 'pwsh', projectId: body.projectId, conversationId: body.conversationId } };
+      if (method === 'CreateTerminal') return { terminal: { terminalId: 'term-live-1', pid: 4242, title: 'pwsh', workspaceUri: body.workspaceUri, projectId: body.projectId, conversationId: body.conversationId } };
       if (method === 'SendTerminalInput' && body.input) return { ackedOffset: String(Number(body.inputOffset) + Buffer.from(body.input, 'base64').length) };
       return {};
     };
@@ -73,21 +73,11 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       const created = await createWorkspaceTerminal({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'conv-abc', cols: 120, rows: 32, rpcFn: mockRpc, fetchFn: mockFetch });
       assert.equal(created.terminalId, 'term-live-1'); assert.equal(created.conversationId, 'conv-abc');
       assert.equal(rpcCalls[0].method, 'CreateTerminal');
-      assert.equal(rpcCalls[0].body.workspaceUri, undefined);
+      assert.equal(rpcCalls[0].body.workspaceUri, 'file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
       assert.equal(rpcCalls[0].body.projectId, 'file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
       assert.equal(rpcCalls[0].body.conversationId, 'hangar:conv-abc');
       const initCall = rpcCalls.find((c) => c.method === 'SendTerminalInput' && c.body.inputStreamId === 'hangar-init');
-      const initCmdText = initCall ? Buffer.from(initCall.body.input, 'base64').toString('utf8') : '';
-      assert.ok(initCmdText.includes("cd 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub'"));
-      assert.ok(initCmdText.includes('[2;1H') && initCmdText.includes('[J') && !/\bclear\b/.test(initCmdText));
-
-      // Verify shell-injection payloads in workspace directory names are safely single-quoted / escaped
-      const psCmd = buildSafeCdInitCommand("C:/repo/$(calc.exe)`n'test", 'pwsh', 'win32');
-      assert.ok(psCmd.startsWith("cd 'C:/repo/$(calc.exe)`n''test' ;"));
-      const posixCmd = buildSafeCdInitCommand("/tmp/$(id)`whoami`'dir", 'zsh', 'linux');
-      assert.ok(posixCmd.startsWith("cd -- '/tmp/$(id)`whoami`'\\''dir' &&"));
-      const cmdExe = buildSafeCdInitCommand('C:/repo/"evil"%PATH%', 'cmd.exe', 'win32');
-      assert.equal(cmdExe, 'cd /d "C:\\repo\\evil%%PATH%%" && cls\r');
+      assert.equal(initCall, undefined);
 
       // Verify writeQuoteFile keys files by terminalId and normalizes bracketed titles so concurrent terminals do not collide
       const qUriA = writeQuoteFile('pwsh [dev]', 'quote A', 'term-alpha-1');
@@ -980,9 +970,194 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     );
     const sidechatRenameMatches = quoteAndSideChatSrc.match(/\/api\/sidechat\/rename/g) || [];
     assert.ok(sidechatRenameMatches.length >= 1, 'session-strip inline rename handler must call /api/sidechat/rename');
+  });
 
-    // PowerShell paths with wildcard characters ([], *, ?) or leading hyphen use cd -LiteralPath
-    assert.match(buildSafeCdInitCommand('C:\\repo\\app\\[id]', 'pwsh.exe', 'win32'), /^cd -LiteralPath 'C:\\repo\\app\\\[id\]'/);
-    assert.match(buildSafeCdInitCommand('C:\\repo\\normal', 'pwsh.exe', 'win32'), /^cd 'C:\\repo\\normal'/);
+  it('deduplicates cumulative SendTerminalInput buffers, reverts title on ConPTY cursor-positioned prompts, and gates Side Chat quote auto-submit on model readiness', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59999';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf-tok';
+    try {
+      const apis = new Map();
+      registerTerminalRoutes({ page() {}, api: (p, fn) => apis.set(p, fn) }, { rpcFn: async () => ({}) });
+      const lsRpcRoute = apis.get('/api/terminal/ls-rpc');
+      const tid = 'term-cum-input-1';
+      let streamController = null;
+      const created = await createWorkspaceTerminal({
+        workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-hub',
+        rpcFn: async () => ({
+          terminal: {
+            terminalId: tid,
+            title: 'pwsh.exe',
+            cwd: 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-hub',
+          },
+        }),
+        fetchFn: async () => ({
+          ok: true,
+          body: new ReadableStream({
+            start(c) {
+              streamController = c;
+            },
+          }),
+        }),
+      });
+      assert.equal(created.terminalId, tid);
+
+      // Cumulative unacknowledged buffers ("d", "di", "dir", "dir\r") with omitted inputOffset (protobuf3 default 0n) must record "dir" (ignored builtin), never "ddidirdir"
+      for (const cumulative of ['d', 'di', 'dir', 'dir\r']) {
+        await lsRpcRoute(
+          {
+            method: 'SendTerminalInput',
+            body: {
+              terminalId: tid,
+              inputStreamId: 'stream-1',
+              input: Buffer.from(cumulative, 'utf8').toString('base64'),
+            },
+          },
+          { headers: { origin: 'http://127.0.0.1:51000' } }
+        );
+      }
+      assert.equal(pollTerminalOutput({ terminalId: tid, afterSeq: 0 }).title, 'pwsh.exe');
+
+      // Real command sets title, and ConPTY cursor positioning (\x1b[28;1H) before prompt reverts title to pwsh.exe
+      const nextOffset = 4;
+      for (const cumulative of ['g', 'gi', 'git', 'git status\r']) {
+        await lsRpcRoute(
+          {
+            method: 'SendTerminalInput',
+            body: {
+              terminalId: tid,
+              inputStreamId: 'stream-1',
+              inputOffset: nextOffset,
+              input: Buffer.from(cumulative, 'utf8').toString('base64'),
+            },
+          },
+          { headers: { origin: 'http://127.0.0.1:51000' } }
+        );
+      }
+      assert.equal(pollTerminalOutput({ terminalId: tid, afterSeq: 0 }).title, 'git');
+
+      streamController.enqueue(
+        encodeConnectFrame({
+          output: Buffer.from('On branch main\x1b[28;1HPS C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-hub> ', 'utf8').toString('base64'),
+        })
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(pollTerminalOutput({ terminalId: tid, afterSeq: 0 }).title, 'pwsh.exe');
+
+      await closeWorkspaceTerminal({ terminalId: tid, rpcFn: async () => ({}) });
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+
+    // Verify jetbox-chat quote injection unlocks userFocusAllowed, dispatches drop on editor, and waits for model readiness + trajectory chunk before auto-submitting Enter
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'side-cascade-model-gate', hostTheme: 'dark', csrfToken: 'csrf', uiToken: 'tok' });
+    const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const winListeners = {};
+    let modelLabel = 'Select a model';
+    let editorFocused = false;
+    const editorEvents = [];
+    const editorEl = {
+      focus() { editorFocused = true; },
+      dispatchEvent(ev) { editorEvents.push(ev); return true; },
+    };
+    const modelBtn = {
+      get textContent() { return modelLabel; },
+      getAttribute: () => '',
+    };
+    let scheduledPollFn = null;
+    const chatWin = {
+      navigator: { userAgent: 'Windows' },
+      localStorage: { setItem() {} },
+      history: { replaceState() {}, pushState() {} },
+      customElements: { get: () => false, define() {} },
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame() {},
+      Response: globalThis.Response,
+      DataTransfer: class { constructor() { this.m = {}; } setData(k, v) { this.m[k] = v; } getData(k) { return this.m[k] || ''; } },
+      DragEvent: class { constructor(t, init) { this.type = t; this.dataTransfer = init?.dataTransfer; } },
+      InputEvent: class { constructor(t, init) { this.type = t; this.data = init?.data; } },
+      KeyboardEvent: class { constructor(t, init) { this.type = t; this.key = init?.key; } },
+      fetch: async () => ({
+        json: async () => ({
+          chunks: [{ seq: 1, frameData: { update: { conversationId: 'side-cascade-model-gate', status: 1 } } }],
+          closed: false,
+        }),
+      }),
+      location: { origin: 'http://localhost:54824', pathname: '/c/side-cascade-model-gate' },
+      parent: { postMessage() {} },
+      addEventListener: (ev, fn) => { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+      dispatchEvent() {},
+    };
+    const chatDoc = {
+      documentElement: { style: { setProperty() {} }, setAttribute() {}, removeAttribute() {} },
+      querySelector: (sel) => (sel.includes('data-lexical-editor') ? editorEl : null),
+      querySelectorAll: (sel) => (sel === 'button' ? [modelBtn] : []),
+      execCommand: () => true,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const pendingTimers = [];
+    vm.runInContext(
+      chatScript,
+      vm.createContext({
+        window: chatWin,
+        document: chatDoc,
+        navigator: chatWin.navigator,
+        localStorage: chatWin.localStorage,
+        history: chatWin.history,
+        DataTransfer: chatWin.DataTransfer,
+        DragEvent: chatWin.DragEvent,
+        InputEvent: chatWin.InputEvent,
+        KeyboardEvent: chatWin.KeyboardEvent,
+        URL, TextEncoder, TextDecoder, Uint8Array, DataView, ReadableStream, JSON, Math, Object, String, Boolean, Number, Map, Date, encodeURIComponent,
+        setTimeout: (fn, ms) => {
+          if (ms === 120 || ms === 260) scheduledPollFn = fn;
+          pendingTimers.push({ fn, ms });
+          return pendingTimers.length;
+        },
+        clearTimeout() {},
+      })
+    );
+    for (const fn of winListeners.message || []) {
+      fn({
+        source: chatWin.parent,
+        data: {
+          type: 'hangar-inject-terminal-quote',
+          payload: {
+            terminalId: 'term-quote-1',
+            cleanName: 'pwsh',
+            selectionContent: 'Directory: C:\\repo',
+            promptText: 'this is a test. Hello',
+            autoSubmit: true,
+          },
+        },
+      });
+    }
+    for (const t of [...pendingTimers]) {
+      if (t.ms === 45) t.fn();
+    }
+    for (const t of [...pendingTimers]) {
+      if (t.ms === 60) t.fn();
+    }
+    assert.equal(editorFocused, true, 'injectTerminalQuoteIntoComposer must unlock userFocusAllowed so ed.focus() runs');
+    assert.equal(editorEvents.some((e) => e.type === 'drop'), true, 'drop event must be dispatched directly on the Lexical editor element');
+    assert.equal(editorEvents.some((e) => e.type === 'keydown' && e.key === 'Enter'), false, 'must not auto-submit Enter while model is still "Select a model"');
+
+    // Once chat-poll delivers a trajectory chunk and model selector resolves to "Gemini 4 Argon High", auto-submit dispatches Enter
+    modelLabel = 'Gemini 4 Argon High';
+    const chatStreamRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/StreamAgentStateUpdates', {
+      body: new TextEncoder().encode(JSON.stringify({ conversationId: 'side-cascade-model-gate' })),
+    });
+    const reader = chatStreamRes.body.getReader();
+    if (scheduledPollFn) await scheduledPollFn();
+    await reader.read();
+    for (const t of [...pendingTimers]) {
+      if (t.ms === 40) t.fn();
+    }
+    assert.equal(editorEvents.some((e) => e.type === 'keydown' && e.key === 'Enter'), true, 'must auto-submit Enter once model and trajectory chunk are ready');
   });
 });

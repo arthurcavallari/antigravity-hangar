@@ -66,6 +66,7 @@
   }) || {};
   const {
     getWsStateKey = () => '',
+    buildSideChatLayoutPatch = () => ({}),
     saveLayoutUpdate = async () => {},
     rememberWindowActiveTab = () => {},
     applyWorkspaceLayout = (l) => ({ ...l }),
@@ -101,6 +102,19 @@
     }
     const selectSlotTab = async (tabId, slotKey) => {
       ++layoutSeq;
+      if (tabId === ns.SIDECHAT_TAB_ID) {
+        if (ns._sc) ns._sc.isOpen = true;
+        if (Array.isArray(state.layout.closedTabIds)) {
+          state.layout.closedTabIds = state.layout.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
+        }
+        if ((ns.getInstanceSideChats?.() || []).length === 0) {
+          ns.openTerminalQuoteComposer?.(
+            els.mainViewport,
+            {},
+            { conversationId: hangarConversationId !== '_new' ? hangarConversationId : '', skipActivate: true },
+          );
+        }
+      }
       if (slotKey === 'bottom' && state.layout.splitViewEnabled) {
         state.bottomActiveTabId = tabId;
       } else {
@@ -108,7 +122,13 @@
       }
       renderAll();
       if (slotKey !== 'bottom' || !state.layout.splitViewEnabled) {
-        await saveLayoutUpdate({ pinnedTopSidecarId: tabId });
+        const patch = { pinnedTopSidecarId: tabId };
+        if (tabId === ns.SIDECHAT_TAB_ID) {
+          Object.assign(patch, { closedTabIds: state.layout.closedTabIds, ...buildSideChatLayoutPatch() });
+        }
+        await saveLayoutUpdate(patch);
+      } else if (tabId === ns.SIDECHAT_TAB_ID) {
+        await saveLayoutUpdate({ closedTabIds: state.layout.closedTabIds, ...buildSideChatLayoutPatch() });
       }
     };
     const termProps = {
@@ -246,9 +266,13 @@
       if (ns.isPointerOnTab || ns.activeTermDrag || state.isResizingSplit) return;
       if (data.theme) ns.applyThemePayload?.(data.theme, false);
       const prevWsKey = getWsStateKey();
-      state.activeWorkspace = data.activeWorkspace || state.activeWorkspace;
+      const userTabDuringBoot = !prevWsKey && seq !== layoutSeq ? state.layout.pinnedTopSidecarId : '';
+      if (data.activeWorkspace && (data.activeWorkspace.workspacePath || !state.activeWorkspace?.workspacePath)) {
+        state.activeWorkspace = data.activeWorkspace;
+      }
       const nextWsKey = getWsStateKey();
       const wsChanged = Boolean(prevWsKey && nextWsKey && prevWsKey !== nextWsKey);
+      const wsFirstResolved = Boolean(!prevWsKey && nextWsKey);
       if (wsChanged) {
         lastNonExtTabId = '';
         state.bottomActiveTabId = '';
@@ -270,11 +294,20 @@
         suggestions: data.suggestions || [],
       });
       const wsPath = state.activeWorkspace?.workspacePath || '';
-      const targetLayout = (data.layout && (seq === layoutSeq || wsChanged))
+      const targetLayout = (data.layout && (seq === layoutSeq || wsChanged || wsFirstResolved))
         ? applyWorkspaceLayout(data.layout, nextWsKey)
         : state.layout;
+      if (wsFirstResolved && userTabDuringBoot) {
+        targetLayout.pinnedTopSidecarId = userTabDuringBoot;
+        if (userTabDuringBoot === ns.SIDECHAT_TAB_ID && Array.isArray(targetLayout.closedTabIds)) {
+          targetLayout.closedTabIds = targetLayout.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
+        }
+      }
       ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath);
       ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath);
+      if (wsFirstResolved && userTabDuringBoot) {
+        rememberWindowActiveTab(userTabDuringBoot, nextWsKey);
+      }
       if (targetLayout !== state.layout) {
         state.layout = withWindowActiveTab(targetLayout, nextWsKey);
       }
@@ -389,7 +422,9 @@
   refreshHangarState();
   ns.subscribeStateSyncEvents?.({
     getConversationId: () => hangarConversationId,
-    onStateEvent: () => refreshHangarState(),
+    onStateEvent: () => {
+      if (!isHidden()) refreshHangarState();
+    },
   });
   setInterval(() => {
     const interval = isHidden() ? HIDDEN_POLL_MS : VISIBLE_POLL_MS;

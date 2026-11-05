@@ -436,7 +436,16 @@
       ]);
       for (const f of allFrames) {
         if (f === chatFrame || f.parentElement === box || box.contains?.(f)) {
-          f.classList?.toggle?.('hidden', f !== targetFrame);
+          const hideFrame = f !== targetFrame;
+          const wasHidden = Boolean(f.classList?.contains?.('hidden'));
+          f.classList?.toggle?.('hidden', hideFrame);
+          if (hideFrame !== wasHidden) {
+            try {
+              f.contentWindow?.postMessage({ type: hideFrame ? 'hangar-jetbox-hidden' : 'hangar-jetbox-shown', focus: false }, '*');
+            } catch {
+              /* ignore */
+            }
+          }
         }
       }
       box._els.chatFrame = targetFrame;
@@ -493,7 +502,18 @@
       Object.assign(box.dataset, { dockMode: 'docked', slot: inBot ? 'bottom' : 'top' });
       box.classList?.toggle?.('slot-top', inTop);
       box.classList?.toggle?.('slot-bottom', inBot);
+      const wasBoxHidden = Boolean(box.classList?.contains?.('hidden'));
       box.classList?.toggle?.('hidden', !isVisible);
+      if (wasBoxHidden === isVisible) {
+        try {
+          box._els?.chatFrame?.contentWindow?.postMessage(
+            { type: isVisible ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
+            '*'
+          );
+        } catch {
+          /* ignore */
+        }
+      }
       if (isVisible) {
         const rId = tabId.startsWith(ns.SIDECHAT_TAB_PREFIX) ? tabId.slice(ns.SIDECHAT_TAB_PREFIX.length) : '';
         const actCid =

@@ -190,15 +190,21 @@
     };
   }
 
+  let hangarPaneHidden = false;
+  let rafFallbackCount = 0;
+  const isJetboxHidden = () =>
+    Boolean(document.hidden || hangarPaneHidden || (Number(window.innerWidth) || 0) <= 0);
+
   const origRaf = window.requestAnimationFrame?.bind(window);
   const origCaf = window.cancelAnimationFrame?.bind(window);
   if (origRaf) {
     const rafMap = new Map();
     let nextRafId = 0x40000000;
     window.requestAnimationFrame = (cb) => {
-      if (!document.hidden && (Number(window.innerWidth) || 0) > 0) {
+      if (!isJetboxHidden() || hangarPaneHidden || rafFallbackCount >= 30) {
         return origRaf(cb);
       }
+      rafFallbackCount += 1;
       const id = nextRafId++;
       let done = false;
       const run = (ts) => {
@@ -379,7 +385,7 @@
             }
           } catch {}
           idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
-          const delayMs = (document.hidden || (Number(window.innerWidth) || 0) <= 0) ? 1500 : (idlePolls >= 4 ? 180 : 45);
+          const delayMs = isJetboxHidden() ? 1500 : (idlePolls >= 4 ? 180 : 45);
           await new Promise((r) => setTimeout(r, delayMs));
         }
       },
@@ -388,6 +394,8 @@
       },
     });
   }
+
+  let hasReceivedChatTrajectoryChunk = false;
 
   function createChatConnectStream(reqBody) {
     let afterSeq = 0;
@@ -414,6 +422,9 @@
             const data = await res.json();
             const chunks = data.chunks || [];
             hadChunks = chunks.length > 0;
+            if (hadChunks) {
+              hasReceivedChatTrajectoryChunk = true;
+            }
             for (const chunk of chunks) {
               afterSeq = Math.max(afterSeq, chunk.seq || 0);
               if (chunk.frameData) {
@@ -427,7 +438,7 @@
             }
           } catch {}
           idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
-          const delayMs = (document.hidden || (Number(window.innerWidth) || 0) <= 0) ? 1500 : (idlePolls >= 4 ? 180 : 45);
+          const delayMs = isJetboxHidden() ? 1500 : (idlePolls >= 4 ? 180 : 45);
           await new Promise((r) => setTimeout(r, delayMs));
         }
       },
@@ -442,7 +453,7 @@
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
-          if (!document.hidden && (Number(window.innerWidth) || 0) > 0) {
+          if (!isJetboxHidden()) {
             try {
               const res = await sidecarFetch()('/api/terminal/ls-rpc', {
                 method: 'POST',
@@ -455,7 +466,7 @@
               }
             } catch {}
           }
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, isJetboxHidden() ? 15000 : 2500));
         }
       },
       cancel() {
@@ -588,6 +599,20 @@
     };
   }
 
+  function isComposerModelReady(waitAttempt = 0) {
+    if (!hasReceivedChatTrajectoryChunk && waitAttempt < 15) return false;
+    const trigger = document.querySelector?.('[data-testid="model-selector-trigger"]');
+    const btns = trigger ? [trigger] : Array.from(document.querySelectorAll?.('button') || []);
+    if (!btns.length && waitAttempt < 15) return false;
+    for (const b of btns) {
+      const text = String(b?.textContent || '').trim();
+      const aria = String(b?.getAttribute?.('aria-label') || '').trim();
+      const label = (text + ' ' + aria).trim();
+      if ((trigger && !label) || /no model selected|select a model/i.test(label)) return false;
+    }
+    return true;
+  }
+
   function injectTerminalQuoteIntoComposer(quoteOpts = {}, attempt = 0) {
     const ed = document.querySelector?.('[data-lexical-editor="true"]');
     if (!ed && attempt < 50) {
@@ -639,17 +664,41 @@
         Object.defineProperty(dropEv, 'dataTransfer', { value: dt });
       } catch {}
     }
-    window.dispatchEvent?.(dropEv);
+    const isDomNode = typeof window.Node === 'function' && ed instanceof window.Node;
+    if (ed) {
+      userFocusAllowed = true;
+      if (!isDomNode) {
+        try {
+          if (!dropEv.target) {
+            Object.defineProperty(dropEv, 'target', { value: ed, configurable: true });
+          }
+        } catch {}
+      }
+    }
+    if (ed && typeof ed.dispatchEvent === 'function') {
+      ed.dispatchEvent(dropEv);
+      if (!isDomNode) {
+        window.dispatchEvent?.(dropEv);
+      }
+    } else {
+      window.dispatchEvent?.(dropEv);
+    }
     if (ed) {
       ed.focus?.();
       if (quoteOpts.promptText) {
         setTimeout(() => {
+          userFocusAllowed = true;
           ed.focus?.();
           try {
             document.execCommand?.('insertText', false, ' ' + String(quoteOpts.promptText));
           } catch {}
           if (quoteOpts.autoSubmit) {
-            setTimeout(() => {
+            const submitWhenReady = (waitAttempt = 0) => {
+              if (!isComposerModelReady(waitAttempt) && waitAttempt < 100) {
+                setTimeout(() => submitWhenReady(waitAttempt + 1), 40);
+                return;
+              }
+              userFocusAllowed = true;
               ed.focus?.();
               try {
                 ed.dispatchEvent?.(
@@ -663,7 +712,8 @@
                   })
                 );
               } catch {}
-            }, 60);
+            };
+            setTimeout(() => submitWhenReady(0), 60);
           }
         }, 45);
       }
@@ -728,13 +778,18 @@
       savedThemeVars = e.data.payload.cssVariables;
       applySavedTheme();
     } else if (e.data?.type === 'hangar-jetbox-shown') {
+      hangarPaneHidden = false;
+      rafFallbackCount = 0;
       try {
         window.dispatchEvent?.(new Event('resize'));
       } catch {}
       if (e.data?.focus !== false) {
         focusJetboxTerminal();
       }
+    } else if (e.data?.type === 'hangar-jetbox-hidden') {
+      hangarPaneHidden = true;
     } else if (e.data?.type === 'hangar-jetbox-focus') {
+      hangarPaneHidden = false;
       focusJetboxTerminal();
     } else if (e.data?.type === 'hangar-clear-selection') {
       const ctx = findTerminalContext();
@@ -750,6 +805,7 @@
     } else if (e.data?.type === 'hangar-sidechat-switch-cascade' && e.data?.payload?.cascadeId) {
       if (e.source !== window.parent) return;
       effectiveCascadeId = String(e.data.payload.cascadeId);
+      hasReceivedChatTrajectoryChunk = false;
       try {
         history.pushState(null, '', '/c/' + encodeURIComponent(effectiveCascadeId) + '?' + themeQuery);
         let popEv;
@@ -856,13 +912,17 @@
         }
       }
     }
-    const finalSelection =
+    const isFromPopupBtn = Boolean(
+      (startEl || startNode)?.closest?.('.selection-popup button')
+    );
+    const liveSelection =
       selectionText ||
       xterm?.getSelection?.() ||
       window.getSelection?.()?.toString?.() ||
-      cachedQuoteCtx?.selectionText ||
-      lastReportedSel ||
       '';
+    const finalSelection =
+      liveSelection ||
+      (isFromPopupBtn ? (cachedQuoteCtx?.selectionText || lastReportedSel || '') : '');
     return {
       selectionText: finalSelection,
       termId,
@@ -918,10 +978,16 @@
     const popup = document.querySelector?.('.selection-popup');
     const quoteBtn = popup?.querySelector?.('button:not([data-hangar-ask])');
     if (!popup || !quoteBtn) return;
-    quoteBtn.draggable = true;
-    quoteBtn.setAttribute?.('draggable', 'true');
-    if (quoteBtn.style) {
-      quoteBtn.style.webkitUserDrag = 'element';
+    if (quoteBtn.getAttribute?.('data-hangar-drag-init') !== 'true' && quoteBtn.dataset?.hangarDragInit !== 'true') {
+      quoteBtn.draggable = true;
+      quoteBtn.setAttribute?.('draggable', 'true');
+      quoteBtn.setAttribute?.('data-hangar-drag-init', 'true');
+      if (quoteBtn.dataset) {
+        quoteBtn.dataset.hangarDragInit = 'true';
+      }
+      if (quoteBtn.style && quoteBtn.style.webkitUserDrag !== 'element') {
+        quoteBtn.style.webkitUserDrag = 'element';
+      }
     }
     if (!popup.querySelector?.('[data-hangar-ask]')) {
       if (quoteBtn.className) {
@@ -958,7 +1024,16 @@
   }
 
   if (typeof MutationObserver === 'function' && document.documentElement) {
-    new MutationObserver(ensureAskButton).observe(document.documentElement, {
+    new MutationObserver((mutations) => {
+      if (
+        Array.isArray(mutations) &&
+        mutations.length > 0 &&
+        mutations.every((m) => m.type === 'attributes' && m.target?.getAttribute?.('data-hangar-drag-init') === 'true')
+      ) {
+        return;
+      }
+      ensureAskButton();
+    }).observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -984,8 +1059,15 @@
     return true;
   }
 
+  let lastSavedQuoteKey = '';
   const saveQuoteFile = (ctx) => {
-    if (!ctx?.selectionText?.trim()) return;
+    const text = ctx?.selectionText?.trim() || '';
+    if (!text) return;
+    const tid = ctx.termId || terminalId;
+    const name = ctx.termTitle || currentTermTitle || 'terminal';
+    const quoteKey = `${tid}\0${name}\0${text}`;
+    if (quoteKey === lastSavedQuoteKey) return;
+    lastSavedQuoteKey = quoteKey;
     try {
       sidecarFetch()('/api/terminal/ls-rpc', {
         method: 'POST',
@@ -993,8 +1075,8 @@
         body: JSON.stringify({
           method: 'WriteQuoteFile',
           conversationId: cascadeId,
-          terminalId: ctx.termId || terminalId,
-          name: ctx.termTitle || currentTermTitle || 'terminal',
+          terminalId: tid,
+          name,
           selectionContent: ctx.selectionText,
         }),
       }).catch(() => {});
@@ -1167,6 +1249,8 @@
       if (ctx.selectionText?.trim()) {
         cachedQuoteCtx = ctx;
         saveQuoteFile(ctx);
+      } else if (!isHoldingQuoteBtn && !isDraggingQuote) {
+        cachedQuoteCtx = null;
       }
       if (ctx.selectionText !== lastReportedSel) {
         lastReportedSel = ctx.selectionText;
@@ -1179,7 +1263,7 @@
     }, 15);
   };
 
-  ['mouseup', 'keyup', 'blur', 'mouseleave'].forEach((ev) => {
+  ['mouseup', 'keyup'].forEach((ev) => {
     window.addEventListener(ev, syncSelection, true);
   });
 })();
