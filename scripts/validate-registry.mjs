@@ -75,6 +75,7 @@ export function validateRegistry(registry, { packageVersion } = {}) {
       errors.push(`hangar.latestVersion (${hangar.latestVersion}) must match package.json version (${packageVersion})`);
     }
     if (hangar.npmPackage !== undefined && !NPM_NAME.test(hangar.npmPackage)) errors.push('hangar.npmPackage is not a valid npm name');
+    if (hangar.funding !== undefined && !isHttpsUrl(hangar.funding)) errors.push('hangar.funding must be an https URL');
     checkRelease(hangar.release, 'hangar', errors);
   }
 
@@ -94,6 +95,7 @@ export function validateRegistry(registry, { packageVersion } = {}) {
     if (!SEMVER.test(String(pkg.latestVersion || ''))) errors.push(`${where}.latestVersion must be semver`);
     if (!TIERS.has(pkg.capabilityTier)) errors.push(`${where}.capabilityTier must be one of ${[...TIERS].join(', ')}`);
     if (pkg.npmPackage !== undefined && !NPM_NAME.test(pkg.npmPackage)) errors.push(`${where}.npmPackage is not a valid npm name`);
+    if (pkg.funding !== undefined && !isHttpsUrl(pkg.funding)) errors.push(`${where}.funding must be an https URL`);
     if (pkg.categories !== undefined && !(Array.isArray(pkg.categories) && pkg.categories.every(isNonEmptyString))) {
       errors.push(`${where}.categories must be an array of strings`);
     }

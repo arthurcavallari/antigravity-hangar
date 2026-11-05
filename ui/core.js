@@ -11,6 +11,17 @@
     });
   }
   const ui = window.AgyUI || {};
+  const FAVORITE_PATH =
+    'm480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62' +
+    'q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108' +
+    'q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76' +
+    'q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z';
+  ui.registerIcons?.({ favorite: FAVORITE_PATH });
+  ns.DEFAULT_SPONSOR_URL = 'https://github.com/sponsors/arthurcavallari';
+  ns.sanitizeHttpsUrl = (raw = '') => {
+    const s = String(raw || '').trim();
+    return /^https:\/\/[^\s"'<>]+$/i.test(s) ? s : '';
+  };
   const trustedHtml = new Set();
   const rawHtml = (str = '') => {
     const s = String(str ?? '');
@@ -61,7 +72,7 @@
   ns.el = ns.el || ui.el;
   ns.clear = ns.clear || ui.clear || ((target) => ns.setHtml(target, ''));
   const baseIconSvg = ui.iconSvg || ((name, size = 16, cls = '') => (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="M120-240v-80h720v80H120Z"/></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="${name === 'favorite' ? FAVORITE_PATH : 'M120-240v-80h720v80H120Z'}"/></svg>`
   ));
   ns.iconSvg = ns.iconSvg || ((name, size = 16, cls = '') => rawHtml(baseIconSvg(name, size, cls)));
   ns.iconEl = ns.iconEl || ui.iconEl || ((name, size = 16, cls = '') => {

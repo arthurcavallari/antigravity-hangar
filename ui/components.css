@@ -15,6 +15,16 @@
   flex-wrap: wrap;
 }
 
+.sponsor-link-btn,
+.sponsor-cta-btn {
+  text-decoration: none;
+}
+
+.sponsor-link-btn .agy-icon,
+.sponsor-cta-btn .agy-icon {
+  color: #ea4aaa;
+}
+
 .store-title {
   display: flex;
   align-items: center;

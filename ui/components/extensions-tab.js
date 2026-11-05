@@ -189,6 +189,25 @@
               </agy-toggle-group>
             </div>
           </div>
+          <div class="agy-card">
+            <div class="agy-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Support Hangar Development</span>
+                </div>
+                <div class="agy-card-meta">Hangar is free and MIT-licensed. Sponsor maintenance and new Antigravity sidecars on GitHub Sponsors.</div>
+              </div>
+              <a
+                data-role="settings-sponsor-link"
+                href="https://github.com/sponsors/arthurcavallari"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="agy-btn agy-btn-outline has-icon sponsor-cta-btn"
+              >
+                ${ns.iconSvg('favorite', 13)}<span>Sponsor</span>
+              </a>
+            </div>
+          </div>
         </div>
       `);
       shell = paneEl.querySelector('[data-role="settings-shell"]');
@@ -262,6 +281,10 @@
       q(onRole)?.classList.toggle('active', Boolean(isOn));
       q(offRole)?.classList.toggle('active', !isOn);
     }
+    const sponsorHref = ns.sanitizeHttpsUrl?.(opts.hangar?.funding) || ns.DEFAULT_SPONSOR_URL || 'https://github.com/sponsors/arthurcavallari';
+    if (q('settings-sponsor-link')) {
+      q('settings-sponsor-link').href = sponsorHref;
+    }
   }
 
   ns.renderExtensionsTab = function renderExtensionsTab(opts = {}) {
@@ -300,6 +323,17 @@
               <button type="button" data-role="check-updates-btn" class="agy-icon-btn" title="Check for updates" aria-label="Check for updates">
                 ${ns.iconSvg('refresh', 14)}
               </button>
+              <a
+                data-role="sponsor-header-link"
+                href="https://github.com/sponsors/arthurcavallari"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="agy-icon-btn sponsor-link-btn"
+                title="Sponsor Hangar development"
+                aria-label="Sponsor Hangar development"
+              >
+                ${ns.iconSvg('favorite', 14)}
+              </a>
               <button type="button" data-role="settings-btn" class="agy-icon-btn" title="Hangar settings" aria-label="Hangar settings" aria-pressed="false">
                 ${ns.iconSvg('settings', 14)}
               </button>
@@ -398,6 +432,10 @@
         });
       }
       if (instVer) verPill.dataset.ver = instVer;
+    }
+    const sponsorUrl = ns.sanitizeHttpsUrl?.(hangar?.funding) || ns.DEFAULT_SPONSOR_URL || 'https://github.com/sponsors/arthurcavallari';
+    if (q('sponsor-header-link') && q('sponsor-header-link').href !== sponsorUrl) {
+      q('sponsor-header-link').href = sponsorUrl;
     }
     const runningCount = sidecars.filter((s) => s.isRunning).length;
     const runningCountEl = q('running-count');

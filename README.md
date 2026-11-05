@@ -1,5 +1,13 @@
 # Antigravity Hangar (`antigravity-hangar`)
 
+<p>
+  <a href="https://www.npmjs.com/package/antigravity-hangar"><img src="https://img.shields.io/npm/v/antigravity-hangar?logo=npm&color=cb3837" alt="npm version" height="20"></a>
+  <a href="https://github.com/arthurcavallari/antigravity-hangar/actions/workflows/test.yml"><img src="https://github.com/arthurcavallari/antigravity-hangar/actions/workflows/test.yml/badge.svg" alt="Tests" height="20"></a>
+  <img src="https://img.shields.io/node/v/antigravity-hangar?logo=nodedotjs&logoColor=white&color=339933" alt="Node.js version" height="20">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" height="20"></a>
+  <a href="https://github.com/sponsors/arthurcavallari"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub" height="20"></a>
+</p>
+
 > **Hangar** is a project-aware Chrome-style tab multiplexer, split-pane telemetry host, local package linker, and extension marketplace for **Google Antigravity** Auxiliary Pane sidecars.
 
 Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYPOINT_AUX_PANE`) and syncs automatically with your active workspace and editor theme (dark, light, high-contrast, and custom theme seeds).
@@ -82,6 +90,7 @@ Any Antigravity sidecar repository (`sidecar.json`) works with Hangar out of the
     "name": "Your Name",
     "github": "your-github-handle"
   },
+  "funding": "https://github.com/sponsors/your-github-handle",
   "license": "MIT",
   "pricing": "free",
   "categories": ["productivity"],
@@ -172,6 +181,14 @@ To opt out completely, set any of the following. Hangar then sends no telemetry 
 - `DO_NOT_TRACK=1` or `HANGAR_TELEMETRY=0` in your environment
 
 Separately, update checks look up Hangar and the sidecars it installed on npm and GitHub by package name, like any update check. These aren't affected by the opt-out.
+
+---
+
+## 8. Support
+
+Built and maintained in my spare time (with constant keyboard supervision from my three cats, **Snow** 🤍, **Eevee** 🦊, and **Merlin** 🧙‍♂️).
+
+If **Antigravity Hangar** saves you time across workspaces, consider [❤️ sponsoring me on GitHub Sponsors](https://github.com/sponsors/arthurcavallari) to help fund ongoing maintenance, new Antigravity sidecar extensions, and the household Churu treat budget!
 
 ---
 

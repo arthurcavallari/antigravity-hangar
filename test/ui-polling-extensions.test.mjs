@@ -48,7 +48,31 @@ describe('Hangar Extensions tab and Settings pane', () => {
     window.Hangar.renderExtensionsTab({
       storeViewEl,
       sidecars,
-      hangar: { installedVersion: '1.2.5', latestVersion: '1.2.5', updateAvailable: false },
+      hangar: {
+        installedVersion: '1.2.5',
+        latestVersion: '1.2.5',
+        updateAvailable: false,
+        funding: 'https://github.com/sponsors/arthurcavallari',
+      },
+      registryPackages: [
+        {
+          id: 'context-monitor',
+          name: 'Context & Quota Monitor',
+          latestVersion: '1.4.0',
+          capabilityTier: 'TIER_1_TELEMETRY',
+          author: { name: 'Arthur Cavallari', verified: true },
+          funding: 'https://github.com/sponsors/arthurcavallari',
+          categories: ['telemetry'],
+        },
+        {
+          id: 'unfunded-pkg',
+          name: 'Unfunded Sidecar',
+          latestVersion: '1.0.0',
+          capabilityTier: 'TIER_1_TELEMETRY',
+          funding: 'javascript:alert(1)',
+          categories: ['devops'],
+        },
+      ],
       suggestions: [{ sidecarId: 'docker-ui', name: 'Docker UI', reason: 'Detected docker-compose.yml', actionType: 'install' }],
       activeWorkspace: { workspaceName: 'App', workspacePath: 'C:/Proj/App' },
       onToggleAutoHibernate: async (sc) => toggledHib.push(sc.sidecarId),
@@ -59,9 +83,19 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.equal(storeViewEl.innerHTML.includes('&lt;svg'), false);
     assert.equal(storeViewEl.innerHTML.includes('&amp;amp;'), false);
     assert.ok(storeViewEl.querySelectorAll('svg').length >= 4);
+    const headerSponsor = storeViewEl.querySelector('[data-role="sponsor-header-link"]');
+    assert.ok(headerSponsor);
+    assert.equal(headerSponsor.getAttribute('href'), 'https://github.com/sponsors/arthurcavallari');
+    assert.equal(headerSponsor.getAttribute('target'), '_blank');
     assert.equal(storeViewEl.querySelectorAll('[data-subtab]').length, 3);
     storeViewEl.querySelector('[data-subtab="discover"]').click();
     assert.equal(storeViewEl.querySelectorAll('[data-cat]').length, 4);
+    const fundedCardSponsor = storeViewEl.querySelector('.agy-card[data-pkg-id="context-monitor"] [data-role="pkg-sponsor-link"]');
+    assert.equal(fundedCardSponsor.classList.contains('hidden'), false);
+    assert.equal(fundedCardSponsor.getAttribute('href'), 'https://github.com/sponsors/arthurcavallari');
+    assert.equal(fundedCardSponsor.title, 'Sponsor Arthur Cavallari');
+    const unfundedCardSponsor = storeViewEl.querySelector('.agy-card[data-pkg-id="unfunded-pkg"] [data-role="pkg-sponsor-link"]');
+    assert.equal(unfundedCardSponsor.classList.contains('hidden'), true);
     storeViewEl.querySelector('[data-subtab="installed"]').click();
 
     const verPill = storeViewEl.querySelector('[data-role="hangar-ver-pill"]');
@@ -128,6 +162,10 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.equal(settingsBtn.getAttribute('aria-pressed'), 'true');
     assert.equal(settingsPane.classList.contains('hidden'), false);
     assert.equal(storeViewEl.querySelector('[data-role="pane-installed"]').classList.contains('hidden'), true);
+    const settingsSponsor = settingsPane.querySelector('[data-role="settings-sponsor-link"]');
+    assert.ok(settingsSponsor);
+    assert.equal(settingsSponsor.getAttribute('href'), 'https://github.com/sponsors/arthurcavallari');
+    assert.equal(settingsSponsor.getAttribute('target'), '_blank');
 
     assert.equal(settingsPane.querySelector('[data-role="auto-update-off"]').classList.contains('active'), true);
     assert.equal(settingsPane.querySelector('[data-role="auto-update-on"]').classList.contains('active'), false);

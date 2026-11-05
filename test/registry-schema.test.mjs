@@ -21,6 +21,12 @@ describe('registry.json validation', () => {
     assert.match(errorsFor({ capabilityTier: 'TIER_0' }), /capabilityTier must be one of/);
     assert.match(errorsFor({ latestVersion: 'latest' }), /latestVersion must be semver/);
     assert.match(errorsFor({ release: { gitRepo: 'http://github.com/a/b' } }), /gitRepo must be an https URL/);
+    assert.match(errorsFor({ funding: 'http://github.com/sponsors/a' }), /funding must be an https URL/);
+    assert.match(errorsFor({ funding: 'javascript:alert(1)' }), /funding must be an https URL/);
+    assert.match(
+      validateRegistry({ ...base, hangar: { ...base.hangar, funding: 'http://evil.test' } }).join('\n'),
+      /hangar\.funding must be an https URL/
+    );
     assert.match(errorsFor({ release: { tarballUrl: 'https://x.test/a.tgz' } }), /requires a 64-hex sha256/);
     assert.match(errorsFor({ workspaceTriggers: { files: ['../../.ssh/id_rsa'] } }), /relative paths inside the workspace/);
     assert.match(errorsFor({ workspaceTriggers: { files: ['C:/Windows/win.ini'] } }), /relative paths inside the workspace/);

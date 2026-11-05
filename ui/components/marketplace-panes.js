@@ -29,6 +29,17 @@
           <div data-role="pkg-meta" class="agy-card-meta"></div>
         </div>
         <div class="agy-card-actions">
+          <a
+            data-role="pkg-sponsor-link"
+            href="https://github.com/sponsors/arthurcavallari"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="agy-icon-btn sponsor-link-btn hidden"
+            title="Sponsor author"
+            aria-label="Sponsor author"
+          >
+            ${ns.iconSvg('favorite', 14)}
+          </a>
           <button type="button" data-role="pkg-install-btn" class="agy-btn has-icon"></button>
         </div>
       </div>
@@ -159,10 +170,22 @@
         pkg.latestVersion || '1.0.0',
         (pkg.categories || []).join(', '),
         pkg.tagline || '',
+        pkg.funding || '',
       ]);
       if (card.dataset.metaSig !== metaSig) {
         card.dataset.metaSig = metaSig;
         card.querySelector('[data-role="pkg-title"]').textContent = pkg.name;
+        const sponsorEl = card.querySelector('[data-role="pkg-sponsor-link"]');
+        const fundingUrl = ns.sanitizeHttpsUrl ? ns.sanitizeHttpsUrl(pkg.funding) : '';
+        if (sponsorEl) {
+          sponsorEl.classList.toggle('hidden', !fundingUrl);
+          if (fundingUrl) {
+            sponsorEl.href = fundingUrl;
+            const sponsorTitle = pkg.author?.name ? `Sponsor ${pkg.author.name}` : `Sponsor ${pkg.name}`;
+            sponsorEl.title = sponsorTitle;
+            sponsorEl.setAttribute('aria-label', sponsorTitle);
+          }
+        }
         const tierEl = card.querySelector('[data-role="pkg-tier"]');
         tierEl.className = `agy-badge ${tier.state}`;
         ns.setHtml(tierEl, ns.html`${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.label)}</span>`);
