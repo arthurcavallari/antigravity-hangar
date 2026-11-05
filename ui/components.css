@@ -102,6 +102,12 @@
 .port-report summary {
   cursor: pointer;
   color: var(--hub-secondary-fg);
+  border-radius: var(--radius-sm, 0.25rem);
+}
+
+.port-report summary:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
 }
 
 .port-report ul {
@@ -277,6 +283,7 @@
   width: 20px;
   height: 20px;
   border: none;
+  outline: none;
   background: transparent;
   color: var(--hub-muted);
   border-radius: var(--radius-sm, 0.25rem);
@@ -285,9 +292,14 @@
   transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy);
 }
 
-.ws-rule-remove:hover {
+.ws-rule-remove:is(:hover, :focus-visible) {
   background: var(--hub-secondary);
   color: var(--hub-fg);
+}
+
+.ws-rule-remove:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
 }
 
 .ws-add-row {
@@ -392,9 +404,14 @@
   transition: background-color var(--dur-agy) var(--ease-agy), color var(--dur-agy) var(--ease-agy);
 }
 
-.term-pane-close:hover {
+.term-pane-close:is(:hover, :focus-visible) {
   color: var(--hub-fg);
   background: var(--hub-border);
+}
+
+.term-pane-close:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 1px;
 }
 
 .term-toolbar-actions {
@@ -457,8 +474,9 @@
   display: block;
 }
 
-.term-pane-resizer:hover {
+.term-pane-resizer:is(:hover, :focus-visible) {
   background: color-mix(in srgb, var(--hub-primary) 45%, transparent);
+  outline: none;
 }
 
 .term-pane.is-focused-pane::before {
@@ -638,6 +656,7 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   gap: 6px;
   padding: 4px 10px;
   border: none;
+  outline: none;
   background: transparent;
   color: var(--hub-fg);
   font-family: var(--hub-font-sans);
@@ -657,8 +676,13 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   -webkit-user-drag: none;
 }
 
-.term-quote-btn:hover {
+.term-quote-btn:is(:hover, :focus-visible) {
   background: var(--hub-secondary);
+}
+
+.term-quote-btn:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: -2px;
 }
 
 .term-quote-label {
@@ -751,6 +775,12 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   outline: none;
 }
 
+.term-sidechat-select:is(:focus, :focus-visible) {
+  border-color: var(--hub-primary);
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
+}
+
 .term-sidechat-btn {
   width: 24px;
   height: 24px;
@@ -761,6 +791,7 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   padding: 0 8px;
   border-radius: 4px;
   border: 1px solid var(--hub-border);
+  outline: none;
   background: transparent;
   color: var(--hub-muted);
   font-family: var(--hub-font-sans);
@@ -769,10 +800,15 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   flex-shrink: 0;
 }
 
-.term-sidechat-main-btn:is(:hover, .active) {
+.term-sidechat-main-btn:is(:hover, :focus-visible, .active) {
   background: var(--hub-secondary);
   color: var(--hub-fg);
   border-color: var(--hub-primary);
+}
+
+.term-sidechat-main-btn:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
 }
 
 .term-quote-composer-hint {
@@ -785,6 +821,8 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
 
 .term-quote-composer-close {
   border: none;
+  outline: none;
+  border-radius: 4px;
   background: transparent;
   color: var(--hub-muted);
   font-size: 15px;
@@ -793,8 +831,13 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   padding: 0 4px;
 }
 
-.term-quote-composer-close:hover {
+.term-quote-composer-close:is(:hover, :focus-visible) {
   color: var(--hub-fg);
+}
+
+.term-quote-composer-close:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
 }
 
 .term-sidechat-main-bar {

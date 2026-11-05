@@ -218,7 +218,7 @@
     const newThreadBtn = mkEl(
       'button',
       'agy-icon-btn hidden',
-      { type: 'button', title: 'New Side Chat', html: ns.iconSvg?.('add', 16) || '+' },
+      { type: 'button', title: 'New Side Chat', html: ns.iconSvg?.('add', 18) || '+' },
       { action: 'new', role: 'sidechat-new' },
       () => spawnNewInInstance()
     );
