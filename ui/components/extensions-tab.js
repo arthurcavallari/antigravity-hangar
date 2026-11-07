@@ -368,9 +368,11 @@
       const checkBtn = q('check-updates-btn');
       checkBtn?.addEventListener('click', async () => {
         checkBtn.disabled = true;
+        checkBtn.classList?.add?.('spinning');
         try {
           await (storeViewEl._lastOpts || opts)?.onCheckUpdates?.();
         } finally {
+          checkBtn.classList?.remove?.('spinning');
           checkBtn.disabled = false;
         }
       });
