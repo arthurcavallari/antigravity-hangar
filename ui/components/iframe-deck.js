@@ -263,12 +263,15 @@
         continue;
       }
       const baseKey = stripConversationParam(sc.iframeUrl);
+      const frameTitle = `${sc.displayName || sc.sidecarId} Sidecar`;
       let frame = deckFrames.get(sc.sidecarId);
       if (!frame) {
         frame = Object.assign(document.createElement('iframe'), {
           className: 'child-sidecar-frame',
           src: sc.iframeUrl,
+          title: frameTitle,
         });
+        frame.setAttribute?.('title', frameTitle);
         Object.assign(frame.dataset, { sidecarId: sc.sidecarId, baseKey, loadedUrl: sc.iframeUrl });
         frame.addEventListener('load', () => {
           if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');
@@ -277,16 +280,22 @@
         });
         els.mainViewport.appendChild(frame);
         deckFrames.set(sc.sidecarId, frame);
-      } else if (frame.dataset.baseKey !== baseKey) {
-        Object.assign(frame.dataset, { baseKey, loadedUrl: sc.iframeUrl });
-        frame.src = sc.iframeUrl;
-      } else if (frame.dataset.loadedUrl !== sc.iframeUrl) {
-        frame.dataset.loadedUrl = sc.iframeUrl;
-        try {
-          const convId = new URL(sc.iframeUrl).searchParams.get('conversationId') || '';
-          frame.contentWindow?.postMessage({ type: 'conversation-change', payload: { conversationId: convId } }, '*');
-        } catch {
-          /* ignore */
+      } else {
+        if (frame.title !== frameTitle) {
+          frame.title = frameTitle;
+          frame.setAttribute?.('title', frameTitle);
+        }
+        if (frame.dataset.baseKey !== baseKey) {
+          Object.assign(frame.dataset, { baseKey, loadedUrl: sc.iframeUrl });
+          frame.src = sc.iframeUrl;
+        } else if (frame.dataset.loadedUrl !== sc.iframeUrl) {
+          frame.dataset.loadedUrl = sc.iframeUrl;
+          try {
+            const convId = new URL(sc.iframeUrl).searchParams.get('conversationId') || '';
+            frame.contentWindow?.postMessage({ type: 'conversation-change', payload: { conversationId: convId } }, '*');
+          } catch {
+            /* ignore */
+          }
         }
       }
       const isTop = sc.sidecarId === topSlotId;

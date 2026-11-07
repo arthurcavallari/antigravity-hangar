@@ -35,6 +35,8 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(compCss, /\.term-quote-kbd\s*\{\s*opacity:\s*0\.55;/);
     assert.match(compCss, /\.term-mini-kbd\s*\{\s*opacity:\s*0\.6;/);
     assert.doesNotMatch(compCss, /\.term-(?:quote|mini)-kbd\s*\{[^}]*--hub-muted/);
+    assert.match(compCss, /:is\(\.term-shell > \.agy-toast,\s*\.term-quote-toast\)\s*\{[^}]*top:\s*auto;\s*bottom:\s*12px;/s);
+    assert.match(compCss, /:is\(\.term-shell > \.agy-toast,\s*\.term-quote-toast\)\.error\s*\{[^}]*--agy-bad/s);
 
     const quoteJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-quote.js'), 'utf8');
     assert.match(quoteJs, /class="term-quote-kbd" aria-hidden="true"/);

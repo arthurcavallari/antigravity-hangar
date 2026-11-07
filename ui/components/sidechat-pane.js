@@ -375,9 +375,10 @@
       const f = mkEl(
         'iframe',
         `term-sidechat-frame${isInitial ? ' hidden' : ''}`,
-        { _isInitialFrame: isInitial },
+        { _isInitialFrame: isInitial, title: 'Docked Side Chat' },
         { role: 'sidechat-frame', loadedCascadeId: '' }
       );
+      f.setAttribute?.('title', 'Docked Side Chat');
       f.addEventListener?.('load', () => {
         try {
           if (ns.getLatestThemeEvent?.()) {

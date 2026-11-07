@@ -430,6 +430,38 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     });
     assert.equal(splitBtnEl.classList.has('active'), false);
     assert.equal(splitBtnEl.getAttribute('aria-pressed'), 'false');
+
+    const mainViewport = makeEl('div');
+    const storeView = makeEl('div');
+    window.Hangar.reconcileIframeDeck({
+      state: {
+        sidecars: [
+          {
+            sidecarId: 'context-monitor',
+            displayName: 'Context Monitor',
+            matchesWorkspace: true,
+            isRunning: true,
+            iframeUrl: 'http://127.0.0.1:4100/?conversationId=c1',
+          },
+        ],
+        terminals: [],
+        layout: {
+          pinnedTopSidecarId: 'context-monitor',
+          topSplitTabIds: ['context-monitor'],
+          tabOrder: ['context-monitor'],
+          splitViewEnabled: false,
+        },
+      },
+      els: { mainViewport, storeView },
+    });
+    assert.equal(mainViewport.children.length, 1);
+    assert.equal(mainViewport.children[0].title, 'Context Monitor Sidecar');
+    assert.equal(mainViewport.children[0].getAttribute('title'), 'Context Monitor Sidecar');
+
+    const termPaneSrc = readFileSync(join(UI_DIR, 'components/terminal-pane.js'), 'utf8');
+    assert.match(termPaneSrc, /const frameTitle = `Interactive Terminal \(\$\{cleanTitle\}\)`/);
+    const sidechatPaneSrc = readFileSync(join(UI_DIR, 'components/sidechat-pane.js'), 'utf8');
+    assert.match(sidechatPaneSrc, /title:\s*'Docked Side Chat'/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {

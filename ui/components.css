@@ -1028,8 +1028,8 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
 :is(.term-shell > .agy-toast, .term-quote-toast) {
   position: absolute;
   right: 12px;
-  top: 36px;
-  bottom: auto;
+  top: auto;
+  bottom: 12px;
   z-index: 65;
   padding: 5px 10px;
   border-radius: var(--radius-md, 0.375rem);
@@ -1039,4 +1039,9 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   font-size: 11px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   pointer-events: none;
+}
+
+:is(.term-shell > .agy-toast, .term-quote-toast).error {
+  border-color: var(--agy-bad, var(--hub-danger));
+  color: var(--agy-bad, var(--hub-danger));
 }
