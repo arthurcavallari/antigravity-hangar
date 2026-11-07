@@ -121,12 +121,13 @@
     }
   });
 
-  const syncPreview = (ns._syncSideChatPreview = function syncPreview(els, rawSel) {
+    const syncPreview = (ns._syncSideChatPreview = function syncPreview(els, rawSel) {
     const sel = String(rawSel || '').trim();
     const lines = sel ? sel.split(/\r?\n/) : [];
     els.badge.textContent = '';
     [els.badge, els.mainToggleBtn, els.mainBar].forEach((el) => el.classList?.add?.('hidden'));
     els.mainToggleBtn.classList?.remove?.('active');
+    els.mainToggleBtn.setAttribute?.('aria-expanded', 'false');
     els.preview.textContent = lines.slice(0, 3).join('\n') + (lines.length > 3 ? '\n…' : '');
     els.preview.classList?.toggle?.('hidden', !sel);
   });
@@ -200,15 +201,18 @@
 
     const hide = (closeOpts = {}) => ns.closeSideChatDrawer({ deleteAll: true, ...closeOpts });
     const badge = mkEl('span', 'term-quote-composer-badge hidden');
-    const threadSelect = mkEl('select', 'term-sidechat-select hidden', {}, { role: 'sidechat-select' });
+    const threadSelect = mkEl('select', 'term-sidechat-select hidden', { ariaLabel: 'Select Side Chat thread' }, { role: 'sidechat-select' });
+    threadSelect.setAttribute?.('aria-label', 'Select Side Chat thread');
     const hint = mkEl('span', 'term-quote-composer-hint hidden', { textContent: 'Side Chat (tools enabled)' });
     const mainBar = mkEl('div', 'term-sidechat-main-bar hidden');
     const preview = mkEl('pre', 'term-quote-composer-preview');
     const row = mkEl('div', 'term-quote-composer-row');
     const input = mkEl('textarea', 'term-quote-composer-input', {
       rows: 2,
+      ariaLabel: 'Note for Main Chat',
       placeholder: 'Optional note for Main Chat… (Enter to send to Main Chat, Shift+Enter for new line)',
     });
+    input.setAttribute?.('aria-label', 'Note for Main Chat');
     const syncHeight = () => ns._bindAutoTextarea?.(input, 38, 120)?.();
     input.addEventListener?.('input', syncHeight);
 
@@ -249,22 +253,25 @@
         const nextShow = Boolean(mainBar.classList?.contains?.('hidden'));
         mainBar.classList?.toggle?.('hidden', !nextShow);
         mainToggleBtn.classList?.toggle?.('active', nextShow);
+        mainToggleBtn.setAttribute?.('aria-expanded', String(nextShow));
         if (nextShow) {
           setTimeout(() => input.focus?.(), 10);
         }
       }
     );
+    mainToggleBtn.setAttribute?.('aria-expanded', 'false');
     const newThreadBtn = mkEl(
       'button',
       'agy-icon-btn hidden',
-      { type: 'button', title: 'New Side Chat', html: ns.iconSvg?.('add', 18) || '+' },
+      { type: 'button', title: 'New Side Chat', ariaLabel: 'New Side Chat', html: ns.iconSvg?.('add', 18) || '+' },
       { action: 'new', role: 'sidechat-new' },
       () => spawnNewInInstance()
     );
+    newThreadBtn.setAttribute?.('aria-label', 'New Side Chat');
     const deleteBtn = mkEl(
       'button',
       'agy-icon-btn hidden',
-      { type: 'button', title: 'Delete Side Chat', html: ns.iconSvg?.('delete', 15) || '🗑' },
+      { type: 'button', title: 'Delete Side Chat', ariaLabel: 'Delete Side Chat', html: ns.iconSvg?.('delete', 15) || '🗑' },
       { action: 'kill', role: 'sidechat-delete' },
       () => {
         const activeId = ns.getActiveSideChatId(curTabId);
@@ -275,10 +282,11 @@
         }
       }
     );
+    deleteBtn.setAttribute?.('aria-label', 'Delete Side Chat');
     const overviewBtn = mkEl(
       'button',
       'agy-icon-btn',
-      { type: 'button', title: 'Toggle Overview Panel', html: ns.iconSvg?.('overview', 15) || '☰' },
+      { type: 'button', title: 'Toggle Overview Panel', ariaLabel: 'Toggle Overview Panel', html: ns.iconSvg?.('overview', 15) || '☰' },
       { action: 'overview', role: 'sidechat-overview' },
       () => {
         box._overviewOpen = !box._overviewOpen;
@@ -291,6 +299,7 @@
           }
         }
         overviewBtn.classList?.toggle?.('active', box._overviewOpen);
+        overviewBtn.setAttribute?.('aria-pressed', String(Boolean(box._overviewOpen)));
         if (!box._overviewOpen) {
           overviewBtn.blur?.();
         }
@@ -304,25 +313,33 @@
         }
       }
     );
+    overviewBtn.setAttribute?.('aria-label', 'Toggle Overview Panel');
+    overviewBtn.setAttribute?.('aria-pressed', 'false');
+    const popoutLabel = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
     const popoutBtn = mkEl(
       'button',
       'agy-icon-btn',
       {
         type: 'button',
-        title: curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar',
+        title: popoutLabel,
+        ariaLabel: popoutLabel,
         html: ns.iconSvg?.('dock_to_right', 14) || '⧉',
       },
       { action: 'popout', role: 'sidechat-popout' },
       () => handlePopoutOrMerge()
     );
+    popoutBtn.setAttribute?.('aria-label', popoutLabel);
+    popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
     const dockBtn = mkEl(
       'button',
       'agy-icon-btn term-sidechat-btn hidden',
-      { type: 'button' },
+      { type: 'button', ariaLabel: 'Dock Side Chat to Bottom Split' },
       { role: 'sidechat-dock' },
       () => ns.setSideChatDocked(!sc.isDocked, true)
     );
-    const closeBtn = mkEl('button', 'term-quote-composer-close hidden', { type: 'button', textContent: '×' }, {}, () => hide());
+    dockBtn.setAttribute?.('aria-label', 'Dock Side Chat to Bottom Split');
+    const closeBtn = mkEl('button', 'term-quote-composer-close hidden', { type: 'button', ariaLabel: 'Close Side Chat', textContent: '×' }, {}, () => hide());
+    closeBtn.setAttribute?.('aria-label', 'Close Side Chat');
     actionsEl.append?.(
       badge,
       backBtn,
@@ -341,6 +358,7 @@
     const closeMainBar = () => {
       mainBar.classList?.add?.('hidden');
       mainToggleBtn.classList?.remove?.('active');
+      mainToggleBtn.setAttribute?.('aria-expanded', 'false');
     };
     const submit = () => ns._submitQuoteToMain(box, root, sendBtn, 'Send to Main', input, syncHeight, closeMainBar);
     const sendBtn = mkEl(
@@ -425,7 +443,10 @@
       curTabId = nextTabId;
       curRootId = nextRootId;
       Object.assign(box.dataset || {}, { instanceTabId: curTabId });
-      popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
+      const nextPopoutLabel = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
+      popoutBtn.title = nextPopoutLabel;
+      popoutBtn.setAttribute?.('aria-label', nextPopoutLabel);
+      popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
       popoutBtn.classList?.toggle?.('active', Boolean(curRootId));
     };
 
@@ -444,6 +465,7 @@
       backBtn.classList?.toggle?.('hidden', !foreignNavIds.has(targetCascadeId));
       box._overviewOpen = overviewOpenIds.has(targetCascadeId);
       overviewBtn.classList?.toggle?.('active', box._overviewOpen);
+      overviewBtn.setAttribute?.('aria-pressed', String(Boolean(box._overviewOpen)));
       if (!box._overviewOpen) {
         overviewBtn.blur?.();
       }

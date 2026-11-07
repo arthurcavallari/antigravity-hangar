@@ -368,7 +368,10 @@
       const instThreads = ns.getInstanceSideChats(sc.threads, curRootId);
       const actCid = ns.getActiveSideChatId(curTabId) || instThreads[0]?.cascadeId || '';
       ctx.popoutBtn.classList?.toggle?.('active', Boolean(curRootId));
-      ctx.popoutBtn.title = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
+      const popoutTitle = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
+      ctx.popoutBtn.title = popoutTitle;
+      ctx.popoutBtn.setAttribute?.('aria-label', popoutTitle);
+      ctx.popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
       const togglePin = (t) => {
         t.pinned = !t.pinned;
         sc.threads = [...sc.threads.filter((x) => x.pinned), ...sc.threads.filter((x) => !x.pinned)];
