@@ -393,6 +393,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 20px;
+  height: 20px;
   padding: 2px;
   border: none;
   background: transparent;
@@ -550,7 +552,7 @@
 }
 
 .term-pane-dot.active {
-  background: var(--status-ok-dot, #4ade80);
+  background: var(--status-ok-dot, var(--agy-ok));
   opacity: 1;
 }
 

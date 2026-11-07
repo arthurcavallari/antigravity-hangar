@@ -553,6 +553,8 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(mktPaneSrc, /ghInput\.addEventListener\('keydown'/);
     const compCssSrc = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
     assert.match(compCssSrc, /\.ws-rule-remove\s*\{[\s\S]*?width:\s*24px;\s*height:\s*24px;/);
+    assert.match(compCssSrc, /\.term-pane-close\s*\{[\s\S]*?width:\s*20px;\s*height:\s*20px;/);
+    assert.match(compCssSrc, /\.term-pane-dot\.active\s*\{[\s\S]*?background:\s*var\(--status-ok-dot,\s*var\(--agy-ok\)\);/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {
