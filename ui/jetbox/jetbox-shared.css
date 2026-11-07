@@ -8,7 +8,8 @@ body,
   background: var(--background, #101010);
 }
 
-.agy-shell {
+.agy-shell,
+.agy-layout-vars {
   --sidebar-width: 0px !important;
   --static-cluster-width: 0px !important;
 }

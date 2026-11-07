@@ -1361,12 +1361,23 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
   it('pauses chat-poll and summaries polling while hidden, wakes immediately on hangar-jetbox-shown, and diffs trajectorySummaries', async () => {
     const chatHtml = buildJetboxChatHtml({ cascadeId: 'side-cascade-vis-diff', hostTheme: 'dark', csrfToken: 'csrf', uiToken: 'tok' });
+    assert.ok(chatHtml.includes('.agy-layout-vars') && chatHtml.includes('padding-left: 8px !important'));
     const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
     const winListeners = {};
     const fetchCalls = [];
     let currentSummaries = {
-      'conv-1': { summary: 'Alpha', stepCount: 10, lastModifiedTime: '2026-11-06T05:00:00Z', status: 1 },
-      'conv-2': { summary: 'Beta', stepCount: 4, lastModifiedTime: '2026-11-06T05:01:00Z', status: 1 },
+      'conv-1': {
+        summary: '@[c:\\Users\\arthu\\.gemini\\antigravity\\brain\\343b3ba5\\hangar_ui_ux_a11y_audit.md:L1] show me proof of this issue',
+        stepCount: 10,
+        lastModifiedTime: '2026-11-06T05:00:00Z',
+        status: 1,
+      },
+      'conv-2': {
+        summary: '@[c:\\Users\\arthu\\only_attachment.md:L5]',
+        stepCount: 4,
+        lastModifiedTime: '2026-11-06T05:01:00Z',
+        status: 1,
+      },
       'sub-1': {
         summary: 'Subagent Task',
         stepCount: 2,
@@ -1490,7 +1501,17 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(firstSumFrames[0].data.updates['conv-1'].hasRunningSubagents, true);
     assert.equal(firstSumFrames[0].data.updates['conv-1'].hasActiveChildren, true);
     assert.equal(firstSumFrames[0].data.updates['conv-1'].notFullyIdle, true);
+    assert.equal(
+      firstSumFrames[0].data.updates['conv-1'].summary,
+      'show me proof of this issue',
+      'raw @[path] tokens must be stripped from summary when prompt text is present'
+    );
     assert.equal(firstSumFrames[0].data.updates['conv-2'].notFullyIdle, false);
+    assert.equal(
+      firstSumFrames[0].data.updates['conv-2'].summary,
+      '@only_attachment.md:L5',
+      'attachment-only summary must collapse @[full/path/file] to @basename'
+    );
 
     // Second summaries poll with identical data must NOT enqueue a duplicate frame
     let secondReadResolved = false;

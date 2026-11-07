@@ -519,6 +519,21 @@
     st === 'CASCADE_RUN_STATUS_BUSY' ||
     st === 'CASCADE_RUN_STATUS_CANCELING';
 
+  function cleanTrajectorySummaryText(raw) {
+    if (!raw || typeof raw !== 'string') return raw;
+    const withoutTokens = raw
+      .replace(/@\[[^\]]+\]/g, '')
+      .replace(/\[[^\]]*\]\(terminal;[^)]*\)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (withoutTokens) return withoutTokens;
+    return raw
+      .replace(/@\[(?:.*[\\/])?([^\]]+)\]/g, '@$1')
+      .replace(/\[([^\]]+)\]\(terminal;[^)]*\)/g, '@$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function createSummariesConnectStream() {
     let cancelled = false;
     const prevDigests = new Map();
@@ -569,11 +584,13 @@
                         (info.backgroundTaskCount ?? 0) > 0 ||
                         hasRunningSubagents)
                   );
-                  const sig = `${info.lastModifiedTime || ''}\0${info.stepCount ?? ''}\0${info.status ?? ''}\0${info.summary || ''}\0${notFullyIdle ? 1 : 0}\0${hasRunningSubagents ? 1 : 0}\0${info.killed ? 1 : 0}\0${info.waitingSteps?.length ?? 0}`;
+                  const cleanedSummary = cleanTrajectorySummaryText(info.summary);
+                  const sig = `${info.lastModifiedTime || ''}\0${info.stepCount ?? ''}\0${info.status ?? ''}\0${cleanedSummary || ''}\0${notFullyIdle ? 1 : 0}\0${hasRunningSubagents ? 1 : 0}\0${info.killed ? 1 : 0}\0${info.waitingSteps?.length ?? 0}`;
                   if (prevDigests.get(cid) !== sig) {
                     prevDigests.set(cid, sig);
                     updates[cid] = {
                       ...info,
+                      ...(cleanedSummary ? { summary: cleanedSummary } : {}),
                       notFullyIdle,
                       hasRunningSubagents,
                       hasActiveChildren,
