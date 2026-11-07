@@ -722,27 +722,6 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   z-index: 2;
 }
 
-.term-quote-composer[data-slot="top"] {
-  order: 1;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-.main-viewport.is-split > .term-quote-composer[data-slot="top"] {
-  flex: 0 0 auto;
-  height: var(--split-top-height, 185px);
-  min-height: 80px;
-  max-height: calc(100vh - 150px);
-}
-
-.term-quote-composer[data-slot="bottom"] {
-  order: 3;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
 .term-quote-composer-hdr {
   display: flex;
   align-items: center;
