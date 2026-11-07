@@ -538,6 +538,8 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
     assert.match(mktPaneSrc, /aria-label="GitHub repository URL or owner\/repo"/);
+    const compCssSrc = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
+    assert.match(compCssSrc, /\.ws-rule-remove\s*\{[\s\S]*?width:\s*24px;\s*height:\s*24px;/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {
