@@ -276,7 +276,9 @@
     const payload = rawPayload?.cleanName ? rawPayload : ns.buildTerminalScopePayload(rawPayload || {});
     let mini = root._hangarMiniComposer;
     if (!mini) {
-      mini = mkEl('div', 'term-mini-composer');
+      mini = mkEl('div', 'term-mini-composer', { role: 'dialog', ariaLabel: 'Ask about terminal output' });
+      mini.setAttribute?.('role', 'dialog');
+      mini.setAttribute?.('aria-label', 'Ask about terminal output');
       const hdr = mkEl('div', 'term-mini-header');
       const hdrLeft = mkEl('div', 'term-mini-header-left');
       const badge = mkEl('span', 'term-quote-composer-badge');
@@ -284,16 +286,19 @@
       const closeBtn = mkEl(
         'button',
         'term-quote-composer-close term-mini-close',
-        { type: 'button', title: 'Cancel (Esc)', textContent: '×' },
+        { type: 'button', title: 'Cancel (Esc)', ariaLabel: 'Cancel (Esc)', textContent: '×' },
         {},
         () => mini._hide()
       );
+      closeBtn.setAttribute?.('aria-label', 'Cancel (Esc)');
       hdrLeft.append?.(badge, preview);
       hdr.append?.(hdrLeft, closeBtn);
       const input = mkEl('textarea', 'term-quote-composer-input term-mini-input', {
         rows: 2,
+        ariaLabel: 'Ask about terminal output',
         placeholder: `Ask about this terminal output… (Enter to send to Main Chat, ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} for Side Chat)`,
       });
+      input.setAttribute?.('aria-label', 'Ask about terminal output');
       const syncHeight = ns._bindAutoTextarea(input, 36, 110);
       const footer = mkEl('div', 'term-mini-footer');
       const hint = mkEl('span', 'term-mini-hint', { textContent: 'Esc to cancel · Shift+Enter for new line' });
@@ -312,6 +317,7 @@
         {
           type: 'button',
           title: 'Choose Side Chat thread (New Side Chat by default)',
+          ariaLabel: 'Choose Side Chat thread',
           html: ns.iconSvg?.('expand_more', 14) || '▾',
         },
         { role: 'mini-pick-sidechat' },
@@ -344,6 +350,7 @@
           );
         }
       );
+      sideChatPickBtn.setAttribute?.('aria-label', 'Choose Side Chat thread');
       const sendBtn = mkEl(
         'button',
         'agy-btn agy-btn-primary term-mini-send-btn',
@@ -377,7 +384,12 @@
         syncSideChatBtn();
         setTimeout(() => input.focus?.(), 10);
       };
-      const hide = () => mini.classList?.add?.('hidden');
+      const hide = (restoreFocus = true) => {
+        mini.classList?.add?.('hidden');
+        if (restoreFocus !== false) {
+          mini._prevFocus?.focus?.();
+        }
+      };
       const submitMain = () => ns._submitQuoteToMain(mini, root, sendBtn, 'Send to Main ↵', input, syncHeight, hide);
       const submitSideChat = (overrideTargetCid) => {
         const cur = mini._payload || { cleanName: 'terminal', terminalId: '', selectionContent: '' };
@@ -386,7 +398,7 @@
         const validTarget = rawTarget && sc.threads.some((t) => t.cascadeId === rawTarget) ? rawTarget : '';
         input.value = '';
         syncHeight();
-        hide();
+        hide(false);
         return ns.openTerminalQuoteComposer(
           mini._toastRoot || root,
           { ...cur, promptText, autoSubmit: Boolean(promptText) },
@@ -420,11 +432,21 @@
       });
       root._hangarMiniComposer = mini;
     }
+    const activeEl = document?.activeElement;
+    const prevFocus =
+      opts.returnFocusEl ||
+      (activeEl &&
+      activeEl !== document?.body &&
+      !mini?.contains?.(activeEl) &&
+      !activeEl.closest?.('.selection-popup')
+        ? activeEl
+        : root?.querySelector?.('.term-input-sink, .term-screen, .term-jetbox-frame') || activeEl || null);
     Object.assign(mini, {
       _toastRoot: root,
       _payload: payload,
       _convId: opts.conversationId || mini._convId || '',
       _targetCascadeId: '',
+      _prevFocus: prevFocus,
     });
     mini._syncSideChatBtn?.();
     const sel = String(payload.selectionContent || '').trim();

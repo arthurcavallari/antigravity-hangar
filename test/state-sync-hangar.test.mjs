@@ -41,6 +41,12 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(quoteJs, /class="term-mini-kbd" aria-hidden="true"/);
     assert.match(quoteJs, /setAttribute\?\.\('aria-keyshortcuts'/);
     assert.doesNotMatch(quoteJs, /term-quote-kbd[^"]*opacity-50/);
+    assert.match(quoteJs, /mini\.setAttribute\?\.\('role',\s*'dialog'\)/);
+    assert.match(quoteJs, /mini\.setAttribute\?\.\('aria-label',\s*'Ask about terminal output'\)/);
+    assert.match(quoteJs, /closeBtn\.setAttribute\?\.\('aria-label',\s*'Cancel \(Esc\)'\)/);
+    assert.match(quoteJs, /input\.setAttribute\?\.\('aria-label',\s*'Ask about terminal output'\)/);
+    assert.match(quoteJs, /sideChatPickBtn\.setAttribute\?\.\('aria-label',\s*'Choose Side Chat thread'\)/);
+    assert.match(quoteJs, /mini\._prevFocus\?\.focus\?\.\(\)/);
 
     const emuJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-emulator.js'), 'utf8');
     assert.match(emuJs, /screen\.setAttribute\?\.\('role',\s*'log'\)/);
