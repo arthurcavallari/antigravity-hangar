@@ -121,7 +121,7 @@
                 </div>
                 <div class="agy-card-meta">Minutes an inactive project's sidecars stay running before Auto-Sleep stops their Node.js processes (1–240 min)</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group">
+              <agy-toggle-group class="agy-toggle-group" aria-label="Auto-Sleep idle timeout presets">
                 <button type="button" data-role="ttl-5" data-ttl="5" class="agy-toggle-item">5m</button>
                 <button type="button" data-role="ttl-10" data-ttl="10" class="agy-toggle-item">10m</button>
                 <button type="button" data-role="ttl-30" data-ttl="30" class="agy-toggle-item">30m</button>
@@ -141,9 +141,9 @@
                 </div>
                 <div class="agy-card-meta">Automatically install updates for Hangar and managed extensions when capabilities do not escalate</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group">
-                <button type="button" data-role="auto-update-off" class="agy-toggle-item">Off</button>
-                <button type="button" data-role="auto-update-on" class="agy-toggle-item">On</button>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Automatic Updates">
+                <button type="button" data-role="auto-update-off" data-value="off" class="agy-toggle-item">Off</button>
+                <button type="button" data-role="auto-update-on" data-value="on" class="agy-toggle-item">On</button>
               </agy-toggle-group>
             </div>
           </div>
@@ -155,9 +155,9 @@
                 </div>
                 <div class="agy-card-meta">Show Extensions as a tab in the tab bar or as a compact icon button on the top-right bar</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group">
-                <button type="button" data-role="ext-mode-tab" class="agy-toggle-item">Tab Bar</button>
-                <button type="button" data-role="ext-mode-button" class="agy-toggle-item">Top-Bar Button</button>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Extensions Entrypoint">
+                <button type="button" data-role="ext-mode-tab" data-value="tab" class="agy-toggle-item">Tab Bar</button>
+                <button type="button" data-role="ext-mode-button" data-value="button" class="agy-toggle-item">Top-Bar Button</button>
               </agy-toggle-group>
             </div>
           </div>
@@ -169,23 +169,23 @@
                 </div>
                 <div class="agy-card-meta">Show Terminal as a tab in the tab bar or as a compact icon button on the top-right bar</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group">
-                <button type="button" data-role="term-mode-tab" class="agy-toggle-item">Tab Bar</button>
-                <button type="button" data-role="term-mode-button" class="agy-toggle-item">Top-Bar Button</button>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Interactive Terminal entrypoint">
+                <button type="button" data-role="term-mode-tab" data-value="tab" class="agy-toggle-item">Tab Bar</button>
+                <button type="button" data-role="term-mode-button" data-value="button" class="agy-toggle-item">Top-Bar Button</button>
               </agy-toggle-group>
             </div>
             <div class="manager-section-bar">
               <span class="manager-section-label">Terminal Engine (Native xterm.js iframe or Direct VT100)</span>
-              <agy-toggle-group class="agy-toggle-group">
-                <button type="button" data-role="engine-jetbox" class="agy-toggle-item">Native (Jetbox)</button>
-                <button type="button" data-role="engine-direct" class="agy-toggle-item">Direct VT100</button>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Terminal Engine">
+                <button type="button" data-role="engine-jetbox" data-value="jetbox" class="agy-toggle-item">Native (Jetbox)</button>
+                <button type="button" data-role="engine-direct" data-value="direct" class="agy-toggle-item">Direct VT100</button>
               </agy-toggle-group>
             </div>
             <div class="manager-section-bar">
               <span class="manager-section-label">External Workspace Terminals (Tabs opened outside Hangar)</span>
-              <agy-toggle-group class="agy-toggle-group">
-                <button type="button" data-role="ext-terms-show" class="agy-toggle-item">Show External</button>
-                <button type="button" data-role="ext-terms-hide" class="agy-toggle-item">Hangar Only</button>
+              <agy-toggle-group class="agy-toggle-group" aria-label="External Workspace Terminals">
+                <button type="button" data-role="ext-terms-show" data-value="show" class="agy-toggle-item">Show External</button>
+                <button type="button" data-role="ext-terms-hide" data-value="hide" class="agy-toggle-item">Hangar Only</button>
               </agy-toggle-group>
             </div>
           </div>
@@ -281,6 +281,7 @@
       q(onRole)?.classList.toggle('active', Boolean(isOn));
       q(offRole)?.classList.toggle('active', !isOn);
     }
+    shell.querySelectorAll?.('agy-toggle-group')?.forEach?.((g) => g.sync?.());
     const sponsorHref = ns.sanitizeHttpsUrl?.(opts.hangar?.funding) || ns.DEFAULT_SPONSOR_URL || 'https://github.com/sponsors/arthurcavallari';
     if (q('settings-sponsor-link')) {
       q('settings-sponsor-link').href = sponsorHref;
@@ -315,7 +316,7 @@
               <div class="store-subtitle">Manage workspace scopes, discover sidecars and plugins, or link local folders</div>
             </div>
             <div class="store-header-right">
-              <agy-toggle-group data-role="subtab-group" class="agy-toggle-group" role="tablist">
+              <agy-toggle-group data-role="subtab-group" class="agy-toggle-group" role="tablist" aria-label="Extensions views">
                 <button type="button" data-subtab="installed" class="agy-toggle-item">Installed</button>
                 <button type="button" data-subtab="discover" class="agy-toggle-item">Discover</button>
                 <button type="button" data-subtab="sideload" class="agy-toggle-item">Sideload</button>
@@ -444,12 +445,13 @@
       runningCountEl.dataset.count = String(runningCount);
     }
     const subtabGroup = q('subtab-group');
-    if (subtabGroup) {
-      subtabGroup.value = activeSubTab === 'settings' ? '' : activeSubTab;
-    }
     shell.querySelectorAll('[data-subtab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.subtab === activeSubTab);
     });
+    if (subtabGroup) {
+      subtabGroup.value = activeSubTab === 'settings' ? '' : activeSubTab;
+      subtabGroup.sync?.();
+    }
     q('settings-btn')?.classList.toggle('active', activeSubTab === 'settings');
     q('settings-btn')?.setAttribute('aria-pressed', String(activeSubTab === 'settings'));
     for (const tab of ['installed', 'discover', 'sideload', 'settings']) {

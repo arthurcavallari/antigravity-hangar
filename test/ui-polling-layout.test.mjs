@@ -512,6 +512,11 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
       },
     ]);
     assert.equal(refreshed, 1);
+
+    const extTabSrc = readFileSync(join(UI_DIR, 'components/extensions-tab.js'), 'utf8');
+    assert.match(extTabSrc, /aria-label="Auto-Sleep idle timeout presets"/);
+    assert.match(extTabSrc, /data-role="auto-update-on" data-value="on"/);
+    assert.match(extTabSrc, /shell\.querySelectorAll\?\.\('agy-toggle-group'\)\?\.forEach\?\.\(\(g\) => g\.sync\?\.\(\)\)/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {
