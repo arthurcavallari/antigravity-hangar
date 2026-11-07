@@ -174,6 +174,12 @@
     const subTab = targetTab === 'plugins' || targetTab === 'sidecars' ? 'installed' : targetTab;
     ns.activeNavigatedPluginId = rawId;
     ns.activeNavigationTarget = { targetTab, pluginId: rawId, sidecarId: effectiveSidecarId };
+    if (typeof document !== 'undefined') {
+      if (ns._clearCardHighlight) ns._clearCardHighlight();
+      document.querySelectorAll?.('.agy-card-highlight, .agy-card-highlight-settled')?.forEach?.((el) => {
+        el.classList?.remove?.('agy-card-highlight', 'agy-card-highlight-settled');
+      });
+    }
     ns.setExtensionsSubTab?.(subTab);
     ns.onHangarNavigate?.({ targetTab, pluginId: rawId, sidecarId: effectiveSidecarId });
     if (typeof document !== 'undefined') {
@@ -191,8 +197,57 @@
         const selector = `.agy-card[data-plugin-dir="${id}"], .agy-card[data-plugin-id="${id}"], .agy-card[data-sidecar-id="${id}"], .agy-card[data-pkg-id="${id}"]`;
         const card = document.querySelector?.(selector);
         if (card) {
+          let settleTimer = null;
+          let scrollCleanupTimer = null;
+          const settlePulse = () => {
+            if (settleTimer && typeof clearTimeout === 'function') {
+              clearTimeout(settleTimer);
+              settleTimer = null;
+            }
+            card.classList?.add?.('agy-card-highlight-settled');
+          };
+          const startPulse = () => {
+            if (settleTimer && typeof clearTimeout === 'function') clearTimeout(settleTimer);
+            card.removeEventListener?.('animationend', settlePulse);
+            card.classList?.remove?.('agy-card-highlight', 'agy-card-highlight-settled');
+            void card.offsetWidth;
+            card.classList?.add?.('agy-card-highlight');
+            card.addEventListener?.('animationend', settlePulse, { once: true });
+            if (typeof setTimeout === 'function') {
+              settleTimer = setTimeout(settlePulse, 1500);
+              settleTimer?.unref?.();
+            }
+          };
+          const onScrollEnd = () => {
+            if (scrollCleanupTimer && typeof clearTimeout === 'function') {
+              clearTimeout(scrollCleanupTimer);
+              scrollCleanupTimer = null;
+            }
+            startPulse();
+          };
+          const clearAll = () => {
+            if (settleTimer && typeof clearTimeout === 'function') clearTimeout(settleTimer);
+            if (scrollCleanupTimer && typeof clearTimeout === 'function') clearTimeout(scrollCleanupTimer);
+            storeView?.removeEventListener?.('scrollend', onScrollEnd);
+            card.removeEventListener?.('animationend', settlePulse);
+            document.removeEventListener?.('pointerdown', clearAll, true);
+            document.removeEventListener?.('keydown', clearAll, true);
+            card.classList?.remove?.('agy-card-highlight', 'agy-card-highlight-settled');
+            if (ns._clearCardHighlight === clearAll) ns._clearCardHighlight = null;
+          };
+          ns._clearCardHighlight = clearAll;
           card.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-          card.classList?.add?.('agy-card-highlight');
+          startPulse();
+          storeView?.addEventListener?.('scrollend', onScrollEnd, { once: true });
+          if (typeof setTimeout === 'function') {
+            scrollCleanupTimer = setTimeout(() => {
+              storeView?.removeEventListener?.('scrollend', onScrollEnd);
+              scrollCleanupTimer = null;
+            }, 450);
+            scrollCleanupTimer?.unref?.();
+          }
+          document.addEventListener?.('pointerdown', clearAll, true);
+          document.addEventListener?.('keydown', clearAll, true);
           break;
         }
       }

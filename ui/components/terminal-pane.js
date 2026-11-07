@@ -256,7 +256,7 @@
     const visSet = new Set(visibleIds);
     const isSplit = visibleIds.length > 1;
     const isJetbox = engineMode === 'jetbox';
-    const isLight = document.body.classList.contains('theme-light');
+    const isLight = window.AgyShell ? !window.AgyShell.isHostDarkTheme() : Boolean(document.body?.classList?.contains?.('theme-light'));
     const uiTok = ns.getUiToken?.() || new URLSearchParams(window.location?.search || '').get('token') || '';
     for (const ch of Array.from(stageEl.children || [])) {
       const cid = ch.dataset?.terminalId;

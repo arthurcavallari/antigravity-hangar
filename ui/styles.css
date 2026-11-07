@@ -175,11 +175,17 @@ body:is(.resizing-split, .dragging-tab) .child-sidecar-frame {
     --hub-bg: Canvas;
     --hub-fg: CanvasText;
     --hub-card: Canvas;
+    --hub-card-border: ButtonBorder;
     --hub-border: ButtonBorder;
     --hub-primary: Highlight;
     --hub-primary-fg: HighlightText;
+    --hub-secondary: ButtonFace;
     --hub-secondary-fg: CanvasText;
+    --hub-muted-bg: ButtonFace;
     --hub-muted: GrayText;
+    --status-ok: Highlight;
+    --status-warn: Highlight;
+    --status-err: LinkText;
   }
 
   :is(.agy-tab.active, .agy-toggle-item.active, .agy-btn) {

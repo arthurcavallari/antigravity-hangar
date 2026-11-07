@@ -602,6 +602,12 @@
   animation: term-blink 1.1s steps(2, start) infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .term-pane.is-input-focused .term-cursor {
+    animation: none;
+  }
+}
+
 @keyframes term-blink {
   0%,
   49% {
