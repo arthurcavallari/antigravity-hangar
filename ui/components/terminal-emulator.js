@@ -92,13 +92,15 @@
     containerEl.tabIndex = -1;
     const viewport = Object.assign(document.createElement('div'), { className: 'term-viewport' });
     const screen = Object.assign(document.createElement('div'), { className: 'term-screen' });
+    screen.setAttribute?.('role', 'log');
+    screen.setAttribute?.('aria-label', 'Terminal output');
     const inputSink = Object.assign(document.createElement('textarea'), {
       className: 'term-input-sink',
       spellcheck: false,
       autocapitalize: 'off',
       autocomplete: 'off',
     });
-    inputSink.setAttribute('aria-label', 'Terminal input');
+    inputSink.setAttribute?.('aria-label', 'Terminal input');
     viewport.appendChild(screen);
     containerEl.append(viewport, inputSink);
     viewport.addEventListener('scroll', () => {

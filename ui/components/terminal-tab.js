@@ -33,12 +33,16 @@
               class="agy-icon-btn"
               data-action="split"
               data-testid="terminal-split-button"
+              aria-label="Split Terminal"
+              aria-pressed="false"
               title="Split Terminal"
             >${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
             <button
               type="button"
               class="agy-icon-btn"
               data-action="popout"
+              aria-label="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
+              aria-pressed="${rootId ? 'true' : 'false'}"
               title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
             >${ns.iconSvg('dock_to_right', 14)}</button>
           </div>
@@ -211,9 +215,13 @@
       const activeGrp = getActiveGroup();
       const visibleIds = getVisibleIds();
       const hasSessions = tabGroups.length > 0;
+      const isPopped = Boolean(rootId);
+      const isSplit = visibleIds.length > 1;
       [toolbarEl, actionsEl].forEach((el) => el?.classList.toggle('hidden', !hasSessions));
-      popoutBtn?.classList.toggle('active', Boolean(rootId));
-      splitBtn?.classList.toggle('active', visibleIds.length > 1);
+      popoutBtn?.classList.toggle('active', isPopped);
+      popoutBtn?.setAttribute?.('aria-pressed', String(isPopped));
+      splitBtn?.classList.toggle('active', isSplit);
+      splitBtn?.setAttribute?.('aria-pressed', String(isSplit));
 
       const togglePin = (grp) => {
         grp.pinned = !grp.pinned;

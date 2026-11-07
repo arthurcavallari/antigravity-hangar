@@ -41,6 +41,18 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(quoteJs, /class="term-mini-kbd" aria-hidden="true"/);
     assert.match(quoteJs, /setAttribute\?\.\('aria-keyshortcuts'/);
     assert.doesNotMatch(quoteJs, /term-quote-kbd[^"]*opacity-50/);
+
+    const emuJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-emulator.js'), 'utf8');
+    assert.match(emuJs, /screen\.setAttribute\?\.\('role',\s*'log'\)/);
+    assert.match(emuJs, /screen\.setAttribute\?\.\('aria-label',\s*'Terminal output'\)/);
+
+    const termTabJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-tab.js'), 'utf8');
+    assert.match(termTabJs, /data-action="split"[\s\S]*?aria-label="Split Terminal"[\s\S]*?aria-pressed="false"/);
+    assert.match(termTabJs, /popoutBtn\?\.setAttribute\?\.\('aria-pressed',\s*String\(isPopped\)\)/);
+    assert.match(termTabJs, /splitBtn\?\.setAttribute\?\.\('aria-pressed',\s*String\(isSplit\)\)/);
+
+    const termPaneJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-pane.js'), 'utf8');
+    assert.match(termPaneJs, /data-role="pane-close"\s+aria-label="Close Split Pane"/);
   });
 
   it('AGY_CLIENT_JS computes relative luminance, caches theme in sessionStorage, and notifies agent on errored sidecars', async () => {

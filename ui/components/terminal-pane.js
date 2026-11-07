@@ -141,13 +141,14 @@
       Object.assign(document.createElement('div'), { className: 'term-pane-header hidden' }),
       ns.html`
         <div class="term-pane-header-title">
-          <span class="term-pane-dot" data-role="pane-dot"></span>
+          <span class="term-pane-dot" data-role="pane-dot" aria-hidden="true"></span>
           <span class="term-pane-title" data-role="pane-title">pwsh</span>
         </div>
         <button
           type="button"
           class="term-pane-close"
           data-role="pane-close"
+          aria-label="Close Split Pane"
           title="Close Split Pane"
         >${ns.iconSvg('close', 12)}</button>
       `
