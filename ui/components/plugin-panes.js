@@ -153,7 +153,7 @@
         <span data-role="uninstall-confirm-text"></span>
         <div class="consent-actions">
           <button type="button" data-role="uninstall-cancel" class="agy-btn agy-btn-outline">Cancel</button>
-          <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-primary">Uninstall</button>
+          <button type="button" data-role="uninstall-confirm-btn" class="agy-btn agy-btn-danger">Uninstall</button>
         </div>
       </div>
       <div data-role="card-error" class="agy-banner is-error hidden" role="alert"></div>
@@ -183,12 +183,17 @@
     });
     const uninstallBtn = q('uninstall-btn');
     const uninstallConfirm = q('uninstall-confirm');
+    const uninstallCancelBtn = q('uninstall-cancel');
     uninstallBtn.addEventListener('click', () => {
       const p = card._plugin;
       q('uninstall-confirm-text').textContent = `Uninstall ${p.name}?${p.disabled ? ' Hangar turns it back on first, so a later reinstall is not left disabled.' : ''}`;
       uninstallConfirm.classList.remove('hidden');
+      uninstallCancelBtn?.focus?.();
     });
-    q('uninstall-cancel').addEventListener('click', () => uninstallConfirm.classList.add('hidden'));
+    uninstallCancelBtn.addEventListener('click', () => {
+      uninstallConfirm.classList.add('hidden');
+      uninstallBtn?.focus?.();
+    });
     q('uninstall-confirm-btn').addEventListener('click', async () => {
       uninstallConfirm.classList.add('hidden');
       els.errorEl.classList.add('hidden');

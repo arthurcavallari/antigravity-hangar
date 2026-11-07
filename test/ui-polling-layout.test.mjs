@@ -532,8 +532,14 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(instPaneSrc, /addWsBtn\.setAttribute\?\.\('aria-pressed', String\(alreadyHasCurrent\)\)/);
     assert.match(instPaneSrc, /async function runCardAction\(card, action, triggerBtn = null, spin = false\)/);
     assert.match(instPaneSrc, /runCardAction\(card, \(\) => onManageSidecar\(card\._sc\.sidecarId, 'SIDECAR_ACTION_RESTART'\), restartBtn, true\)/);
+    assert.match(instPaneSrc, /data-role="uninstall-confirm-btn" class="agy-btn agy-btn-danger"/);
+    assert.match(instPaneSrc, /uninstallCancelBtn\?\.focus\?\.\(\)/);
+    assert.match(instPaneSrc, /uninstallBtn\?\.focus\?\.\(\)/);
     const pluginPaneSrc = readFileSync(join(UI_DIR, 'components/plugin-panes.js'), 'utf8');
     assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{p\.name\}`\)/);
+    assert.match(pluginPaneSrc, /data-role="uninstall-confirm-btn" class="agy-btn agy-btn-danger"/);
+    assert.match(pluginPaneSrc, /uninstallCancelBtn\?\.focus\?\.\(\)/);
+    assert.match(pluginPaneSrc, /uninstallBtn\?\.focus\?\.\(\)/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
