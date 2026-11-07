@@ -646,7 +646,7 @@ describe('Hangar plugin installer', () => {
       assert.equal(res.ok, true);
       assert.equal(auditedMcp.mcpServers.demo.serverUrl, 'https://mcp.example.com/sse');
       assert.equal('url' in auditedMcp.mcpServers.demo, false);
-      assert.equal(auditedHooks.hooks.PreToolUse[0].matcher, 'call_mcp_tool|mcp_tool');
+      assert.equal(auditedHooks.hooks.PreToolUse[0].matcher, 'call_mcp_tool|mcp_demo|mcp_tool');
       assert.equal(auditedRule, 'Run ./scripts/helper.mjs first.');
       assert.ok(res.lintReport);
       assert.equal(res.lintReport.valid, true);
