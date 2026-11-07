@@ -116,14 +116,19 @@
     document
       .querySelectorAll?.('.merge-drop-target, .drop-target, .drop-left, .drop-right')
       .forEach((el) => el.classList?.remove('merge-drop-target', 'drop-target', 'drop-left', 'drop-right'));
-    for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
-      if (shell.dataset.instanceTabId !== draggedSidecarId) {
-        shell
-          .querySelectorAll?.(`${cfg.pillSel}:not(.is-dragging-source)`)
-          .forEach((el) => ns.setTabShift?.(el, 0));
+    const resetShellPills = (keepShell = null) => {
+      for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
+        if (shell !== keepShell && shell.dataset.instanceTabId !== draggedSidecarId) {
+          shell
+            .querySelectorAll?.(`${cfg.pillSel}:not(.is-dragging-source), .agy-tab-add, .agy-tab-add-btn`)
+            .forEach((el) => ns.setTabShift?.(el, 0));
+        }
       }
+    };
+    if (!cfg.isKindTabId(draggedSidecarId)) {
+      resetShellPills();
+      return null;
     }
-    if (!cfg.isKindTabId(draggedSidecarId)) return null;
     const rectOf = (el) => (ns.getUnshiftedRect ? ns.getUnshiftedRect(el) : el.getBoundingClientRect());
     const srcEl = document.querySelector?.(`.agy-tab[data-sidecar-id="${draggedSidecarId}"]`);
     const srcR = srcEl ? rectOf(srcEl) : null;
@@ -144,11 +149,15 @@
       const leftMargin = same && srcR && srcR.left < r.left ? 0 : r.width * 0.12;
       const rightMargin = same && srcR && srcR.left > r.left ? 0 : r.width * 0.12;
       if (clientX >= r.left + leftMargin && clientX <= r.right - rightMargin) {
+        resetShellPills();
         el.classList.add('merge-drop-target');
         return { targetInstanceTabId: sid, zone: 'hub-tab', pane: el.dataset.pane || 'single' };
       }
     }
-    if (!checkShells) return null;
+    if (!checkShells) {
+      resetShellPills();
+      return null;
+    }
     for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
       const targetInstanceTabId = shell.dataset.instanceTabId;
       const sRect = shell.getBoundingClientRect();
@@ -164,19 +173,26 @@
       ) {
         continue;
       }
+      resetShellPills(shell);
       const strip = shell.querySelector('.agy-tab-strip');
       const tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
       shell.classList.add('drop-target');
       strip?.classList.add('drop-target');
       const pills = Array.from(strip?.querySelectorAll(cfg.pillSel) || []);
+      const addBtn = strip?.querySelector?.('.agy-tab-add, .agy-tab-add-btn, [data-role="add-tab"], [data-role="agy-add-tab"]');
       let index = pills.length;
-      if (tRect && clientY <= tRect.bottom + 10) {
-        const hitIdx = pills.findIndex((p) => clientX < rectOf(p).left + rectOf(p).width / 2);
+      if (tRect && clientY <= tRect.bottom + 18) {
+        const hitIdx = pills.findIndex((p) => clientX < rectOf(p).right);
         index = hitIdx >= 0 ? hitIdx : pills.length;
         pills.forEach((p, i) => ns.setTabShift?.(p, i >= index ? 68 : 0));
+        if (addBtn) ns.setTabShift?.(addBtn, 68);
+      } else {
+        pills.forEach((p) => ns.setTabShift?.(p, 0));
+        if (addBtn) ns.setTabShift?.(addBtn, 0);
       }
       return { targetInstanceTabId, zone: 'strip', index, pane: cfg.getShellPane(shell) };
     }
+    resetShellPills();
     return null;
   };
 
@@ -205,7 +221,7 @@
       }
     };
     window.AgyUI?.bindTabDragController?.(el, {
-      stripEl: cfg.sessionsEl,
+      stripEl: () => (typeof cfg.sessionsEl === 'function' ? cfg.sessionsEl() : cfg.sessionsEl),
       tabSelector: '.agy-tab',
       pinnedRole: cfg.pinnedRole,
       ignoreSelector: cfg.ignoreSelector,
@@ -230,13 +246,16 @@
               'split-drop-target'
             )
           );
-        dragState.sourceTabs.forEach((sib, i) =>
-          ns.setTabShift?.(sib, i > dragState.draggedIndex ? -dragState.draggedSlot : 0)
-        );
         const ownHit = cfg.checkOwnTarget?.(e, dragState, () => clearHover(true, sourceSlot));
         if (ownHit) {
           st.dropAction = ownHit;
-          return;
+          return true;
+        }
+        dragState.sourceTabs.forEach((sib, i) =>
+          ns.setTabShift?.(sib, dragState.draggedIndex >= 0 && i > dragState.draggedIndex ? -dragState.draggedSlot : 0)
+        );
+        if (dragState.addBtn) {
+          ns.setTabShift?.(dragState.addBtn, dragState.draggedIndex >= 0 ? -dragState.draggedSlot : 0);
         }
         const mergeHit = cfg.inspectMerge(e.clientX, e.clientY, curTabId, true);
         if (mergeHit) {
@@ -256,10 +275,11 @@
             clearHover(false, sourceSlot);
           }
           st.dropAction = { type: 'merge', target: mergeHit };
-          return;
+          return true;
         }
         clearHover(true, sourceSlot);
         st.dropAction = cfg.checkStageTarget?.(e) || ns.checkOutOfRailPromote?.(e, sourceSlot, cfg.isKindTabId);
+        return true;
       },
       onDrop: (_e, finishedState, cancelled) => {
         const slot = cfg.getSlot();

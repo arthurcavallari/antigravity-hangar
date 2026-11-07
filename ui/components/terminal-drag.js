@@ -30,7 +30,10 @@
       const tid = dragPayload.terminalId;
       const detached = { groupId: tid, paneIds: [tid], focusedPaneId: tid };
       srcGroup.paneIds = srcGroup.paneIds.filter((id) => id !== tid);
-      if (srcGroup.focusedPaneId === tid) {
+      if (!srcGroup.paneIds.includes(srcGroup.groupId)) {
+        srcGroup.groupId = srcGroup.paneIds[0] || srcGroup.groupId;
+      }
+      if (!srcGroup.paneIds.includes(srcGroup.focusedPaneId)) {
         srcGroup.focusedPaneId = srcGroup.paneIds[0] || '';
       }
       next.splice(Math.max(0, Math.min(next.length, rawIdx)), 0, detached);
@@ -54,6 +57,9 @@
       const movingPanes = dragPayload.kind === 'tab' ? [...srcGroup.paneIds] : [dragPayload.terminalId];
       for (const g of next) {
         g.paneIds = g.paneIds.filter((id) => !movingPanes.includes(id));
+        if (!g.paneIds.includes(g.groupId)) {
+          g.groupId = g.paneIds[0] || g.groupId;
+        }
         if (!g.paneIds.includes(g.focusedPaneId)) {
           g.focusedPaneId = g.paneIds[0] || '';
         }
@@ -196,7 +202,7 @@
       const pIds = (g.paneIds || []).filter((id) => !srcSet.has(id));
       if (pIds.length) {
         dstGroups.push({
-          groupId: g.groupId,
+          groupId: pIds.includes(g.groupId) ? g.groupId : pIds[0],
           paneIds: pIds,
           focusedPaneId: pIds.includes(g.focusedPaneId) ? g.focusedPaneId : pIds[0],
         });
@@ -269,12 +275,15 @@
   ns.activeTermDrag = null;
   ns.setTabShift = (el, px = 0) => {
     if (!el) return;
-    el._shiftX = px || 0;
+    const next = px || 0;
+    if (el._shiftX === next) return;
+    el._shiftX = next;
     if (el.style) {
-      el.style.transform = px ? `translateX(${px}px)` : '';
+      el.style.transform = next ? `translateX(${next}px)` : '';
     }
   };
   ns.getUnshiftedRect = (el) => {
+    if (window.AgyUI?.getUnshiftedRect) return window.AgyUI.getUnshiftedRect(el);
     const r = el.getBoundingClientRect();
     const tx = el._shiftX || 0;
     return tx
@@ -303,7 +312,7 @@
       );
     });
     if (!ns.isPointerOnTab) {
-      document.querySelectorAll?.('.agy-tab').forEach((el) => ns.setTabShift(el, 0));
+      document.querySelectorAll?.('.agy-tab, .agy-tab-add, .agy-tab-add-btn').forEach((el) => ns.setTabShift(el, 0));
     }
   };
   ns.bindHangarChromeDropZone = (cfg = {}) => {
@@ -361,15 +370,16 @@
 
   ns.bindTermPointerDrag = function bindTermPointerDrag(el, cfg = {}) {
     const curGid = () => (typeof cfg.groupId === 'function' ? cfg.groupId() : cfg.groupId);
+    const curTid = () => (typeof cfg.terminalId === 'function' ? cfg.terminalId() : cfg.terminalId);
     const makeDrag = () => ({
       kind: cfg.kind,
       groupId: curGid(),
-      terminalId: cfg.terminalId,
+      terminalId: curTid(),
       instanceTabId: cfg.instanceTabId,
       sourceSlot: cfg.getSlotKey?.() || 'top',
     });
     ns.bindCrossInstancePillDrag?.(el, {
-      itemId: cfg.terminalId || 'term',
+      itemId: curTid() || 'term',
       sessionsEl: cfg.sessionsEl,
       ignoreSelector: '[data-close-gid], [data-pin-gid], [data-role="tab-pin"], [data-role="pane-close"]',
       shouldDetach: () => cfg.kind === 'pane',
@@ -417,18 +427,25 @@
           !ownTRect ||
           e.clientX < ownTRect.left ||
           e.clientX > ownTRect.right ||
-          e.clientY < ownTRect.top - 10 ||
-          e.clientY > ownTRect.bottom + 10
+          e.clientY < ownTRect.top - 18 ||
+          e.clientY > ownTRect.bottom + 18
         ) {
           return null;
         }
         clearHover();
         cfg.sessionsEl?.classList?.add('drop-target');
-        const hitIdx = dragState.sourceTabs.findIndex(
-          (t) => e.clientX < ns.getUnshiftedRect(t).left + ns.getUnshiftedRect(t).width / 2
-        );
+        const scrollDelta = (cfg.sessionsEl?.scrollLeft || 0) - (dragState.startScrollLeft || 0);
+        const hitIdx = dragState.sourceTabs.findIndex((t, i) => {
+          const rightEdge =
+            typeof dragState.rects?.[i]?.right === 'number'
+              ? dragState.rects[i].right - scrollDelta
+              : ns.getUnshiftedRect(t).right;
+          return e.clientX < rightEdge;
+        });
         const idx = hitIdx >= 0 ? hitIdx : dragState.sourceTabs.length;
-        dragState.sourceTabs.forEach((p, i) => ns.setTabShift(p, i >= idx ? 68 : 0));
+        const shiftPx = dragState.draggedSlot || 68;
+        dragState.sourceTabs.forEach((p, i) => ns.setTabShift(p, i >= idx ? shiftPx : 0));
+        if (dragState.addBtn) ns.setTabShift(dragState.addBtn, shiftPx);
         return { type: 'same', target: { zone: 'strip', index: idx } };
       },
       checkStageTarget: (e) => {
