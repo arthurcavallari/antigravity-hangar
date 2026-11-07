@@ -165,14 +165,20 @@
     });
   };
 
-  ns.showTerminalQuoteToast = function showTerminalQuoteToast(hostEl, message) {
+  ns.showTerminalQuoteToast = function showTerminalQuoteToast(hostEl, message, isError = false) {
     const root = hostEl || document.body;
     if (!root || !message) return;
     if (!root._hangarQuoteToast) {
       root._hangarQuoteToast = mkEl('div', 'agy-toast');
       root.appendChild?.(root._hangarQuoteToast);
     }
-    const toast = Object.assign(root._hangarQuoteToast, { textContent: message, className: 'agy-toast' });
+    const isErr = Boolean(isError && (typeof isError === 'object' ? (isError.error || isError.variant === 'error') : isError));
+    const toast = Object.assign(root._hangarQuoteToast, {
+      textContent: message,
+      className: `agy-toast${isErr ? ' error' : ''}`,
+    });
+    toast.setAttribute?.('role', isErr ? 'alert' : 'status');
+    toast.setAttribute?.('aria-live', isErr ? 'assertive' : 'polite');
     toast.classList?.remove?.('hidden');
     clearTimeout(toast._timer);
     toast._timer = setTimeout(() => toast.classList?.add?.('hidden'), 2600);
@@ -536,12 +542,13 @@
       'term-quote-btn term-quote-ask-btn',
       {
         type: 'button',
-        title: 'Open tool-enabled Side Chat with this selection (or send to Main Chat)',
+        title: `Open tool-enabled Side Chat with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`,
         html: '<span class="term-quote-label">Quote & Ask</span>',
       },
       {},
       (e) => finishSelection(true, e)
     );
+    askBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Shift+Meta+L' : 'Alt+Shift+L');
     [quoteBtn, askBtn].forEach((b) => popup.appendChild?.(b));
     hostEl?.appendChild?.(popup);
     ns.bindTerminalDragSource(quoteBtn, currentPayload);

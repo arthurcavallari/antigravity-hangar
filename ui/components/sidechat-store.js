@@ -85,7 +85,7 @@
       onDone?.();
       ns.showTerminalQuoteToast(hostObj._toastRoot || root, `Sent quote from "${cur.cleanName}" to Main Chat`);
     } catch (err) {
-      ns.showTerminalQuoteToast(hostObj._toastRoot || root, err?.message || 'Failed to send to Agent');
+      ns.showTerminalQuoteToast(hostObj._toastRoot || root, err?.message || 'Failed to send to Agent', true);
     }
     Object.assign(sendBtn, { disabled: false, textContent: idleLabel });
   };

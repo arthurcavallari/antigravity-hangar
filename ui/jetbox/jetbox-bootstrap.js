@@ -1289,9 +1289,12 @@
       }
       const askBtn = document.createElement('button');
       const row = quoteBtn.parentElement || popup;
+      const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || navigator?.userAgent || '');
       askBtn.type = 'button';
       askBtn.className = ((quoteBtn.className || '') + ' border-l border-border whitespace-nowrap').trim();
       askBtn.setAttribute?.('data-hangar-ask', 'true');
+      askBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Shift+Meta+L' : 'Alt+Shift+L');
+      askBtn.title = `Open tool-enabled Side Chat with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`;
       askBtn.draggable = false;
       askBtn.setAttribute?.('draggable', 'false');
       askBtn.innerHTML = '<span>Quote &amp; Ask</span>';
@@ -1514,12 +1517,12 @@
   window.addEventListener('keydown', (e) => {
     const isAltOnly = e.altKey && !e.ctrlKey && !e.metaKey;
     const isModOnly = (e.metaKey || e.ctrlKey) && !e.altKey;
-    const isQuoteKey = (isAltOnly || isModOnly) && !e.shiftKey && e.key?.toLowerCase?.() === 'l';
+    const isQuoteKey = (isAltOnly || isModOnly) && e.key?.toLowerCase?.() === 'l';
     const ctx = isQuoteKey ? findTerminalContext(e.target) : null;
     if (ctx?.selectionText?.trim()) {
       e.preventDefault();
       e.stopPropagation();
-      triggerJetboxQuote(ctx, false);
+      triggerJetboxQuote(ctx, Boolean(e.shiftKey));
     }
   }, true);
 

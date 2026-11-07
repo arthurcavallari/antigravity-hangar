@@ -402,7 +402,7 @@
       if (selText && (e.altKey || e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
         e.stopPropagation();
         e.preventDefault();
-        onQuoteShortcut?.(selText);
+        onQuoteShortcut?.(selText, Boolean(e.shiftKey));
         return;
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && selText) {

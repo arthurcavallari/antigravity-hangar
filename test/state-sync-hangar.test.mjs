@@ -47,10 +47,20 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(quoteJs, /input\.setAttribute\?\.\('aria-label',\s*'Ask about terminal output'\)/);
     assert.match(quoteJs, /sideChatPickBtn\.setAttribute\?\.\('aria-label',\s*'Choose Side Chat thread'\)/);
     assert.match(quoteJs, /mini\._prevFocus\?\.focus\?\.\(\)/);
+    assert.match(quoteJs, /toast\.setAttribute\?\.\('role',\s*isErr\s*\?\s*'alert'\s*:\s*'status'\)/);
+    assert.match(quoteJs, /toast\.setAttribute\?\.\('aria-live',\s*isErr\s*\?\s*'assertive'\s*:\s*'polite'\)/);
+    assert.match(quoteJs, /askBtn\.setAttribute\?\.\('aria-keyshortcuts',\s*isMac\s*\?\s*'Shift\+Meta\+L'\s*:\s*'Alt\+Shift\+L'\)/);
+
+    const storeJs = readFileSync(join(ROOT, 'ui', 'components', 'sidechat-store.js'), 'utf8');
+    assert.match(storeJs, /showTerminalQuoteToast\(hostObj\._toastRoot\s*\|\|\s*root,\s*err\?\.message\s*\|\|\s*'Failed to send to Agent',\s*true\)/);
 
     const emuJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-emulator.js'), 'utf8');
     assert.match(emuJs, /screen\.setAttribute\?\.\('role',\s*'log'\)/);
     assert.match(emuJs, /screen\.setAttribute\?\.\('aria-label',\s*'Terminal output'\)/);
+    assert.match(emuJs, /onQuoteShortcut\?\.\(selText,\s*Boolean\(e\.shiftKey\)\)/);
+
+    const bootJs = readFileSync(join(ROOT, 'ui', 'jetbox', 'jetbox-bootstrap.js'), 'utf8');
+    assert.match(bootJs, /triggerJetboxQuote\(ctx,\s*Boolean\(e\.shiftKey\)\)/);
 
     const termTabJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-tab.js'), 'utf8');
     assert.match(termTabJs, /data-action="split"[\s\S]*?aria-label="Split Terminal"[\s\S]*?aria-pressed="false"/);
