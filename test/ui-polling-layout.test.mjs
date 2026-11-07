@@ -520,6 +520,8 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(extTabSrc, /aria-label="Custom idle timeout in minutes \(1 to 240\)"/);
     assert.match(extTabSrc, /checkBtn\.classList\?\.add\?\.\('spinning'\)/);
     assert.match(extTabSrc, /checkBtn\.classList\?\.remove\?\.\('spinning'\)/);
+    assert.match(extTabSrc, /const raw = Number\.parseInt\(ttlInput\?\.value, 10\)/);
+    assert.match(extTabSrc, /if \(!Number\.isFinite\(raw\) \|\| raw < 1\)/);
     const instPaneSrc = readFileSync(join(UI_DIR, 'components/installed-pane.js'), 'utf8');
     assert.match(instPaneSrc, /aria-label="Add workspace path or glob"/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');

@@ -227,10 +227,13 @@
       }
       const ttlInput = q('settings-ttl-input');
       const commitTtl = () => {
-        const val = Math.max(1, Math.min(240, Math.round(Number(ttlInput.value) || 0)));
-        if (Number.isFinite(val) && val >= 1) {
-          applyUpdate({ hibernateAfterIdleMinutes: val }, `Updated Auto-Sleep idle timeout to ${val}m.`);
+        const raw = Number.parseInt(ttlInput?.value, 10);
+        if (!Number.isFinite(raw) || raw < 1) {
+          ttlInput?.focus?.();
+          return;
         }
+        const val = Math.min(240, raw);
+        applyUpdate({ hibernateAfterIdleMinutes: val }, `Updated Auto-Sleep idle timeout to ${val}m.`);
       };
       ttlInput?.addEventListener('keydown', (e) => e.key === 'Enter' && commitTtl());
       q('settings-ttl-save')?.addEventListener('click', commitTtl);
