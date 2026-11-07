@@ -339,7 +339,10 @@
     } = props;
     const splitEnabled = Boolean(layout?.splitViewEnabled);
     const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
-    splitBtnEl?.classList.toggle('active', splitEnabled);
+    if (splitBtnEl) {
+      splitBtnEl.classList.toggle('active', splitEnabled);
+      splitBtnEl.setAttribute?.('aria-pressed', String(splitEnabled));
+    }
     const updateCount = (sidecars || []).filter((s) => s.updateAvailable || regMap.get(s.sidecarId)?.updateAvailable).length +
       (hangar?.updateAvailable ? 1 : 0);
     const { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(

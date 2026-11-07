@@ -327,22 +327,31 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
         removeProperty: (k) => inlineProps.delete(k),
       },
     };
-    const makeEl = (tag) => ({
-      tagName: tag.toUpperCase(),
-      className: '',
-      textContent: '',
-      dataset: {},
-      style: {},
-      classList: fakeClassList(),
-      children: [],
-      appendChild(c) {
-        this.children.push(c);
-        return c;
-      },
-      remove() {},
-      querySelector: () => null,
-      addEventListener() {},
-    });
+    const makeEl = (tag) => {
+      const attrs = new Map();
+      return {
+        tagName: tag.toUpperCase(),
+        className: '',
+        textContent: '',
+        dataset: {},
+        style: {},
+        classList: fakeClassList(),
+        children: [],
+        setAttribute(k, v) {
+          attrs.set(k, String(v));
+        },
+        getAttribute(k) {
+          return attrs.get(k) ?? null;
+        },
+        appendChild(c) {
+          this.children.push(c);
+          return c;
+        },
+        remove() {},
+        querySelector: () => null,
+        addEventListener() {},
+      };
+    };
     const document = {
       documentElement,
       head: { appendChild() {} },
@@ -400,6 +409,27 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     window.AgyUI.showToast('Sent to Side Chat', { container: hostContainer });
     assert.equal(customContainerChildren.length, 1);
     assert.equal(docBodyChildren.length, 0);
+
+    const splitBtnEl = makeEl('button');
+    window.Hangar.renderTabBar({
+      tabStripEl: null,
+      splitBtnEl,
+      sidecars: [],
+      terminals: [],
+      layout: { splitViewEnabled: true },
+    });
+    assert.equal(splitBtnEl.classList.has('active'), true);
+    assert.equal(splitBtnEl.getAttribute('aria-pressed'), 'true');
+
+    window.Hangar.renderTabBar({
+      tabStripEl: null,
+      splitBtnEl,
+      sidecars: [],
+      terminals: [],
+      layout: { splitViewEnabled: false },
+    });
+    assert.equal(splitBtnEl.classList.has('active'), false);
+    assert.equal(splitBtnEl.getAttribute('aria-pressed'), 'false');
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {
