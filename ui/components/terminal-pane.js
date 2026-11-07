@@ -304,8 +304,14 @@
       if (isJetbox) {
         const effCid = conversationId && conversationId !== '_new' ? conversationId : (t?.conversationId || tid);
         const src = `/jetbox-terminal?cascadeId=${encodeURIComponent(effCid)}&terminalId=${encodeURIComponent(tid)}&hostTheme=${isLight ? 'light' : 'dark'}&v=11${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+        const frameTitle = `Interactive Terminal (${cleanTitle})`;
         if (!p.frame) {
-          p.frame = Object.assign(document.createElement('iframe'), { className: 'term-jetbox-frame', src });
+          p.frame = Object.assign(document.createElement('iframe'), {
+            className: 'term-jetbox-frame',
+            src,
+            title: frameTitle,
+          });
+          p.frame.setAttribute?.('title', frameTitle);
           p.frame.dataset.loadedSrc = src;
           p.frame.addEventListener?.('load', () => {
             try {
@@ -320,14 +326,20 @@
             }
           });
           p.wrap.appendChild(p.frame);
-        } else if (p.frame.dataset.loadedSrc !== src) {
-          p.frame.dataset.loadedSrc = src;
-          p.frame.src = src;
-        } else if (wasHidden) {
-          try {
-            p.frame.contentWindow?.postMessage({ type: 'hangar-jetbox-shown', focus: false }, '*');
-          } catch {
-            /* ignore */
+        } else {
+          if (p.frame.title !== frameTitle) {
+            p.frame.title = frameTitle;
+            p.frame.setAttribute?.('title', frameTitle);
+          }
+          if (p.frame.dataset.loadedSrc !== src) {
+            p.frame.dataset.loadedSrc = src;
+            p.frame.src = src;
+          } else if (wasHidden) {
+            try {
+              p.frame.contentWindow?.postMessage({ type: 'hangar-jetbox-shown', focus: false }, '*');
+            } catch {
+              /* ignore */
+            }
           }
         }
       } else if (p.frame) {
