@@ -547,6 +547,10 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(mktPaneSrc, /emptyEl\.className = 'agy-empty-state'/);
     assert.match(mktPaneSrc, /emptyEl\.setAttribute\('role', 'status'\)/);
     assert.match(mktPaneSrc, /emptyEl\.dataset\.role = 'discover-empty'/);
+    assert.match(mktPaneSrc, /data-role="sideload-banner" class="agy-banner hidden" role="status" aria-live="polite"/);
+    assert.match(mktPaneSrc, /const actionBtns = \[validateBtn, linkBtn, ghInstallBtn, ghConfirmBtn\]/);
+    assert.match(mktPaneSrc, /localInput\.addEventListener\('keydown'/);
+    assert.match(mktPaneSrc, /ghInput\.addEventListener\('keydown'/);
     const compCssSrc = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
     assert.match(compCssSrc, /\.ws-rule-remove\s*\{[\s\S]*?width:\s*24px;\s*height:\s*24px;/);
   });

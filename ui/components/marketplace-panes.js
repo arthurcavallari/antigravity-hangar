@@ -318,7 +318,7 @@
     if (!shell) {
       ns.setHtml(paneEl, ns.html`
         <div data-role="sideload-shell">
-          <div data-role="sideload-banner" class="agy-banner hidden"></div>
+          <div data-role="sideload-banner" class="agy-banner hidden" role="status" aria-live="polite"></div>
           <div class="agy-card">
             <div class="agy-card-header">
               <div class="manager-card-title-group">
@@ -375,11 +375,26 @@
       `);
       shell = paneEl.querySelector('[data-role="sideload-shell"]');
       const q = (role) => shell.querySelector(`[data-role="${role}"]`);
+      const validateBtn = q('validate-btn');
+      const linkBtn = q('link-btn');
+      const ghInstallBtn = q('github-install-btn');
+      const ghConfirmBtn = q('gh-consent-confirm');
+      const actionBtns = [validateBtn, linkBtn, ghInstallBtn, ghConfirmBtn];
       const runSideload = async (fn) => {
+        if (shell._busy) return;
+        shell._busy = true;
+        actionBtns.forEach((b) => {
+          if (b) b.disabled = true;
+        });
         try {
           await fn(paneEl._ctx || {});
         } catch (err) {
           sideloadFeedback = { tone: 'err', text: err.message };
+        } finally {
+          shell._busy = false;
+          actionBtns.forEach((b) => {
+            if (b) b.disabled = false;
+          });
         }
         syncSideloadState(paneEl);
       };
@@ -390,7 +405,7 @@
         });
       });
       const localInput = q('local-path-input');
-      q('validate-btn').addEventListener('click', () => {
+      validateBtn.addEventListener('click', () => {
         const folderPath = localInput.value.trim();
         if (!folderPath) return;
         runSideload(async (curCtx) => {
@@ -402,7 +417,7 @@
           };
         });
       });
-      q('link-btn').addEventListener('click', () => {
+      const triggerLinkLocal = () => {
         const folderPath = localInput.value.trim();
         if (!folderPath) return;
         runSideload(async (curCtx) => {
@@ -416,16 +431,28 @@
           sideloadFeedback = { tone: 'ok', text: `Linked ${res.sidecarId} and enabled via Language Server.` };
           curCtx.onSwitchTab?.('installed');
         });
+      };
+      linkBtn.addEventListener('click', triggerLinkLocal);
+      localInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        triggerLinkLocal();
       });
       const ghInput = q('github-repo-input');
       const ghConsentBar = q('gh-consent-bar');
       const ghConsentText = q('gh-consent-text');
       let ghPendingTier = '';
-      q('github-install-btn').addEventListener('click', () => {
-        if (!ghInput.value.trim()) return;
+      const triggerGhPrompt = () => {
+        if (!ghInput.value.trim() || shell._busy) return;
         ghPendingTier = '';
         ns.setHtml(ghConsentText, ns.html`<strong>Unverified GitHub Repo:</strong> Sidecar will run as a local Node.js process. Proceed?`);
         ghConsentBar.classList.remove('hidden');
+      };
+      ghInstallBtn.addEventListener('click', triggerGhPrompt);
+      ghInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        triggerGhPrompt();
       });
       q('gh-consent-cancel').addEventListener('click', () => {
         ghPendingTier = '';
