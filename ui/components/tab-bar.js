@@ -219,7 +219,7 @@
           const r = addBtn?.getBoundingClientRect?.() || { left: e?.clientX || 40, bottom: e?.clientY || 36 };
           const pane = stripOpts.pane || 'single';
           (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(
-            { clientX: r.left, clientY: (r.bottom || 36) + 4, preventDefault() {}, stopPropagation() {} },
+            { clientX: r.left, clientY: (r.bottom || 36) + 4, target: addBtn, preventDefault() {}, stopPropagation() {} },
             [
               { id: 'new-terminal', icon: 'terminal', label: 'New Terminal', onClick: () => act({ action: 'new-terminal', pane }) },
               { id: 'new-sidechat', icon: 'chat', label: 'New Side Chat', onClick: () => act({ action: 'new-sidechat', pane }) },
