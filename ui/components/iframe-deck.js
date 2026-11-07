@@ -235,7 +235,7 @@
     });
   };
 
-  ns.reconcileIframeDeck = function reconcileIframeDeck({ state, els }) {
+  ns.reconcileIframeDeck = function reconcileIframeDeck({ state, els, onRefreshState }) {
     const splitEnabled = Boolean(state.layout?.splitViewEnabled);
     const { bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
       state.sidecars || [],
@@ -317,13 +317,34 @@
         const msg = slotId
           ? 'Sidecar is hibernated or stopped — enable it in 🧩 Extensions'
           : `No tab in ${label} — drag a tab here`;
-        if (emptyEl.dataset.msg !== msg) {
-          emptyEl.dataset.msg = msg;
+        const sig = `${slotId || ''}::${msg}`;
+        if (emptyEl.dataset.msg !== sig) {
+          emptyEl.dataset.msg = sig;
           ns.setHtml(emptyEl, ns.html`
             <div class="empty-split-zone">
               <span>${ns.escHtml(msg)}</span>
+              ${slotId ? ns.html`
+                <button type="button" class="agy-btn agy-btn-primary has-icon" data-role="enable-sidecar" data-sidecar-id="${ns.escHtml(slotId)}">
+                  ${ns.iconSvg('play_arrow', 14)}
+                  <span>Enable Sidecar</span>
+                </button>
+              ` : ''}
             </div>
           `);
+          const enableBtn = emptyEl.querySelector?.('[data-role="enable-sidecar"]');
+          enableBtn?.addEventListener?.('click', async () => {
+            if (enableBtn.disabled) return;
+            enableBtn.disabled = true;
+            try {
+              await ns.apiCall?.('/api/sidecar/manage', {
+                sidecarId: slotId,
+                action: 'SIDECAR_ACTION_ENABLE',
+              });
+              await onRefreshState?.();
+            } finally {
+              enableBtn.disabled = false;
+            }
+          });
         }
       }
     };

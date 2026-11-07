@@ -462,6 +462,56 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(termPaneSrc, /const frameTitle = `Interactive Terminal \(\$\{cleanTitle\}\)`/);
     const sidechatPaneSrc = readFileSync(join(UI_DIR, 'components/sidechat-pane.js'), 'utf8');
     assert.match(sidechatPaneSrc, /title:\s*'Docked Side Chat'/);
+
+    let enableClickHandler = null;
+    const enableBtnStub = {
+      disabled: false,
+      addEventListener(type, fn) {
+        if (type === 'click') enableClickHandler = fn;
+      },
+    };
+    const emptyTopState = makeEl('div');
+    emptyTopState.querySelector = (sel) => (sel === '[data-role="enable-sidecar"]' ? enableBtnStub : null);
+    let manageCalls = [];
+    let refreshed = 0;
+    window.Hangar.apiCall = async (path, body) => {
+      manageCalls.push({ path, body });
+      return { ok: true };
+    };
+    window.Hangar.reconcileIframeDeck({
+      state: {
+        sidecars: [
+          {
+            sidecarId: 'context-monitor',
+            displayName: 'Context Monitor',
+            matchesWorkspace: true,
+            isRunning: false,
+          },
+        ],
+        terminals: [],
+        layout: {
+          pinnedTopSidecarId: 'context-monitor',
+          topSplitTabIds: ['context-monitor'],
+          tabOrder: ['context-monitor'],
+          splitViewEnabled: false,
+        },
+      },
+      els: { mainViewport, storeView, emptyTopState },
+      onRefreshState: async () => {
+        refreshed++;
+      },
+    });
+    assert.match(emptyTopState.innerHTML, /data-role="enable-sidecar"/);
+    assert.match(emptyTopState.innerHTML, /Enable Sidecar/);
+    assert.equal(typeof enableClickHandler, 'function');
+    await enableClickHandler();
+    assert.deepEqual(JSON.parse(JSON.stringify(manageCalls)), [
+      {
+        path: '/api/sidecar/manage',
+        body: { sidecarId: 'context-monitor', action: 'SIDECAR_ACTION_ENABLE' },
+      },
+    ]);
+    assert.equal(refreshed, 1);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {

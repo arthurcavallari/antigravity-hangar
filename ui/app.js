@@ -81,7 +81,7 @@
 
   function renderAll() {
     rememberWindowActiveTab(state.layout.pinnedTopSidecarId);
-    ns.reconcileIframeDeck?.({ state, els });
+    ns.reconcileIframeDeck?.({ state, els, onRefreshState: refreshHangarState });
     const visibleTerminals = state.layout.showExternalTerminals === false
       ? state.terminals.filter((t) => !t?.isExternal)
       : state.terminals;
