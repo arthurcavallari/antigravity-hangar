@@ -401,4 +401,181 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(customContainerChildren.length, 1);
     assert.equal(docBodyChildren.length, 0);
   });
+
+  it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {
+    const { buildAgyUiJs } = await import('antigravity-sidecar-kit');
+    let boundResolver = null;
+    let boundOpts = null;
+    const winListeners = {};
+    const docListeners = {};
+    const topStrip = { id: 'tab-strip' };
+    const bottomStrip = { id: 'bottom-tab-strip' };
+    const bottomFrameWin = {};
+    const bottomFrame = {
+      tagName: 'IFRAME',
+      nodeType: 1,
+      contentWindow: bottomFrameWin,
+      classList: { contains: (c) => c === 'child-sidecar-frame' },
+      closest: (sel) => (sel.includes('.slot-bottom') ? {} : null),
+      blurCalled: false,
+      blur() {
+        this.blurCalled = true;
+      },
+    };
+    const document = {
+      hidden: false,
+      activeElement: bottomFrame,
+      documentElement: {},
+      getElementById: (id) => (id === 'tab-strip' ? topStrip : id === 'bottom-tab-strip' ? bottomStrip : null),
+      addEventListener(ev, fn) {
+        (docListeners[ev] = docListeners[ev] || []).push(fn);
+      },
+      querySelectorAll: (sel) => (sel === 'iframe' ? [bottomFrame] : []),
+    };
+    let winFocused = false;
+    const window = {
+      location: { search: '?conversationId=conv-cycle', origin: 'http://127.0.0.1:51000' },
+      document,
+      parent: {},
+      focus() {
+        winFocused = true;
+      },
+      addEventListener(ev, fn) {
+        (winListeners[ev] = winListeners[ev] || []).push(fn);
+      },
+      AgyUI: {
+        bindGlobalTabCycleKeydown(resolver, opts) {
+          boundResolver = resolver;
+          boundOpts = opts;
+        },
+      },
+      Hangar: {
+        apiCall: async (path) => {
+          if (path === '/api/state') {
+            return {
+              activeWorkspace: { workspacePath: 'C:\\Proj\\One', workspaceName: 'One' },
+              sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+              terminals: [],
+              layout: {
+                pinnedTopSidecarId: 'context-monitor',
+                topSplitTabIds: ['context-monitor'],
+                tabOrder: ['context-monitor', '__extensions__'],
+                splitViewEnabled: true,
+                workspaceLayouts: {
+                  'c:/proj/one': {
+                    pinnedTopSidecarId: 'context-monitor',
+                    topSplitTabIds: ['context-monitor'],
+                    tabOrder: ['context-monitor', '__extensions__'],
+                    splitViewEnabled: true,
+                  },
+                },
+              },
+            };
+          }
+          return {};
+        },
+      },
+    };
+    const sessionStorage = { getItem: () => '', setItem() {}, removeItem() {} };
+    const ctx = vm.createContext({
+      window,
+      document,
+      URLSearchParams,
+      sessionStorage,
+      console,
+      Date,
+      setTimeout,
+      setInterval: () => 0,
+    });
+    for (const rel of ['core.js', 'components/tab-bar.js', 'components/layout-controller.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+    window.Hangar.renderTabBar = () => {};
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    assert.equal(typeof boundResolver, 'function');
+    assert.equal(boundResolver(bottomFrameWin), bottomStrip, 'Forwarded shortcut from bottom iframe resolves bottomTabStrip');
+    const topEl = { nodeType: 1, closest: (sel) => (sel.includes('#chrome-bar') ? {} : null) };
+    for (const fn of docListeners.pointerdown || []) fn({ target: topEl });
+    document.activeElement = topEl;
+    assert.equal(boundResolver(null), topStrip, 'Pointer/focus in top chrome resolves top tabStrip');
+
+    document.activeElement = bottomFrame;
+    boundOpts.onCycle();
+    assert.equal(bottomFrame.blurCalled, true, 'Hidden iframe is blurred on tab cycle');
+    assert.equal(winFocused, true, 'Hangar window reclaims focus on tab cycle');
+
+    // Verify jetbox-bootstrap.js intercepts Ctrl+Tab and Ctrl+Shift+. in capture phase and posts agy:shortcut-forwarded
+    const jbKeyListeners = [];
+    const jbMessages = [];
+    const jbWin = {
+      __HANGAR_JETBOX_PARAMS__: { mode: 'chat', cascadeId: 'chat-123', safeTheme: 'dark' },
+      location: { origin: 'http://127.0.0.1:51000', pathname: '/c/chat-123' },
+      navigator: { userAgent: 'Windows' },
+      parent: {
+        postMessage(msg, targetOrigin) {
+          jbMessages.push({ msg, targetOrigin });
+        },
+      },
+      fetch: async () => ({ ok: true, json: async () => ({}) }),
+      addEventListener(ev, fn, useCapture) {
+        if (ev === 'keydown' && useCapture === true) jbKeyListeners.push(fn);
+      },
+    };
+    const jbDoc = {
+      hidden: false,
+      documentElement: { setAttribute() {}, removeAttribute() {}, style: { setProperty() {} } },
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const jbCtx = vm.createContext({
+      window: jbWin,
+      document: jbDoc,
+      navigator: jbWin.navigator,
+      URL,
+      TextEncoder,
+      TextDecoder,
+      DataView,
+      Uint8Array,
+      ReadableStream,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'jetbox/jetbox-bootstrap.js'), 'utf8'), jbCtx, {
+      filename: 'jetbox-bootstrap.js',
+    });
+
+    let stoppedImmediate = false;
+    let prevented = false;
+    const keyEv = {
+      key: 'Tab',
+      ctrlKey: true,
+      shiftKey: false,
+      repeat: false,
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {},
+      stopImmediatePropagation() {
+        stoppedImmediate = true;
+      },
+    };
+    for (const fn of jbKeyListeners) {
+      fn(keyEv);
+      if (stoppedImmediate) break;
+    }
+    assert.equal(prevented, true);
+    assert.equal(stoppedImmediate, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(jbMessages)), [
+      {
+        msg: {
+          type: 'agy:shortcut-forwarded',
+          payload: { dir: 1, repeat: false, mode: 'chat', terminalId: '', cascadeId: 'chat-123' },
+        },
+        targetOrigin: '*',
+      },
+    ]);
+    assert.ok(buildAgyUiJs('tabs').includes('bindGlobalTabCycleKeydown'));
+  });
 });

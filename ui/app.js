@@ -403,6 +403,70 @@
     await saveLayoutUpdate(patch);
     await refreshHangarState();
   });
+
+  let lastFocusedSlot = 'top';
+  const resolveElementSlot = (node) => {
+    const el = node?.nodeType === 1 ? node : node?.parentElement;
+    if (!el || typeof el.closest !== 'function') return '';
+    if (el.closest('#bottom-tab-bar, #terminal-bottom-view, #empty-deck-state, .slot-bottom')) return 'bottom';
+    if (el.closest('#chrome-bar, #terminal-top-view, #empty-top-state, .slot-top')) return 'top';
+    return '';
+  };
+  const resolveWindowSlot = (sourceWin) => {
+    if (!sourceWin) return '';
+    for (const frame of document.querySelectorAll?.('iframe') || []) {
+      if (frame.contentWindow === sourceWin) {
+        return resolveElementSlot(frame);
+      }
+    }
+    return '';
+  };
+  ['pointerdown', 'focusin'].forEach((ev) => {
+    document.addEventListener?.(
+      ev,
+      (e) => {
+        const slot = resolveElementSlot(e.target);
+        if (slot) lastFocusedSlot = slot;
+      },
+      true,
+    );
+  });
+  window.addEventListener?.('blur', () => {
+    const slot = resolveElementSlot(document.activeElement);
+    if (slot) lastFocusedSlot = slot;
+  });
+  window.addEventListener?.('message', (e) => {
+    if (e?.data?.type === 'hangar-jetbox-pane-focused') {
+      const slot = resolveWindowSlot(e.source);
+      if (slot) lastFocusedSlot = slot;
+    }
+  });
+  window.AgyUI?.bindGlobalTabCycleKeydown?.(
+    (sourceWin) => {
+      const fromWin = resolveWindowSlot(sourceWin);
+      if (fromWin) lastFocusedSlot = fromWin;
+      else {
+        const fromActive = resolveElementSlot(document.activeElement);
+        if (fromActive) lastFocusedSlot = fromActive;
+      }
+      if (state.layout?.splitViewEnabled && lastFocusedSlot === 'bottom' && els.bottomTabStrip) {
+        return els.bottomTabStrip;
+      }
+      return els.tabStrip;
+    },
+    {
+      isTrustedMessage: (e) => ns.isTrustedSidecarOrigin?.(e?.origin) !== false,
+      onCycle: () => {
+        const activeEl = document.activeElement;
+        const isHiddenFrame =
+          activeEl?.tagName === 'IFRAME' &&
+          ((activeEl.classList?.contains?.('child-sidecar-frame') && !activeEl.classList?.contains?.('visible')) ||
+            Boolean(activeEl.closest?.('.hidden')));
+        if (isHiddenFrame) activeEl.blur?.();
+        window.focus?.();
+      },
+    },
+  );
   window.sidecar?.onWorkspaceChange?.((uris) => {
     state.workspaceUris = Array.isArray(uris) ? uris : [];
     refreshHangarState();

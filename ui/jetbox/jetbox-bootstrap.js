@@ -299,6 +299,41 @@
       window.parent.postMessage({ type, payload }, '*');
     }
   };
+  const matchAuxTabCycleShortcut = (e) => {
+    if (!e || typeof e !== 'object') return 0;
+    if (e.altKey || e.getModifierState?.('AltGraph')) return 0;
+    const key = String(e.key || '');
+    const code = String(e.code || '');
+    if ((key === 'Tab' || code === 'Tab') && e.ctrlKey && !e.metaKey) {
+      return e.shiftKey ? -1 : 1;
+    }
+    const isMac = window.process?.platform === 'darwin' || /mac|iphone|ipad|ipod/i.test(String(navigator?.platform || navigator?.userAgent || ''));
+    const hasPrimaryMod = isMac ? Boolean(e.metaKey) && !e.ctrlKey : Boolean(e.ctrlKey) && !e.metaKey;
+    if (hasPrimaryMod && e.shiftKey) {
+      if (code === 'Period' || key === '>' || key === '.') return 1;
+      if (code === 'Comma' || key === '<' || key === ',') return -1;
+    }
+    return 0;
+  };
+  window.addEventListener?.(
+    'keydown',
+    (e) => {
+      if (!window.parent || window.parent === window) return;
+      const dir = matchAuxTabCycleShortcut(e);
+      if (!dir) return;
+      e.preventDefault?.();
+      e.stopPropagation?.();
+      e.stopImmediatePropagation?.();
+      postToParent('agy:shortcut-forwarded', {
+        dir,
+        repeat: Boolean(e.repeat),
+        mode,
+        terminalId,
+        cascadeId: effectiveCascadeId,
+      });
+    },
+    true,
+  );
   const nativeFetch = window.fetch.bind(window);
   const sidecarFetch = () => (url, opts = {}) => {
     const fn = window.sidecar?.fetch || nativeFetch;
