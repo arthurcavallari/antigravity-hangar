@@ -185,7 +185,7 @@
         p?.host?.onTitle(tid, clean);
       },
       onSelectionChange: (selInfo) => p?.quoteCtrl?.show(selInfo),
-      onQuoteShortcut: (text) => p?.quoteCtrl?.triggerQuote(text),
+      onQuoteShortcut: (text, askAgent) => p?.quoteCtrl?.triggerQuote(text, Boolean(askAgent)),
     });
     const quoteCtrl = ns.createQuotePopupController(wrap, {
       getTerminalMeta: () => ({
