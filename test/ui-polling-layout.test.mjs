@@ -530,6 +530,8 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(instPaneSrc, /role="group" aria-label="Workspace Scope"/);
     assert.match(instPaneSrc, /globalBtn\.setAttribute\?\.\('aria-pressed', String\(isGlobal\)\)/);
     assert.match(instPaneSrc, /addWsBtn\.setAttribute\?\.\('aria-pressed', String\(alreadyHasCurrent\)\)/);
+    assert.match(instPaneSrc, /async function runCardAction\(card, action, triggerBtn = null, spin = false\)/);
+    assert.match(instPaneSrc, /runCardAction\(card, \(\) => onManageSidecar\(card\._sc\.sidecarId, 'SIDECAR_ACTION_RESTART'\), restartBtn, true\)/);
     const pluginPaneSrc = readFileSync(join(UI_DIR, 'components/plugin-panes.js'), 'utf8');
     assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{p\.name\}`\)/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');

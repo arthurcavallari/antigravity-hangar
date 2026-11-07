@@ -33,14 +33,29 @@
     }
   }
 
-  async function runCardAction(card, action) {
+  async function runCardAction(card, action, triggerBtn = null, spin = false) {
+    if (card._busy) return;
+    card._busy = true;
     const errorEl = card.querySelector('[data-role="card-error"]');
     errorEl.classList.add('hidden');
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      if (spin) triggerBtn.classList?.add?.('spinning');
+    }
     try {
       await action();
     } catch (err) {
       errorEl.textContent = err?.message || 'Action failed';
       errorEl.classList.remove('hidden');
+    } finally {
+      card._busy = false;
+      if (triggerBtn) {
+        if (spin) triggerBtn.classList?.remove?.('spinning');
+        const keepDisabled =
+          (triggerBtn.dataset?.role === 'hibernate-btn' && Boolean(card._sc?.autoHibernateLocked)) ||
+          (triggerBtn.dataset?.role === 'add-ws-btn' && !card._activeWorkspace?.workspacePath);
+        triggerBtn.disabled = keepDisabled;
+      }
     }
   }
 
@@ -147,7 +162,11 @@
       const incoming = raw.split(',').map((s) => s.trim()).filter(Boolean);
       const existing = (card._sc.workspaces || []).filter((w) => w !== '*' || incoming.includes('*'));
       wsInput.value = '';
-      runCardAction(card, () => onSaveWorkspaces(card._sc, Array.from(new Set([...existing, ...incoming]))));
+      runCardAction(
+        card,
+        () => onSaveWorkspaces(card._sc, Array.from(new Set([...existing, ...incoming]))),
+        q('add-rule-btn'),
+      );
     };
     wsInput.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -155,17 +174,20 @@
       commitNewPattern();
     });
     q('add-rule-btn').addEventListener('click', commitNewPattern);
-    q('hibernate-btn').addEventListener('click', () => {
+    const hibBtnEl = q('hibernate-btn');
+    hibBtnEl.addEventListener('click', () => {
       if (card._sc && !card._sc.autoHibernateLocked) {
-        runCardAction(card, () => onToggleAutoHibernate?.(card._sc));
+        runCardAction(card, () => onToggleAutoHibernate?.(card._sc), hibBtnEl);
       }
     });
-    q('global-btn').addEventListener('click', () => {
+    const globalBtnEl = q('global-btn');
+    globalBtnEl.addEventListener('click', () => {
       const isGlobal = (card._sc.workspaces || []).includes('*');
       const fallback = card._activeWorkspace?.workspacePath ? [card._activeWorkspace.workspacePath] : [];
-      runCardAction(card, () => onSaveWorkspaces(card._sc, isGlobal ? fallback : ['*']));
+      runCardAction(card, () => onSaveWorkspaces(card._sc, isGlobal ? fallback : ['*']), globalBtnEl);
     });
-    q('add-ws-btn').addEventListener('click', () => {
+    const addWsBtnEl = q('add-ws-btn');
+    addWsBtnEl.addEventListener('click', () => {
       const currentWs = card._activeWorkspace?.workspacePath || '';
       if (!currentWs) return;
       const existing = (card._sc.workspaces || []).filter((w) => w !== '*');
@@ -174,7 +196,7 @@
       const next = hasCurrent
         ? existing.filter((w) => w.toLowerCase() !== currentWs.toLowerCase())
         : Array.from(new Set([...existing, currentWs]));
-      runCardAction(card, () => onSaveWorkspaces(card._sc, next));
+      runCardAction(card, () => onSaveWorkspaces(card._sc, next), addWsBtnEl);
     });
     const procBtn = q('proc-btn');
     const syncSwitch = (el, on, dis) => {
@@ -187,7 +209,7 @@
       if (dis !== undefined) el.disabled = Boolean(dis);
     };
     procBtn.addEventListener('click', async () => {
-      if (procBtn.disabled) return;
+      if (procBtn.disabled || card._busy) return;
       const nextOn = !card._sc.isRunning;
       syncSwitch(procBtn, nextOn, true);
       await runCardAction(
@@ -196,8 +218,9 @@
       );
       syncSwitch(procBtn, Boolean(card._sc.isRunning), false);
     });
-    q('restart-btn').addEventListener('click', () => {
-      runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'));
+    const restartBtn = q('restart-btn');
+    restartBtn.addEventListener('click', () => {
+      runCardAction(card, () => onManageSidecar(card._sc.sidecarId, 'SIDECAR_ACTION_RESTART'), restartBtn, true);
     });
     const fixAgentBtn = q('fix-agent-btn');
     fixAgentBtn?.addEventListener('click', async () => {
