@@ -527,6 +527,9 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(instPaneSrc, /q\('proc-btn'\)\.setAttribute\?\.\('aria-label', `Enable or disable \$\{scLabel\}`\)/);
     assert.match(instPaneSrc, /q\('restart-btn'\)\.setAttribute\?\.\('aria-label', `Restart \$\{scLabel\}`\)/);
     assert.match(instPaneSrc, /q\('uninstall-btn'\)\.setAttribute\?\.\('aria-label', `Uninstall \$\{scLabel\}`\)/);
+    assert.match(instPaneSrc, /role="group" aria-label="Workspace Scope"/);
+    assert.match(instPaneSrc, /globalBtn\.setAttribute\?\.\('aria-pressed', String\(isGlobal\)\)/);
+    assert.match(instPaneSrc, /addWsBtn\.setAttribute\?\.\('aria-pressed', String\(alreadyHasCurrent\)\)/);
     const pluginPaneSrc = readFileSync(join(UI_DIR, 'components/plugin-panes.js'), 'utf8');
     assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{p\.name\}`\)/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');

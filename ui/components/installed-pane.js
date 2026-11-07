@@ -125,7 +125,7 @@
         <span class="manager-section-label">Workspace Scope</span>
         <div class="manager-scope-actions">
           <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
-          <agy-toggle-group class="agy-toggle-group">
+          <agy-toggle-group class="agy-toggle-group" role="group" aria-label="Workspace Scope">
             <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 13)}<span>Global (*)</span></button>
             <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
           </agy-toggle-group>
@@ -331,13 +331,16 @@
         hibBtn.setAttribute('aria-pressed', String(Boolean(sc.autoHibernate)));
       }
       const isGlobal = (sc.workspaces || []).includes('*');
-      q('global-btn').classList.toggle('active', isGlobal);
+      const globalBtn = q('global-btn');
+      globalBtn.classList.toggle('active', isGlobal);
+      globalBtn.setAttribute?.('aria-pressed', String(isGlobal));
       const addWsBtn = q('add-ws-btn');
       const currentWs = activeWorkspace?.workspacePath || '';
       const alreadyHasCurrent = Boolean(
         currentWs && !isGlobal && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase()),
       );
       addWsBtn.classList.toggle('active', alreadyHasCurrent);
+      addWsBtn.setAttribute?.('aria-pressed', String(alreadyHasCurrent));
       const wsBtnLabel = activeWorkspace?.workspaceName || 'Workspace';
       const wsBtnSig = `${alreadyHasCurrent}:${wsBtnLabel}`;
       if (addWsBtn.dataset.sig !== wsBtnSig) {
@@ -345,6 +348,7 @@
         ns.setHtml(addWsBtn, ns.html`${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 13)}<span>${ns.escHtml(wsBtnLabel)}</span>`);
       }
       addWsBtn.disabled = !currentWs;
+      globalBtn.closest?.('agy-toggle-group')?.sync?.();
       renderRuleList(q('rule-list'), sc, (pat) => {
         runCardAction(card, () => onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== pat)));
       });
