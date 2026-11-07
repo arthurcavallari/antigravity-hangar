@@ -524,6 +524,11 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(extTabSrc, /if \(!Number\.isFinite\(raw\) \|\| raw < 1\)/);
     const instPaneSrc = readFileSync(join(UI_DIR, 'components/installed-pane.js'), 'utf8');
     assert.match(instPaneSrc, /aria-label="Add workspace path or glob"/);
+    assert.match(instPaneSrc, /q\('proc-btn'\)\.setAttribute\?\.\('aria-label', `Enable or disable \$\{scLabel\}`\)/);
+    assert.match(instPaneSrc, /q\('restart-btn'\)\.setAttribute\?\.\('aria-label', `Restart \$\{scLabel\}`\)/);
+    assert.match(instPaneSrc, /q\('uninstall-btn'\)\.setAttribute\?\.\('aria-label', `Uninstall \$\{scLabel\}`\)/);
+    const pluginPaneSrc = readFileSync(join(UI_DIR, 'components/plugin-panes.js'), 'utf8');
+    assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{p\.name\}`\)/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);

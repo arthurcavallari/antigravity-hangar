@@ -100,7 +100,7 @@
           <button type="button" data-role="uninstall-btn" class="agy-icon-btn" title="Uninstall sidecar" aria-label="Uninstall sidecar">
             ${ns.iconSvg('delete', 14)}
           </button>
-          <button type="button" role="switch" data-role="proc-btn" class="agy-switch" title="Enable or disable sidecar">
+          <button type="button" role="switch" data-role="proc-btn" class="agy-switch" title="Enable or disable sidecar" aria-label="Enable or disable sidecar">
             <agy-switch><span class="agy-switch-thumb"></span></agy-switch>
           </button>
         </div>
@@ -293,7 +293,14 @@
         ? `v${sc.installedVersion || '1.0.0'} → v${latestVer}`
         : `v${sc.installedVersion || '1.0.0'}`;
       const badgeInfo = ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored);
+      const scLabel = sc.displayName || sc.sidecarId;
       q('title').textContent = sc.displayName;
+      q('restart-btn').title = `Restart ${scLabel}`;
+      q('restart-btn').setAttribute?.('aria-label', `Restart ${scLabel}`);
+      q('uninstall-btn').title = `Uninstall ${scLabel}`;
+      q('uninstall-btn').setAttribute?.('aria-label', `Uninstall ${scLabel}`);
+      q('proc-btn').title = `Enable or disable ${scLabel}`;
+      q('proc-btn').setAttribute?.('aria-label', `Enable or disable ${scLabel}`);
       q('meta-sub').textContent = `${sc.sidecarId} • ${verLabel} • ${sc.source}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
       const statusBadge = q('status-badge');
       const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;

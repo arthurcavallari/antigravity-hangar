@@ -245,7 +245,10 @@
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
       card.querySelector('[data-role="restart-note"]').classList.toggle('hidden', !p.restartRequired);
     }
-    card.querySelector('[data-role="uninstall-btn"]').classList.toggle('hidden', !managed);
+    const uninstallBtn = card.querySelector('[data-role="uninstall-btn"]');
+    uninstallBtn.classList.toggle('hidden', !managed);
+    uninstallBtn.title = `Uninstall ${p.name}`;
+    uninstallBtn.setAttribute?.('aria-label', `Uninstall ${p.name}`);
     const canUpdate = managed && Boolean(card._regPkg?.updateAvailable);
     const updateBtn = card.querySelector('[data-role="update-btn"]');
     updateBtn.classList.toggle('hidden', !canUpdate && !card._isInstalling);
