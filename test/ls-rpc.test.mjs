@@ -1,8 +1,67 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { hangarRpc, invalidateStateReads } from '../lib/ls-rpc.mjs';
+import { STATE_RPC_TTL_MS, hangarRpc, invalidateStateReads } from '../lib/ls-rpc.mjs';
 
 describe('hangarRpc shared state reads', () => {
+  it('sets STATE_RPC_TTL_MS >= 2500ms and does not invalidate cached state when Jetbox read RPCs run', async () => {
+    assert.ok(STATE_RPC_TTL_MS >= 2500, 'STATE_RPC_TTL_MS must cover the 2500ms Jetbox summaries poll cadence');
+    const calls = {};
+    const options = {
+      lsAddress: '127.0.0.1:59993',
+      csrfToken: 'tok',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        calls[method] = (calls[method] || 0) + 1;
+        return { ok: true, status: 200, text: async () => '{"plugins":[],"sidecars":[],"terminals":[]}' };
+      },
+    };
+    invalidateStateReads();
+    await Promise.all([
+      hangarRpc('GetSidecars', {}, options),
+      hangarRpc('GetAllPlugins', { workspaceUris: [] }, options),
+      hangarRpc('ListTerminals', {}, options),
+      hangarRpc('GetAllCascadeTrajectories', {}, options),
+    ]);
+    assert.deepEqual(calls, {
+      GetSidecars: 1,
+      GetAllPlugins: 1,
+      ListTerminals: 1,
+      GetAllCascadeTrajectories: 1,
+    });
+
+    // Jetbox read-only RPCs must pass through without wiping out GetSidecars, GetAllPlugins, or ListTerminals caches
+    for (const readMethod of [
+      'GetWorkspaceInfos',
+      'GetCascadeModelConfigData',
+      'GetAllSkills',
+      'GetAllRules',
+      'GetMcpServerStates',
+      'RequestAgentStatePageUpdate',
+    ]) {
+      await hangarRpc(readMethod, {}, options);
+    }
+
+    await Promise.all([
+      hangarRpc('GetSidecars', {}, options),
+      hangarRpc('GetAllPlugins', { workspaceUris: [] }, options),
+      hangarRpc('ListTerminals', {}, options),
+      hangarRpc('GetAllCascadeTrajectories', {}, options),
+    ]);
+    assert.equal(calls.GetSidecars, 1, 'GetSidecars cache must survive Jetbox read RPCs');
+    assert.equal(calls.GetAllPlugins, 1, 'GetAllPlugins 30s cache must survive Jetbox read RPCs');
+    assert.equal(calls.ListTerminals, 1, 'ListTerminals cache must survive Jetbox read RPCs');
+    assert.equal(calls.GetAllCascadeTrajectories, 1, 'GetAllCascadeTrajectories cache must survive Jetbox read RPCs');
+
+    // Trajectory mutations invalidate GetAllCascadeTrajectories without wiping GetAllPlugins
+    await hangarRpc('UpdateConversationAnnotations', { cascadeId: 'c-1' }, options);
+    await Promise.all([
+      hangarRpc('GetAllPlugins', { workspaceUris: [] }, options),
+      hangarRpc('GetAllCascadeTrajectories', {}, options),
+    ]);
+    assert.equal(calls.GetAllPlugins, 1, 'GetAllPlugins cache must survive trajectory annotation updates');
+    assert.equal(calls.GetAllCascadeTrajectories, 2, 'GetAllCascadeTrajectories must refresh after trajectory mutation');
+  });
+
   it('shares GetSidecars/GetAllCascadeTrajectories between windows and drops GetSidecars after a write', async () => {
     const calls = {};
     const options = {
