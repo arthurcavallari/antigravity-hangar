@@ -133,7 +133,7 @@
       </div>
       <div data-role="rule-list" class="ws-rule-list"></div>
       <div class="ws-add-row">
-        <input type="text" class="ws-input" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
+        <input type="text" class="ws-input" aria-label="Add workspace path or glob" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
         <button type="button" data-role="add-rule-btn" class="agy-btn agy-btn-secondary has-icon">
           ${ns.iconSvg('add', 14)}<span>Add</span>
         </button>

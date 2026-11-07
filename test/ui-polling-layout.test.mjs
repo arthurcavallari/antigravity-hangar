@@ -517,6 +517,13 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(extTabSrc, /aria-label="Auto-Sleep idle timeout presets"/);
     assert.match(extTabSrc, /data-role="auto-update-on" data-value="on"/);
     assert.match(extTabSrc, /shell\.querySelectorAll\?\.\('agy-toggle-group'\)\?\.forEach\?\.\(\(g\) => g\.sync\?\.\(\)\)/);
+    assert.match(extTabSrc, /aria-label="Custom idle timeout in minutes \(1 to 240\)"/);
+    const instPaneSrc = readFileSync(join(UI_DIR, 'components/installed-pane.js'), 'utf8');
+    assert.match(instPaneSrc, /aria-label="Add workspace path or glob"/);
+    const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');
+    assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
+    assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
+    assert.match(mktPaneSrc, /aria-label="GitHub repository URL or owner\/repo"/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {

@@ -129,7 +129,7 @@
               </agy-toggle-group>
             </div>
             <div class="ws-add-row">
-              <input type="number" min="1" max="240" data-role="settings-ttl-input" class="ws-input" placeholder="Custom idle timeout in minutes (1–240)…" />
+              <input type="number" min="1" max="240" data-role="settings-ttl-input" class="ws-input" aria-label="Custom idle timeout in minutes (1 to 240)" placeholder="Custom idle timeout in minutes (1–240)…" />
               <button type="button" data-role="settings-ttl-save" class="agy-btn agy-btn-secondary">Apply</button>
             </div>
           </div>

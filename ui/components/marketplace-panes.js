@@ -243,7 +243,7 @@
           <div class="discover-toolbar">
             <div class="agy-search-box">
               <span class="agy-search-icon">${ns.iconSvg('search', 14)}</span>
-              <input type="search" data-role="discover-search" class="agy-search-input" placeholder="Search sidecars and plugins…" />
+              <input type="search" data-role="discover-search" class="agy-search-input" aria-label="Search sidecars and plugins" placeholder="Search sidecars and plugins…" />
             </div>
             <agy-toggle-group class="agy-toggle-group">${catButtons}</agy-toggle-group>
           </div>
@@ -322,7 +322,7 @@
               </agy-toggle-group>
             </div>
             <div class="ws-add-row">
-              <input type="text" data-role="local-path-input" class="ws-input" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" />
+              <input type="text" data-role="local-path-input" class="ws-input" aria-label="Local sidecar directory path" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" />
               <button type="button" data-role="validate-btn" class="agy-btn agy-btn-outline has-icon">
                 ${ns.iconSvg('shield', 13)}<span>Validate</span>
               </button>
@@ -342,7 +342,7 @@
               </div>
             </div>
             <div class="ws-add-row">
-              <input type="text" data-role="github-repo-input" class="ws-input" placeholder="https://github.com/owner/repo or owner/repo…" />
+              <input type="text" data-role="github-repo-input" class="ws-input" aria-label="GitHub repository URL or owner/repo" placeholder="https://github.com/owner/repo or owner/repo…" />
               <button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">
                 ${ns.iconSvg('download', 13)}<span>Install</span>
               </button>
