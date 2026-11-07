@@ -266,12 +266,17 @@
       if (ns.isPointerOnTab || ns.activeTermDrag || state.isResizingSplit) return;
       if (data.theme) ns.applyThemePayload?.(data.theme, false);
       const prevWsKey = getWsStateKey();
-      const userTabDuringBoot = !prevWsKey && seq !== layoutSeq ? state.layout.pinnedTopSidecarId : '';
-      if (data.activeWorkspace && (data.activeWorkspace.workspacePath || !state.activeWorkspace?.workspacePath)) {
+      const userTabDuringBoot = !prevWsKey && (seq !== layoutSeq || layoutSeq > 0) ? state.layout.pinnedTopSidecarId : '';
+      if (
+        data.activeWorkspace &&
+        (data.activeWorkspace.workspacePath ||
+          !state.activeWorkspace?.workspacePath ||
+          data.activeWorkspace.workspaceName !== 'Detecting...')
+      ) {
         state.activeWorkspace = data.activeWorkspace;
       }
       const nextWsKey = getWsStateKey();
-      const wsChanged = Boolean(prevWsKey && nextWsKey && prevWsKey !== nextWsKey);
+      const wsChanged = Boolean(prevWsKey !== nextWsKey && (prevWsKey || nextWsKey));
       const wsFirstResolved = Boolean(!prevWsKey && nextWsKey);
       if (wsChanged) {
         lastNonExtTabId = '';
@@ -303,8 +308,8 @@
           targetLayout.closedTabIds = targetLayout.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
         }
       }
-      ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath);
-      ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath);
+      ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath, hangarConversationId);
+      ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath, hangarConversationId);
       if (wsFirstResolved && userTabDuringBoot) {
         rememberWindowActiveTab(userTabDuringBoot, nextWsKey);
       }
@@ -405,8 +410,12 @@
   const VISIBLE_POLL_MS = 3000;
   const HIDDEN_POLL_MS = 60 * 1000;
   let inViewport = true;
-  const isHidden = () => document.hidden || !inViewport;
-  const wakeIfVisible = () => {
+  const isHidden = () => Boolean(document.hidden || !inViewport);
+  ns.isHostHidden = isHidden;
+  const syncHostVisibility = () => {
+    ns.syncDeckVisibility?.();
+    ns.syncSideChatVisibility?.();
+    ns.syncTerminalVisibility?.();
     if (!isHidden()) refreshHangarState();
   };
   if (typeof IntersectionObserver === 'function') {
@@ -414,10 +423,10 @@
       const next = entries[entries.length - 1].isIntersecting;
       if (next === inViewport) return;
       inViewport = next;
-      wakeIfVisible();
+      syncHostVisibility();
     }).observe(document.documentElement);
   }
-  document.addEventListener('visibilitychange', wakeIfVisible);
+  document.addEventListener('visibilitychange', syncHostVisibility);
   refreshRegistry();
   refreshHangarState();
   ns.subscribeStateSyncEvents?.({

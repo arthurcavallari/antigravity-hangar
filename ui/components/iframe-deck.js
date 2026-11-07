@@ -48,6 +48,9 @@
       }
     }
     const isLight = payload.themeType === 'light' || payload.isDark === false;
+    if (document.documentElement?.dataset) {
+      document.documentElement.dataset.theme = isLight ? 'light' : 'dark';
+    }
     rootStyle.colorScheme = isLight ? 'light' : 'dark';
     (ns.applyAgyThemeFromPayload || window.AgyShell?.applyAgyThemeFromPayload)?.(payload);
     if (document.body) {
@@ -96,6 +99,14 @@
     frame.dataset.visible = next;
     postFrameVisibility(frame);
   }
+
+  ns.syncDeckVisibility = function syncDeckVisibility() {
+    const hostHidden = Boolean(ns.isHostHidden?.());
+    for (const frame of deckFrames.values()) {
+      const inSlot = Boolean(frame.classList?.contains?.('visible'));
+      setFrameVisibility(frame, inSlot && !hostHidden);
+    }
+  };
 
   function stripConversationParam(rawUrl = '') {
     try {
@@ -215,8 +226,9 @@
           const otherIds = dragState.sourceTabs
             .filter((_, idx) => idx !== dragState.draggedIndex)
             .map((el) => el.dataset.sidecarId);
-          const dropIdx = dragState.dropIdx ?? dragState.draggedIndex;
-          d.beforeId = dropIdx < otherIds.length ? otherIds[dropIdx] : null;
+          const rawDropIdx = dragState.dropIdx ?? dragState.draggedIndex;
+          const toIdx = rawDropIdx > dragState.draggedIndex ? rawDropIdx - 1 : rawDropIdx;
+          d.beforeId = toIdx < otherIds.length ? otherIds[toIdx] : null;
         }
         btn._opts?.onDropTab?.({ sidecarId: curId, sourcePane: pane, targetPane: d.pane, beforeTabId: d.beforeId });
       },
@@ -282,7 +294,7 @@
       frame.classList.toggle('visible', isTop || isBottom);
       frame.classList.toggle('slot-top', isTop);
       frame.classList.toggle('slot-bottom', isBottom);
-      setFrameVisibility(frame, isTop || isBottom);
+      setFrameVisibility(frame, (isTop || isBottom) && !ns.isHostHidden?.());
     }
     const storeInTop = topSlotId === ns.EXTENSIONS_TAB_ID;
     const storeInBottom = splitEnabled && bottomSlotId === ns.EXTENSIONS_TAB_ID;

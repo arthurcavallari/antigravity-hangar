@@ -22,11 +22,12 @@ div:has(> div > [role="navigation"][aria-label="Sidebar"]),
 [data-testid="sidebar-sash"],
 div:has(> div > [data-testid="sidebar-sash"]),
 [data-testid="sidebar-popover-backdrop"],
-div:has(+ div > [data-testid="overview-panel-host"]),
-.\@container\/titlebar,
-[data-pane-id] > div:has([data-testid="pane-titlebar-toolbar"]),
-div.shrink-0:has(> .\@container\/titlebar),
-.agy-sheet > div.h-10.shrink-0:has(.\@container\/titlebar),
+[data-testid="pane-titlebar-toolbar"],
+html:not([data-hangar-foreign-nav="true"]) div:has(+ div > [data-testid="overview-panel-host"]),
+html:not([data-hangar-foreign-nav="true"]) .\@container\/titlebar,
+html:not([data-hangar-foreign-nav="true"]) [data-pane-id] > div:has([data-testid="pane-titlebar-toolbar"]),
+html:not([data-hangar-foreign-nav="true"]) div.shrink-0:has(> .\@container\/titlebar),
+html:not([data-hangar-foreign-nav="true"]) .agy-sheet > div.h-10.shrink-0:has(.\@container\/titlebar),
 [data-testid="bottom-terminal-panel"] {
   display: none !important;
   visibility: hidden !important;

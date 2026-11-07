@@ -26,7 +26,7 @@
       rootEl,
       ns.html`
         <div class="term-toolbar">
-          <agy-tab-strip class="agy-tab-strip" data-role="sessions"></agy-tab-strip>
+          <agy-tab-strip class="agy-tab-strip" data-role="sessions" aria-label="Terminal sessions"></agy-tab-strip>
           <div class="term-toolbar-actions">
             <button
               type="button"
@@ -381,7 +381,7 @@
           ns.bindTermPointerDrag?.(pill, {
             kind: 'tab',
             groupId: () => (pill._item || item).grp.groupId,
-            terminalId: item.id,
+            terminalId: () => (pill._item || item).id,
             instanceTabId,
             sessionsEl,
             stageEl,
@@ -524,10 +524,12 @@
       }
     };
 
+    const isEffectivelyVisible = () => Boolean(isVisible && !ns.isHostHidden?.());
+
     const schedulePollLoop = () => {
       stopPollLoop();
       engineMode = ns.readEngineMode();
-      if (disposed || !isVisible || engineMode !== 'direct') return;
+      if (disposed || !isEffectivelyVisible() || engineMode !== 'direct') return;
       const delayMs = idlePollStreak >= 3 ? 220 : 70;
       pollTimer = setTimeout(async () => {
         pollTimer = null;
@@ -539,7 +541,7 @@
 
     async function pollVisiblePanes() {
       engineMode = ns.readEngineMode();
-      if (pollBusy || !isVisible || engineMode !== 'direct') return false;
+      if (pollBusy || !isEffectivelyVisible() || engineMode !== 'direct') return false;
       pollBusy = true;
       try {
         const active = await ns._pollVisibleTermPanes({ visibleIds: getVisibleIds(), terminals, resolveTitle, renderToolbar });
@@ -550,8 +552,23 @@
       }
     }
 
+    const postJetboxVisibility = () => {
+      const msgType = isEffectivelyVisible() ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden';
+      for (const tid of getVisibleIds()) {
+        try {
+          sharedPanes.get(tid)?.frame?.contentWindow?.postMessage({ type: msgType, focus: false }, '*');
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
     return {
       rootEl,
+      syncHostVisibility: () => {
+        postJetboxVisibility();
+        schedulePollLoop();
+      },
       setVisible: (vis) => {
         const nextVis = Boolean(vis);
         if (isVisible === false && nextVis) {
@@ -559,17 +576,11 @@
           pendingFocus = true;
           idlePollStreak = 0;
         }
-        if (nextVis !== isVisible) {
-          const msgType = nextVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden';
-          for (const tid of getVisibleIds()) {
-            try {
-              sharedPanes.get(tid)?.frame?.contentWindow?.postMessage({ type: msgType, focus: false }, '*');
-            } catch {
-              /* ignore */
-            }
-          }
-        }
+        const changed = nextVis !== isVisible;
         isVisible = nextVis;
+        if (changed) {
+          postJetboxVisibility();
+        }
         schedulePollLoop();
       },
       focusTerminal: (tid) => {
@@ -694,5 +705,9 @@
         ns.disposeTerminalInstance(tabId);
       }
     }
+  };
+
+  ns.syncTerminalVisibility = () => {
+    instanceControllers.forEach((ctrl) => ctrl.syncHostVisibility?.());
   };
 })();

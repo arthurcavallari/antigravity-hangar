@@ -5,9 +5,9 @@
   const sc = store?.state || ns._sc;
 
   const buildChatFrameSrc = (cascadeId) => {
-    const isLight = Boolean(document.body?.classList?.contains?.('theme-light'));
+    const isLight = window.AgyShell ? !window.AgyShell.isHostDarkTheme() : Boolean(document.body?.classList?.contains?.('theme-light'));
     const uiTok = ns.getUiToken?.() || new URLSearchParams(window.location?.search || '').get('token') || '';
-    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=7${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=8${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
   };
 
   const mkEl = (ns._mkSideChatEl = function mkEl(tag, className, { html: rawHtml, ...rest } = {}, ds = {}, onClick = null) {
@@ -45,6 +45,9 @@
     return false;
   };
 
+  const foreignNavIds = new Set();
+  const overviewOpenIds = new Set();
+
   window.addEventListener?.('message', (e) => {
     const type = e.data?.type;
     if (!type || !String(type).startsWith('hangar-sidechat-')) return;
@@ -64,27 +67,51 @@
         }
       });
     } else if (type === 'hangar-sidechat-open-terminal') {
+      if (payload.cascadeId) {
+        overviewOpenIds.delete(payload.cascadeId);
+      }
       const box = sc.boxes.get(tabId);
       if (box) {
         box._overviewOpen = false;
       }
       box?._els?.overviewBtn?.classList?.remove?.('active');
+      box?._els?.overviewBtn?.blur?.();
       ns.notifySideChatState?.({
         openTerminal: true,
         pane: box?.dataset?.slot === 'bottom' ? 'bottom' : 'top',
         sourceTabId: tabId,
       });
     } else if (type === 'hangar-sidechat-overview-state') {
+      const isOpen = Boolean(payload.open);
+      if (payload.cascadeId) {
+        if (isOpen) {
+          overviewOpenIds.add(payload.cascadeId);
+        } else {
+          overviewOpenIds.delete(payload.cascadeId);
+        }
+      }
       sc.boxes.forEach((b, id) => {
         if (!payload.cascadeId || ns.getActiveSideChatId(id) === payload.cascadeId) {
-          b._overviewOpen = Boolean(payload.open);
+          b._overviewOpen = isOpen;
           b._els?.overviewBtn?.classList?.toggle?.('active', b._overviewOpen);
+          if (!isOpen) {
+            b._els?.overviewBtn?.blur?.();
+          }
         }
       });
     } else if (type === 'hangar-sidechat-foreign-nav') {
+      const expCid = payload.expectedCascadeId || payload.cascadeId || '';
+      const isForeign = payload.active !== undefined ? Boolean(payload.active) : Boolean(payload.cascadeId && payload.cascadeId !== expCid);
+      if (expCid) {
+        if (isForeign) {
+          foreignNavIds.add(expCid);
+        } else {
+          foreignNavIds.delete(expCid);
+        }
+      }
       sc.boxes.forEach((b, id) => {
-        if (!payload.expectedCascadeId || ns.getActiveSideChatId(id) === payload.expectedCascadeId) {
-          b._els?.backBtn?.classList?.remove?.('hidden');
+        if (!expCid || ns.getActiveSideChatId(id) === expCid) {
+          b._els?.backBtn?.classList?.toggle?.('hidden', !isForeign);
         }
       });
     } else if (type === 'hangar-sidechat-switch-cascade' && sc.threads.some((t) => t.cascadeId === payload.cascadeId)) {
@@ -116,6 +143,7 @@
     box = mkEl('div', 'term-quote-composer', {}, { dockMode: 'docked', instanceTabId: curTabId });
     const hdr = mkEl('div', 'term-toolbar term-quote-composer-hdr');
     const sessionsEl = mkEl('agy-tab-strip', 'agy-tab-strip', {}, { role: 'sessions' });
+    sessionsEl.setAttribute?.('aria-label', 'Side Chat threads');
     const actionsEl = mkEl('div', 'term-toolbar-actions');
     sessionsEl.addEventListener?.('wheel', (e) => {
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && sessionsEl.scrollWidth > sessionsEl.clientWidth) {
@@ -190,13 +218,24 @@
       { type: 'button', title: 'Return to the active Side Chat thread', textContent: '↩ Back to Side Chat' },
       { role: 'sidechat-back' },
       () => {
-        backBtn.classList?.add?.('hidden');
         const actCid = ns.getActiveSideChatId(curTabId);
+        if (actCid) {
+          foreignNavIds.delete(actCid);
+        }
+        backBtn.classList?.add?.('hidden');
         const f = sc.frames.get(actCid) || box._els.chatFrame;
         if (f?.dataset) {
           f.dataset.loadedCascadeId = actCid;
         }
         if (f) {
+          try {
+            f.contentWindow?.postMessage(
+              { type: 'hangar-sidechat-switch-cascade', payload: { cascadeId: actCid } },
+              '*'
+            );
+          } catch {
+            /* ignore */
+          }
           f.src = buildChatFrameSrc(actCid);
         }
       }
@@ -243,7 +282,18 @@
       { action: 'overview', role: 'sidechat-overview' },
       () => {
         box._overviewOpen = !box._overviewOpen;
+        const actCid = ns.getActiveSideChatId(curTabId);
+        if (actCid) {
+          if (box._overviewOpen) {
+            overviewOpenIds.add(actCid);
+          } else {
+            overviewOpenIds.delete(actCid);
+          }
+        }
         overviewBtn.classList?.toggle?.('active', box._overviewOpen);
+        if (!box._overviewOpen) {
+          overviewBtn.blur?.();
+        }
         try {
           box._els.chatFrame?.contentWindow?.postMessage(
             { type: 'hangar-sidechat-toggle-overview', open: box._overviewOpen },
@@ -390,7 +440,12 @@
     });
 
     box._syncThreadsUi = (targetCascadeId, quoteToInject) => {
-      backBtn.classList?.add?.('hidden');
+      backBtn.classList?.toggle?.('hidden', !foreignNavIds.has(targetCascadeId));
+      box._overviewOpen = overviewOpenIds.has(targetCascadeId);
+      overviewBtn.classList?.toggle?.('active', box._overviewOpen);
+      if (!box._overviewOpen) {
+        overviewBtn.blur?.();
+      }
       ns.setActiveSideChatId(curTabId, targetCascadeId);
       const optsMarkup = ns.getInstanceSideChats(sc.threads, curRootId)
         .map((t) => {
@@ -504,10 +559,12 @@
       box.classList?.toggle?.('slot-bottom', inBot);
       const wasBoxHidden = Boolean(box.classList?.contains?.('hidden'));
       box.classList?.toggle?.('hidden', !isVisible);
-      if (wasBoxHidden === isVisible) {
+      const effVis = Boolean(isVisible && !ns.isHostHidden?.());
+      if (wasBoxHidden === isVisible || box.dataset.jetboxVisible !== (effVis ? '1' : '0')) {
+        box.dataset.jetboxVisible = effVis ? '1' : '0';
         try {
           box._els?.chatFrame?.contentWindow?.postMessage(
-            { type: isVisible ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
+            { type: effVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
             '*'
           );
         } catch {
@@ -529,6 +586,24 @@
       if (tabId !== ns.SIDECHAT_TAB_ID && !sc.poppedIds.has(tabId.slice(ns.SIDECHAT_TAB_PREFIX.length))) {
         box.remove?.();
         sc.boxes.delete(tabId);
+      }
+    }
+  };
+
+  ns.syncSideChatVisibility = function syncSideChatVisibility() {
+    const hostHidden = Boolean(ns.isHostHidden?.());
+    const allBoxes = new Set([...sc.boxes.values(), ...(ns._sideChatBox ? [ns._sideChatBox] : [])]);
+    for (const box of allBoxes) {
+      const boxOpen = !box.classList?.contains?.('hidden');
+      const effVis = Boolean(boxOpen && !hostHidden);
+      if (box.dataset) box.dataset.jetboxVisible = effVis ? '1' : '0';
+      try {
+        box._els?.chatFrame?.contentWindow?.postMessage(
+          { type: effVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
+          '*'
+        );
+      } catch {
+        /* ignore */
       }
     }
   };
@@ -576,6 +651,8 @@
         activeId: '',
       });
       sc.poppedIds.clear();
+      foreignNavIds.clear();
+      overviewOpenIds.clear();
       Object.keys(sc.groupMap).forEach((k) => delete sc.groupMap[k]);
       sc.activeByInstance.clear();
       for (const [id, b] of sc.boxes.entries()) {

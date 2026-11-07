@@ -34,3 +34,8 @@ div[title="Open side-by-side view"] button svg:last-child {
   min-height: 0;
   z-index: 10 !important;
 }
+
+html[data-hangar-foreign-nav="true"] .\@container\/titlebar {
+  min-height: 2.25rem;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+}
