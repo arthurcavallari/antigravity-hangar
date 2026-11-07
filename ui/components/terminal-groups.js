@@ -168,7 +168,20 @@
   ns.readTabGroups = (instanceTabId = '__terminal__') => {
     const all = readAllStoredGroups();
     const list = all[resolveInstKey(instanceTabId)] || all[instanceTabId];
-    return Array.isArray(list) ? list.filter((g) => g && Array.isArray(g.paneIds) && g.paneIds.length > 0) : [];
+    if (!Array.isArray(list)) return [];
+    const usedGroupIds = new Set();
+    return list
+      .filter((g) => g && Array.isArray(g.paneIds) && g.paneIds.length > 0)
+      .map((g) => {
+        const rawGid = String(g.groupId || g.paneIds[0]);
+        const groupId = g.paneIds.includes(rawGid) && !usedGroupIds.has(rawGid) ? rawGid : String(g.paneIds[0]);
+        usedGroupIds.add(groupId);
+        return {
+          ...g,
+          groupId,
+          focusedPaneId: g.paneIds.includes(g.focusedPaneId) ? g.focusedPaneId : g.paneIds[0],
+        };
+      });
   };
 
   ns.saveTabGroups = (instanceTabId = '__terminal__', groups = []) => {
@@ -177,12 +190,19 @@
     if (!groups || !groups.length) {
       delete all[k];
     } else {
-      all[k] = groups.map((g) => ({
-        groupId: g.groupId,
-        paneIds: [...g.paneIds],
-        focusedPaneId: g.focusedPaneId,
-        ...(g.pinned ? { pinned: true } : {}),
-      }));
+      const usedGroupIds = new Set();
+      all[k] = groups.map((g) => {
+        const paneIds = [...g.paneIds];
+        const rawGid = String(g.groupId || paneIds[0]);
+        const groupId = paneIds.includes(rawGid) && !usedGroupIds.has(rawGid) ? rawGid : String(paneIds[0]);
+        usedGroupIds.add(groupId);
+        return {
+          groupId,
+          paneIds,
+          focusedPaneId: paneIds.includes(g.focusedPaneId) ? g.focusedPaneId : paneIds[0],
+          ...(g.pinned ? { pinned: true } : {}),
+        };
+      });
     }
     writeAllStoredGroups(all);
     notifyTermPersist();
@@ -201,7 +221,7 @@
       const kept = (g?.paneIds || []).filter((id) => !paneIdSet.has(id));
       if (moved.length) {
         moving.push({
-          groupId: g.groupId || moved[0],
+          groupId: moved.includes(g.groupId) ? g.groupId : moved[0],
           paneIds: moved,
           focusedPaneId: moved.includes(g.focusedPaneId) ? g.focusedPaneId : moved[0],
           ...(g.pinned ? { pinned: true } : {}),
@@ -209,7 +229,7 @@
       }
       if (kept.length) {
         staying.push({
-          groupId: g.groupId || kept[0],
+          groupId: kept.includes(g.groupId) ? g.groupId : kept[0],
           paneIds: kept,
           focusedPaneId: kept.includes(g.focusedPaneId) ? g.focusedPaneId : kept[0],
           ...(g.pinned ? { pinned: true } : {}),
@@ -229,10 +249,13 @@
   ns.hydrateTerminalStateFromLayout = function hydrateTerminalStateFromLayout(
     layout = {},
     liveTerminals = [],
-    workspacePath = ''
+    workspacePath = '',
+    conversationId = ''
   ) {
     isHydratingTerm = true;
-    activeTermWsKey = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
+    const wsNorm = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
+    const convNorm = String(conversationId || '').trim().toLowerCase();
+    activeTermWsKey = wsNorm || (convNorm ? `conv:${convNorm}` : '');
     try {
       const ts = layout?.terminalState;
       if (!hydratedTermState && ts && typeof ts === 'object') {
@@ -325,6 +348,7 @@
     const validSet = new Set(validTerminalIds);
     const seen = new Set();
     const next = [];
+    const usedGroupIds = new Set();
     let consumedPending = false;
     for (const g of Array.isArray(groups) ? groups : []) {
       const oldPanes = g?.paneIds || [];
@@ -339,8 +363,11 @@
         ? g.focusedPaneId
         : ((fIdx >= 0 ? oldPanes.slice(fIdx + 1).find((id) => paneIds.includes(id)) : '') ||
             paneIds[fIdx >= 0 ? paneIds.length - 1 : 0]);
+      const rawGid = String(g.groupId || paneIds[0]);
+      const groupId = paneIds.includes(rawGid) && !usedGroupIds.has(rawGid) ? rawGid : String(paneIds[0]);
+      usedGroupIds.add(groupId);
       next.push({
-        groupId: String(g.groupId || paneIds[0]),
+        groupId,
         paneIds,
         focusedPaneId,
         ...(g.pinned ? { pinned: true } : {}),
@@ -382,6 +409,7 @@
       if (paneIds.length) {
         cleaned.push({
           ...g,
+          groupId: paneIds.includes(g.groupId) ? g.groupId : paneIds[0],
           paneIds,
           focusedPaneId: paneIds.includes(g.focusedPaneId) ? g.focusedPaneId : paneIds[0],
         });

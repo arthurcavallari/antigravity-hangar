@@ -164,18 +164,26 @@
     customTitles: ns.readCustomSideChatTitles(),
   });
 
-  ns.hydrateSideChatStateFromLayout = (layout = {}, workspacePath = '') => {
+  ns.hydrateSideChatStateFromLayout = (layout = {}, workspacePath = '', conversationId = '') => {
     const wsKey = String(workspacePath || '').trim().replace(/\\/g, '/').toLowerCase();
-    if (sc.hydrated && sc.hydratedWsKey === wsKey) return;
-    if (sc.hydrated && sc.hydratedWsKey && !wsKey) return;
+    const convKey = String(conversationId || '').trim();
+    const scopeKey = wsKey || (convKey ? `conv:${convKey}` : '');
+    const hasWsMap = Boolean(layout?.sideChatStateByWorkspace && typeof layout.sideChatStateByWorkspace === 'object');
+    if (sc.hydrated && sc.hydratedWsKey === scopeKey && (scopeKey || !hasWsMap)) return;
     const unpersisted = sc.threads.filter(
-      (t) => t?._unpersisted && (!t._createdWsKey || t._createdWsKey === wsKey || sc.startInFlight || sc._pendingOpen)
+      (t) =>
+        t?._unpersisted &&
+        (!t._createdWsKey ||
+          t._createdWsKey === scopeKey ||
+          (convKey && t._createdWsKey === `conv:${convKey}`) ||
+          sc.startInFlight ||
+          sc._pendingOpen)
     );
     const hadPendingOpen = Boolean(sc._pendingOpen || sc.startInFlight || (unpersisted.length > 0 && sc.isOpen));
     const prevActiveId = sc.activeId;
     Object.assign(sc, {
       hydrated: true,
-      hydratedWsKey: wsKey,
+      hydratedWsKey: scopeKey,
       threads: [],
       activeId: '',
       counter: 0,
@@ -184,7 +192,9 @@
     sc.poppedIds.clear();
     Object.keys(sc.groupMap).forEach((k) => delete sc.groupMap[k]);
     sc.activeByInstance.clear();
-    const raw = wsKey ? layout?.sideChatStateByWorkspace?.[wsKey] : layout?.sideChatState;
+    const raw = scopeKey
+      ? layout?.sideChatStateByWorkspace?.[scopeKey]
+      : (!hasWsMap ? layout?.sideChatState : null);
     const legacyIdMap = new Map();
     const normCid = (rawId) => {
       const id = String(rawId || '');
@@ -249,7 +259,7 @@
     }
     for (const ut of unpersisted) {
       if (!sc.threads.some((t) => t.cascadeId === ut.cascadeId)) {
-        sc.threads.push({ ...ut, _createdWsKey: wsKey || ut._createdWsKey || '' });
+        sc.threads.push({ ...ut, _createdWsKey: scopeKey || ut._createdWsKey || '' });
       }
     }
     if (unpersisted.length > 0) {
@@ -263,7 +273,7 @@
       sc.isOpen = true;
       closedSet.delete(ns.SIDECHAT_TAB_ID);
     }
-    if (!wsKey) {
+    if (!scopeKey && !hasWsMap) {
       const candidateTabs = [
         ...(layout?.tabOrder || []),
         ...(layout?.topSplitTabIds || []),

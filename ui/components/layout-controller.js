@@ -46,6 +46,9 @@
     const getWsStateKey = (wsPath = state.activeWorkspace?.workspacePath) => (
       String(wsPath || '').trim().replace(/\\/g, '/').toLowerCase()
     );
+    const getScopeStateKey = (wsKey = getWsStateKey()) => (
+      wsKey || (hangarConversationId ? `conv:${hangarConversationId}` : '')
+    );
     const getActiveTabStorageKey = (wsKey = getWsStateKey()) => (
       wsKey ? `${ACTIVE_TAB_KEY}:${wsKey}` : (hangarConversationId ? `${ACTIVE_TAB_KEY}:conv:${hangarConversationId}` : ACTIVE_TAB_KEY)
     );
@@ -58,12 +61,12 @@
       }
     };
     const buildSideChatLayoutPatch = (scStateObj = ns.serializeSideChatState?.()) => {
-      const wsKey = getWsStateKey();
+      const scopeKey = getScopeStateKey();
       const patch = {
         sideChatState: scStateObj,
         sideChatStateByWorkspace: {
           ...(state.layout.sideChatStateByWorkspace || {}),
-          ...(wsKey ? { [wsKey]: scStateObj } : {}),
+          ...(scopeKey ? { [scopeKey]: scStateObj } : {}),
         },
       };
       Object.assign(state.layout, patch);
@@ -71,8 +74,8 @@
     };
 
     function saveLayoutUpdate(patch = {}) {
-      const wsKey = getWsStateKey();
-      if (!wsKey || !WS_LAYOUT_KEYS.some((k) => patch[k] !== undefined)) {
+      const scopeKey = getScopeStateKey();
+      if (!scopeKey || !WS_LAYOUT_KEYS.some((k) => patch[k] !== undefined)) {
         return ns.apiCall?.('/api/layout/update', { ...patch });
       }
       const prevMap = state.layout.workspaceLayouts && typeof state.layout.workspaceLayouts === 'object'
@@ -81,12 +84,12 @@
       const snap = Object.fromEntries(
         WS_LAYOUT_KEYS.map((k) => [
           k,
-          patch[k] !== undefined ? patch[k] : (prevMap[wsKey]?.[k] ?? state.layout[k] ?? WS_LAYOUT_DEFAULTS[k]),
+          patch[k] !== undefined ? patch[k] : (prevMap[scopeKey]?.[k] ?? state.layout[k] ?? WS_LAYOUT_DEFAULTS[k]),
         ]),
       );
       state.layout.workspaceLayouts = {
         ...prevMap,
-        [wsKey]: { ...WS_LAYOUT_DEFAULTS, ...(prevMap[wsKey] || {}), ...snap },
+        [scopeKey]: { ...WS_LAYOUT_DEFAULTS, ...(prevMap[scopeKey] || {}), ...snap },
       };
       return ns.apiCall?.('/api/layout/update', { ...patch, workspaceLayouts: state.layout.workspaceLayouts });
     }
@@ -118,10 +121,12 @@
     };
 
     const applyWorkspaceLayout = (raw = {}, wsKey = getWsStateKey()) => {
-      if (!wsKey) return { ...raw };
-      const wsLayout = raw?.workspaceLayouts?.[wsKey] || {};
+      const scopeKey = getScopeStateKey(wsKey);
+      const hasScopedMaps = Boolean(raw?.workspaceLayouts || raw?.sideChatStateByWorkspace);
+      if (!scopeKey && !hasScopedMaps) return { ...raw };
+      const wsLayout = (scopeKey && raw?.workspaceLayouts?.[scopeKey]) || {};
       const merged = { ...raw, ...WS_LAYOUT_DEFAULTS, ...wsLayout };
-      const wsSc = raw?.sideChatStateByWorkspace?.[wsKey];
+      const wsSc = scopeKey ? raw?.sideChatStateByWorkspace?.[scopeKey] : null;
       if (
         wsSc?.isOpen &&
         Array.isArray(merged.closedTabIds) &&
