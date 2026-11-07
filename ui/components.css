@@ -474,9 +474,8 @@
   display: block;
 }
 
-.term-pane-resizer:is(:hover, :focus-visible) {
+.term-pane-resizer:hover {
   background: color-mix(in srgb, var(--hub-primary) 45%, transparent);
-  outline: none;
 }
 
 .term-pane.is-focused-pane::before {

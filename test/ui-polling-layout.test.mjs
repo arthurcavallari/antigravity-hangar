@@ -577,5 +577,6 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
       },
     ]);
     assert.ok(buildAgyUiJs('tabs').includes('bindGlobalTabCycleKeydown'));
+    assert.ok(readFileSync(join(UI_DIR, 'index.html'), 'utf8').includes('aria-label="Resize top and bottom split panes"'));
   });
 });
