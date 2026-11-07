@@ -227,6 +227,22 @@
     for (const child of Array.from(listEl.querySelectorAll('.agy-card'))) {
       if (!seenIds.has(child.dataset.pkgId)) child.remove();
     }
+    let emptyEl = listEl.querySelector('[data-role="discover-empty"]');
+    if (filtered.length === 0) {
+      if (!emptyEl) {
+        emptyEl = document.createElement('div');
+        emptyEl.className = 'agy-empty-state';
+        emptyEl.setAttribute('role', 'status');
+        emptyEl.dataset.role = 'discover-empty';
+        listEl.appendChild(emptyEl);
+      }
+      const msg = q
+        ? `No sidecars or plugins match "${searchQuery.trim()}"${activeCategory !== 'all' ? ` in ${activeCategory}` : ''}.`
+        : `No sidecars or plugins in ${activeCategory === 'all' ? 'the registry' : activeCategory}.`;
+      if (emptyEl.textContent !== msg) emptyEl.textContent = msg;
+    } else if (emptyEl) {
+      emptyEl.remove();
+    }
   }
 
   ns.renderDiscoverPane = function renderDiscoverPane(paneEl, ctx = {}) {

@@ -544,6 +544,9 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
     assert.match(mktPaneSrc, /aria-label="GitHub repository URL or owner\/repo"/);
+    assert.match(mktPaneSrc, /emptyEl\.className = 'agy-empty-state'/);
+    assert.match(mktPaneSrc, /emptyEl\.setAttribute\('role', 'status'\)/);
+    assert.match(mktPaneSrc, /emptyEl\.dataset\.role = 'discover-empty'/);
     const compCssSrc = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
     assert.match(compCssSrc, /\.ws-rule-remove\s*\{[\s\S]*?width:\s*24px;\s*height:\s*24px;/);
   });
