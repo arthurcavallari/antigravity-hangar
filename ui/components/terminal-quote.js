@@ -366,9 +366,10 @@
         sideChatBtn.classList?.toggle?.('has-picker', sc.threads.length > 0);
         const label = th ? `Ask in ${ns.resolveSideChatTitle(th)}` : 'Ask in Side Chat';
         sideChatBtn.title = `${label} (${isMac ? '⌘+Enter' : 'Ctrl+Enter'})`;
+        sideChatBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Meta+Enter' : 'Control+Enter');
         ns.setHtml(
           sideChatBtn,
-          ns.html`<span>${ns.escHtml?.(label) || label}</span><span class="term-mini-kbd">${isMac ? '⌘↵' : 'Ctrl+↵'}</span>`
+          ns.html`<span>${ns.escHtml?.(label) || label}</span><span class="term-mini-kbd" aria-hidden="true">${isMac ? '⌘↵' : 'Ctrl+↵'}</span>`
         );
       };
       const setTarget = (cid = '') => {
@@ -502,11 +503,12 @@
       {
         type: 'button',
         title: 'Click to copy native chat mention pill (Ctrl+V in chat), or drag directly into chat',
-        html: `<span class="term-quote-label">Quote</span><span class="term-quote-kbd text-xs opacity-50">${isMac ? '⌘L' : 'Alt+L'}</span>`,
+        html: `<span class="term-quote-label">Quote</span><span class="term-quote-kbd" aria-hidden="true">${isMac ? '⌘L' : 'Alt+L'}</span>`,
       },
       {},
       (e) => finishSelection(false, e)
     );
+    quoteBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Meta+L' : 'Alt+L');
     const askBtn = mkEl(
       'button',
       'term-quote-btn term-quote-ask-btn',

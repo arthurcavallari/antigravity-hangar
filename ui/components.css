@@ -695,6 +695,8 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   font-weight: var(--font-weight-medium, 500);
 }
 
+/* Intentional 1:1 parity with native Antigravity selection Quote popup (Hmc in /main.js: .text-xs.opacity-50).
+   Badge is aria-hidden="true" with aria-keyshortcuts on .term-quote-btn; do not replace opacity with --hub-muted. */
 .term-quote-kbd {
   opacity: 0.55;
   font-size: 11px;
@@ -1015,6 +1017,9 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
   font-size: 11.5px;
 }
 
+/* Intentional 1:1 parity with native Antigravity button shortcut suffixes (/main.js: .opacity-60.text-xs).
+   Parent .agy-btn-outline already uses color: var(--agy-ink-soft) (--hub-muted); keep opacity: 0.6 to preserve
+   label-vs-shortcut hierarchy (badge is aria-hidden="true" with aria-keyshortcuts on the button). */
 .term-mini-kbd {
   opacity: 0.6;
   font-size: 10.5px;

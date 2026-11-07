@@ -30,6 +30,17 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
 
     const shellCss = createShellCssHandler()().body;
     assert.match(shellCss, /--agy-ink-soft:\s*color-mix\(in srgb,\s*var\(--agy-ink\)\s*88%,\s*var\(--agy-canvas\)\)/);
+
+    const compCss = readFileSync(join(ROOT, 'ui', 'components.css'), 'utf8');
+    assert.match(compCss, /\.term-quote-kbd\s*\{\s*opacity:\s*0\.55;/);
+    assert.match(compCss, /\.term-mini-kbd\s*\{\s*opacity:\s*0\.6;/);
+    assert.doesNotMatch(compCss, /\.term-(?:quote|mini)-kbd\s*\{[^}]*--hub-muted/);
+
+    const quoteJs = readFileSync(join(ROOT, 'ui', 'components', 'terminal-quote.js'), 'utf8');
+    assert.match(quoteJs, /class="term-quote-kbd" aria-hidden="true"/);
+    assert.match(quoteJs, /class="term-mini-kbd" aria-hidden="true"/);
+    assert.match(quoteJs, /setAttribute\?\.\('aria-keyshortcuts'/);
+    assert.doesNotMatch(quoteJs, /term-quote-kbd[^"]*opacity-50/);
   });
 
   it('AGY_CLIENT_JS computes relative luminance, caches theme in sessionStorage, and notifies agent on errored sidecars', async () => {
