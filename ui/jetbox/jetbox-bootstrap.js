@@ -181,6 +181,24 @@
     history.replaceState(null, '', '/c/' + encodeURIComponent(effectiveCascadeId) + routeSuffix);
   } catch {}
 
+  function getPathnameCascadeId(customUrl) {
+    let p = String(window.location?.pathname || '');
+    if (typeof customUrl === 'string' && customUrl) {
+      try {
+        p = new URL(customUrl, window.location?.origin || 'http://127.0.0.1').pathname;
+      } catch {
+        p = customUrl.split('?')[0];
+      }
+    }
+    if (!p.startsWith('/c/')) return '';
+    const raw = p.slice(3).split('/')[0] || '';
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
   if (window.customElements) {
     const origDefine = window.customElements.define;
     window.customElements.define = (n, c, o) => {
@@ -194,6 +212,28 @@
   let rafFallbackCount = 0;
   const isJetboxHidden = () =>
     Boolean(document.hidden || hangarPaneHidden || (Number(window.innerWidth) || 0) <= 0);
+  const isJetboxPaused = () => Boolean(document.hidden || hangarPaneHidden);
+  const pollWaiters = new Set();
+  function waitForNextPoll(ms) {
+    return new Promise((resolve) => {
+      let timer = null;
+      const wake = () => {
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        pollWaiters.delete(wake);
+        resolve();
+      };
+      pollWaiters.add(wake);
+      timer = setTimeout(wake, ms);
+    });
+  }
+  function wakePollWaiters() {
+    for (const wake of [...pollWaiters]) {
+      wake();
+    }
+  }
 
   const origRaf = window.requestAnimationFrame?.bind(window);
   const origCaf = window.cancelAnimationFrame?.bind(window);
@@ -339,6 +379,10 @@
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
+          if (isJetboxPaused() && afterSeq > 0) {
+            await waitForNextPoll(1500);
+            continue;
+          }
           let hadChunks = false;
           try {
             const res = await sidecarFetch()('/api/terminal/poll', {
@@ -386,7 +430,7 @@
           } catch {}
           idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
           const delayMs = isJetboxHidden() ? 1500 : (idlePolls >= 4 ? 180 : 45);
-          await new Promise((r) => setTimeout(r, delayMs));
+          await waitForNextPoll(delayMs);
         }
       },
       cancel() {
@@ -403,10 +447,19 @@
     let idlePolls = 0;
     const convId = reqBody?.conversationId || effectiveCascadeId;
     const subId = reqBody?.subscriberId || 'sidechat';
-    const verbosity = reqBody?.trajectoryVerbosity ?? 1;
+    const verbosity = reqBody?.trajectoryVerbosity ?? 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI';
+    const initialStepsPageBounds = reqBody?.initialStepsPageBounds ?? { startIndex: -50 };
+    const initialGeneratorMetadatasPageBounds =
+      reqBody?.initialGeneratorMetadatasPageBounds ?? { startIndex: -1 };
+    const initialExecutorMetadatasPageBounds =
+      reqBody?.initialExecutorMetadatasPageBounds ?? { startIndex: 0, endIndexExclusive: 0 };
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
+          if (isJetboxPaused() && afterSeq > 0) {
+            await waitForNextPoll(1500);
+            continue;
+          }
           let hadChunks = false;
           try {
             const res = await sidecarFetch()('/api/terminal/chat-poll', {
@@ -416,6 +469,15 @@
                 conversationId: convId,
                 subscriberId: subId,
                 trajectoryVerbosity: verbosity,
+                initialStepsPageBounds,
+                initialGeneratorMetadatasPageBounds,
+                initialExecutorMetadatasPageBounds,
+                ...(reqBody?.enableLatencyTelemetry !== undefined
+                  ? { enableLatencyTelemetry: reqBody.enableLatencyTelemetry }
+                  : {}),
+                ...(reqBody?.disableRehydration !== undefined
+                  ? { disableRehydration: reqBody.disableRehydration }
+                  : {}),
                 afterSeq,
               }),
             });
@@ -427,8 +489,9 @@
             }
             for (const chunk of chunks) {
               afterSeq = Math.max(afterSeq, chunk.seq || 0);
-              if (chunk.frameData) {
-                controller.enqueue(encodeConnectFrame(chunk.frameData, 0));
+              const payload = chunk.rawJson ?? chunk.frameData;
+              if (payload) {
+                controller.enqueue(encodeConnectFrame(payload, 0));
               }
             }
             if (data.closed) {
@@ -439,7 +502,7 @@
           } catch {}
           idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
           const delayMs = isJetboxHidden() ? 1500 : (idlePolls >= 4 ? 180 : 45);
-          await new Promise((r) => setTimeout(r, delayMs));
+          await waitForNextPoll(delayMs);
         }
       },
       cancel() {
@@ -448,12 +511,21 @@
     });
   }
 
+  const isRunningSummaryStatus = (st) =>
+    st === 2 ||
+    st === 3 ||
+    st === 4 ||
+    st === 'CASCADE_RUN_STATUS_RUNNING' ||
+    st === 'CASCADE_RUN_STATUS_BUSY' ||
+    st === 'CASCADE_RUN_STATUS_CANCELING';
+
   function createSummariesConnectStream() {
     let cancelled = false;
+    const prevDigests = new Map();
     return new ReadableStream({
       async start(controller) {
         while (!cancelled) {
-          if (!isJetboxHidden()) {
+          if (!isJetboxPaused()) {
             try {
               const res = await sidecarFetch()('/api/terminal/ls-rpc', {
                 method: 'POST',
@@ -461,12 +533,67 @@
                 body: JSON.stringify({ method: 'GetAllCascadeTrajectories', body: {} }),
               });
               const data = await res.json().catch(() => ({}));
-              if (data?.trajectorySummaries) {
-                controller.enqueue(encodeConnectFrame({ updates: data.trajectorySummaries, deletes: [] }, 0));
+              const summaries = data?.trajectorySummaries;
+              if (summaries && typeof summaries === 'object') {
+                const activeParentIds = new Set();
+                for (const info of Object.values(summaries)) {
+                  if (
+                    info &&
+                    !info.killed &&
+                    (info.notFullyIdle ||
+                      isRunningSummaryStatus(info.status) ||
+                      (info.waitingSteps?.length ?? 0) > 0 ||
+                      (info.backgroundTaskCount ?? 0) > 0)
+                  ) {
+                    let pid = info.trajectoryMetadata?.parentConversationId;
+                    let hops = 0;
+                    while (pid && hops < 8) {
+                      activeParentIds.add(pid);
+                      pid = summaries[pid]?.trajectoryMetadata?.parentConversationId;
+                      hops += 1;
+                    }
+                  }
+                }
+                const updates = {};
+                const deletes = [];
+                let changedCount = 0;
+                for (const [cid, info] of Object.entries(summaries)) {
+                  if (!info || typeof info !== 'object') continue;
+                  const hasRunningSubagents = Boolean(info.hasRunningSubagents || activeParentIds.has(cid));
+                  const hasActiveChildren = Boolean(info.hasActiveChildren || hasRunningSubagents);
+                  const notFullyIdle = Boolean(
+                    !info.killed &&
+                      (info.notFullyIdle ||
+                        isRunningSummaryStatus(info.status) ||
+                        (info.waitingSteps?.length ?? 0) > 0 ||
+                        (info.backgroundTaskCount ?? 0) > 0 ||
+                        hasRunningSubagents)
+                  );
+                  const sig = `${info.lastModifiedTime || ''}\0${info.stepCount ?? ''}\0${info.status ?? ''}\0${info.summary || ''}\0${notFullyIdle ? 1 : 0}\0${hasRunningSubagents ? 1 : 0}\0${info.killed ? 1 : 0}\0${info.waitingSteps?.length ?? 0}`;
+                  if (prevDigests.get(cid) !== sig) {
+                    prevDigests.set(cid, sig);
+                    updates[cid] = {
+                      ...info,
+                      notFullyIdle,
+                      hasRunningSubagents,
+                      hasActiveChildren,
+                    };
+                    changedCount += 1;
+                  }
+                }
+                for (const oldCid of [...prevDigests.keys()]) {
+                  if (!(oldCid in summaries)) {
+                    prevDigests.delete(oldCid);
+                    deletes.push(oldCid);
+                  }
+                }
+                if (changedCount > 0 || deletes.length > 0) {
+                  controller.enqueue(encodeConnectFrame({ updates, deletes }, 0));
+                }
               }
             } catch {}
           }
-          await new Promise((r) => setTimeout(r, isJetboxHidden() ? 15000 : 2500));
+          await waitForNextPoll(isJetboxPaused() ? 15000 : 2500);
         }
       },
       cancel() {
@@ -500,10 +627,21 @@
       }
       if (mode === 'chat' && method === 'StreamAgentStateUpdates') {
         const reqBody = decodeConnectRequest(init.body);
-        if (reqBody?.conversationId && reqBody.conversationId !== effectiveCascadeId) {
+        const pathCid = getPathnameCascadeId();
+        if (
+          reqBody?.conversationId &&
+          reqBody.conversationId !== effectiveCascadeId &&
+          (!pathCid || pathCid !== effectiveCascadeId)
+        ) {
+          lastForeignState = true;
+          lastForeignCid = reqBody.conversationId;
+          if (document.documentElement) {
+            document.documentElement.setAttribute('data-hangar-foreign-nav', 'true');
+          }
           postToParent('hangar-sidechat-foreign-nav', {
             cascadeId: reqBody.conversationId,
             expectedCascadeId: effectiveCascadeId,
+            active: true,
           });
         }
         return new window.Response(createChatConnectStream(reqBody), {
@@ -512,6 +650,14 @@
         });
       }
       if (mode === 'chat' && method === 'JetboxSubscribeToSummaries') {
+        const reqBody = decodeConnectRequest(init.body);
+        if (
+          reqBody?.backend &&
+          reqBody.backend !== 1 &&
+          reqBody.backend !== 'TRAJECTORY_BACKEND_LOCAL'
+        ) {
+          return makeGrpcStreamResponse([]);
+        }
         return new window.Response(createSummariesConnectStream(), {
           status: 200,
           headers: GRPC_WEB_HEADERS,
@@ -730,8 +876,25 @@
     return true;
   }
 
+  let hangarOverviewOpen = false;
+  let lastForeignState = false;
+  let lastForeignCid = '';
+
+  function readOverviewPanelContext() {
+    const ov = document.querySelector?.('[data-testid="overview-panel-host"]');
+    const fk = ov && Object.keys(ov).find((k) => k.startsWith('__reactFiber$'));
+    for (let f = fk ? ov[fk] : null, d = 0; f && d < 15; d++, f = f.return) {
+      const val = f.memoizedProps?.value;
+      if (val && typeof val.togglePanel === 'function' && 'isPanelVisible' in val) {
+        return val;
+      }
+    }
+    return null;
+  }
+
   function setOverviewPanelOpen(wantOpen) {
     const open = Boolean(wantOpen);
+    hangarOverviewOpen = open;
     if (document.documentElement) {
       if (open) {
         document.documentElement.setAttribute('data-hangar-overview', 'open');
@@ -739,21 +902,77 @@
         document.documentElement.removeAttribute('data-hangar-overview');
       }
     }
-    const ov = document.querySelector?.('[data-testid="overview-panel-host"]');
-    const fk = ov && Object.keys(ov).find((k) => k.startsWith('__reactFiber$'));
-    for (let f = fk ? ov[fk] : null, d = 0; f && d < 15; d++, f = f.return) {
-      const val = f.memoizedProps?.value;
-      if (val && typeof val.togglePanel === 'function' && 'isPanelVisible' in val) {
-        const curOpen = val.breakpoint === 'small' ? Boolean(val.overlayOpen) : Boolean(val.isPanelVisible);
-        if (curOpen !== open) {
-          try {
-            val.togglePanel();
-          } catch {}
-        }
-        break;
+    const val = readOverviewPanelContext();
+    if (val) {
+      const curOpen = val.breakpoint === 'small' ? Boolean(val.overlayOpen) : Boolean(val.isPanelVisible);
+      if (curOpen !== open) {
+        try {
+          val.togglePanel();
+        } catch {}
       }
     }
     postToParent('hangar-sidechat-overview-state', { cascadeId: effectiveCascadeId, open });
+  }
+
+  function syncOverviewDomState() {
+    if (!hangarOverviewOpen) return;
+    const val = readOverviewPanelContext();
+    if (val) {
+      const curOpen = val.breakpoint === 'small' ? Boolean(val.overlayOpen) : Boolean(val.isPanelVisible);
+      if (!curOpen) {
+        hangarOverviewOpen = false;
+        document.documentElement?.removeAttribute?.('data-hangar-overview');
+        postToParent('hangar-sidechat-overview-state', { cascadeId: effectiveCascadeId, open: false });
+      }
+    }
+  }
+
+  function syncChatRouteState(customUrl) {
+    if (mode !== 'chat') return;
+    const pathCid = getPathnameCascadeId(customUrl);
+    if (!pathCid) return;
+    const isForeign = pathCid !== effectiveCascadeId;
+    if (document.documentElement) {
+      if (isForeign) {
+        document.documentElement.setAttribute('data-hangar-foreign-nav', 'true');
+      } else {
+        document.documentElement.removeAttribute('data-hangar-foreign-nav');
+      }
+    }
+    if (isForeign !== lastForeignState || (isForeign && pathCid !== lastForeignCid)) {
+      lastForeignState = isForeign;
+      lastForeignCid = isForeign ? pathCid : '';
+      postToParent('hangar-sidechat-foreign-nav', {
+        cascadeId: isForeign ? pathCid : effectiveCascadeId,
+        expectedCascadeId: effectiveCascadeId,
+        active: isForeign,
+      });
+      if (hangarOverviewOpen) {
+        setOverviewPanelOpen(false);
+      }
+    } else {
+      setTimeout(syncOverviewDomState, 0);
+    }
+  }
+
+  if (mode === 'chat' && window.history) {
+    const origPushState = window.history.pushState?.bind(window.history);
+    const origReplaceState = window.history.replaceState?.bind(window.history);
+    if (origPushState) {
+      window.history.pushState = function (...args) {
+        const r = origPushState(...args);
+        syncChatRouteState(args[2]);
+        return r;
+      };
+    }
+    if (origReplaceState) {
+      window.history.replaceState = function (...args) {
+        const r = origReplaceState(...args);
+        syncChatRouteState(args[2]);
+        return r;
+      };
+    }
+    window.addEventListener?.('popstate', () => syncChatRouteState());
   }
 
   function focusJetboxTerminal(attempt = 0) {
@@ -784,6 +1003,7 @@
     } else if (e.data?.type === 'hangar-jetbox-shown') {
       hangarPaneHidden = false;
       rafFallbackCount = 0;
+      wakePollWaiters();
       try {
         window.dispatchEvent?.(new Event('resize'));
       } catch {}
@@ -794,6 +1014,7 @@
       hangarPaneHidden = true;
     } else if (e.data?.type === 'hangar-jetbox-focus') {
       hangarPaneHidden = false;
+      wakePollWaiters();
       focusJetboxTerminal();
     } else if (e.data?.type === 'hangar-clear-selection') {
       const ctx = findTerminalContext();
@@ -949,6 +1170,23 @@
         e.stopImmediatePropagation?.();
         setOverviewPanelOpen(false);
         postToParent('hangar-sidechat-open-terminal', { cascadeId: effectiveCascadeId });
+        return;
+      }
+      if (
+        tgt?.closest?.('[data-testid="subagent-tab-open-full-view"]') ||
+        (tgt?.closest?.('[data-testid="overview-panel"]') &&
+          tgt?.closest?.(
+            '[data-testid="subagent-node"], [data-testid="overview-panel-row-review"], [data-testid="overview-panel-row-files"]'
+          ))
+      ) {
+        setOverviewPanelOpen(false);
+        return;
+      }
+      setTimeout(syncOverviewDomState, 0);
+    }, true);
+    window.addEventListener?.('keydown', (e) => {
+      if (e?.key === 'Escape') {
+        setTimeout(syncOverviewDomState, 0);
       }
     }, true);
     return;

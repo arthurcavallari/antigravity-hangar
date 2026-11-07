@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import vm from 'node:vm';
-import { closeWorkspaceTerminal, createWorkspaceTerminal, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
+import { closeWorkspaceTerminal, createWorkspaceTerminal, DEFAULT_MAX_SCROLLBACK_BYTES, encodeConnectFrame, listWorkspaceTerminals, parseConnectFrames, pollTerminalOutput, registerTerminalRoutes, renameWorkspaceTerminal, sendTerminalInput, toWorkspaceFileUri } from '../lib/terminal-manager.mjs';
+import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
@@ -49,6 +50,30 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(list[1].terminalId, 't-ext'); assert.equal(list[1].isExternal, true);
     const hangarOnlyList = await listWorkspaceTerminals({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', showExternalTerminals: false, rpcFn: mockRpc });
     assert.deepEqual(hangarOnlyList.map((t) => t.terminalId), ['t-match']);
+
+    // Projectless conversations (workspacePath: '') must never return terminals from projects or other conversations
+    const mockProjectlessRpc = async () => ({
+      terminals: [
+        { terminalId: 't-proj-a', pid: 1001, title: 'pwsh', projectId: 'file:///c:/proj/a', conversationId: 'hangar:conv-a' },
+        { terminalId: 't-proj-a-ext', pid: 1007, title: 'pwsh', projectId: '75a739a6-6915-4aab-a8c8-285c5439b4f0', workspaceUri: 'file:///C:/proj/a', conversationId: 'conv-a-other' },
+        { terminalId: 't-proj-b', pid: 1002, title: 'pwsh', workspaceUri: 'file:///c:/proj/b', conversationId: 'conv-b' },
+        { terminalId: 't-no-proj-other', pid: 1003, title: 'pwsh', conversationId: 'hangar:conv-other' },
+        { terminalId: 't-no-proj-other-ext', pid: 1008, title: 'pwsh', projectId: 'outside-of-project', conversationId: 'conv-other' },
+        { terminalId: 't-untagged', pid: 1004, title: 'pwsh' },
+        { terminalId: 't-no-proj-match', pid: 1005, title: 'pwsh', conversationId: 'hangar:conv-no-proj' },
+        { terminalId: 't-no-proj-ext', pid: 1006, title: 'pwsh', projectId: 'outside-of-project', conversationId: 'conv-no-proj' },
+      ],
+    });
+    const noProjMatch = await listWorkspaceTerminals({ workspacePath: '', conversationId: 'conv-no-proj', rpcFn: mockProjectlessRpc });
+    assert.deepEqual(noProjMatch.map((t) => t.terminalId), ['t-no-proj-match', 't-no-proj-ext']);
+    assert.equal(noProjMatch[1].isExternal, true);
+    assert.equal(noProjMatch[1].workspaceUri, '');
+    const noProjNew = await listWorkspaceTerminals({ workspacePath: '', conversationId: '_new', rpcFn: mockProjectlessRpc });
+    assert.deepEqual(noProjNew, []);
+    const noProjEmpty = await listWorkspaceTerminals({ workspacePath: '', conversationId: '', rpcFn: mockProjectlessRpc });
+    assert.deepEqual(noProjEmpty, []);
+    const projAList = await listWorkspaceTerminals({ workspacePath: 'c:/proj/a', conversationId: 'conv-a', rpcFn: mockProjectlessRpc });
+    assert.deepEqual(projAList.map((t) => t.terminalId), ['t-proj-a', 't-proj-a-ext', 't-untagged']);
   });
 
   it('creates a terminal, streams 5-byte Connect output, chains inputOffset acks, renames, and closes cleanly', async () => {
@@ -383,6 +408,19 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.deepEqual(Array.from(groups[0].paneIds), ['t2', 't1']);
     groups = windowObj.Hangar.applyTerminalDrop(groups, { kind: 'pane', terminalId: 't2', groupId: 't1' }, { zone: 'strip', index: 1 }).groups;
     assert.deepEqual(Array.from(groups, (g) => g.groupId), ['t1', 't2', 't3']);
+    // Regression: drag tab1 into tab2 (groupId 't2', paneIds ['t1', 't2']), then detach tab2 ('t2') back to strip
+    let splitIntoT2 = windowObj.Hangar.applyTerminalDrop(
+      [{ groupId: 't1', paneIds: ['t1'], focusedPaneId: 't1' }, { groupId: 't2', paneIds: ['t2'], focusedPaneId: 't2' }],
+      { kind: 'tab', groupId: 't1', terminalId: 't1' },
+      { zone: 'pane', targetGroupId: 't2', targetPaneId: 't2', side: 'left' }
+    ).groups;
+    assert.deepEqual(Array.from(splitIntoT2[0].paneIds), ['t1', 't2']);
+    let unsplitT2 = windowObj.Hangar.applyTerminalDrop(
+      splitIntoT2,
+      { kind: 'pane', groupId: 't2', terminalId: 't2' },
+      { zone: 'strip', index: 1 }
+    ).groups;
+    assert.deepEqual(Array.from(unsplitT2, (g) => `${g.groupId}:${g.paneIds.join(',')}`), ['t1:t1', 't2:t2']);
     groups = windowObj.Hangar.applyTerminalDrop(groups, { kind: 'tab', groupId: 't3', terminalId: 't3' }, { zone: 'pane', targetGroupId: 't1', targetPaneId: 't1', side: 'right' }).groups;
     assert.deepEqual(Array.from(groups[0].paneIds), ['t1', 't3']);
 
@@ -414,6 +452,43 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(p1.classList.contains('is-dragging-source') && p2.style.transform === 'translateX(-64px)');
     p1.emit('pointerup', { pointerId: 1, clientX: 105, clientY: 15 });
     assert.deepEqual(JSON.parse(JSON.stringify(droppedTarget)), { zone: 'strip', index: 2 });
+    // Regression: dragging a split pane header (kind: 'pane', draggedIndex === -1) must not shift strip tabs negative when out of rail, must shift addBtn right by 1 slot when hovering any strip slot (including outermost last slot), and must drop at exact hovered slot
+    const p3 = makeEl({ left: 128, right: 188, top: 4, bottom: 26, width: 60, height: 22 });
+    const addBtn = makeEl({ left: 192, right: 214, top: 4, bottom: 26, width: 22, height: 22 });
+    addBtn.className = 'agy-tab-add-btn';
+    addBtn.dataset.role = 'term-add-tab';
+    const paneHeaderEl = makeEl({ left: 0, right: 275, top: 34, bottom: 60, width: 275, height: 26 });
+    stripEl.querySelectorAll = () => [p1, p2, p3];
+    stripEl.querySelector = () => addBtn;
+    let paneDroppedTarget = null;
+    windowObj.Hangar.bindTermPointerDrag(paneHeaderEl, {
+      kind: 'pane',
+      groupId: 't4',
+      terminalId: 't3',
+      instanceTabId: '__terminal__',
+      sessionsEl: stripEl,
+      onSameInstanceDrop: (_d, tgt) => { paneDroppedTarget = tgt; },
+    });
+    paneHeaderEl.emit('pointerdown', { button: 0, pointerId: 2, clientX: 80, clientY: 45 });
+    paneHeaderEl.emit('pointermove', { pointerId: 2, clientX: 110, clientY: 120 });
+    assert.deepEqual([p1.style.transform, p2.style.transform, p3.style.transform, addBtn.style.transform], ['', '', '', '']);
+    paneHeaderEl.emit('pointermove', { pointerId: 2, clientX: 195, clientY: 15 });
+    assert.deepEqual([p1.style.transform, p2.style.transform, p3.style.transform, addBtn.style.transform], ['', '', '', 'translateX(64px)']);
+    paneHeaderEl.emit('pointermove', { pointerId: 2, clientX: 140, clientY: 15 });
+    assert.deepEqual([p1.style.transform, p2.style.transform, p3.style.transform, addBtn.style.transform], ['', '', 'translateX(64px)', 'translateX(64px)']);
+    paneHeaderEl.emit('pointerup', { pointerId: 2, clientX: 140, clientY: 15 });
+    assert.equal(addBtn.style.transform, '');
+    assert.deepEqual(JSON.parse(JSON.stringify(paneDroppedTarget)), { zone: 'strip', index: 2 });
+    const unsplitFour = windowObj.Hangar.applyTerminalDrop(
+      [
+        { groupId: 't1', paneIds: ['t1'], focusedPaneId: 't1' },
+        { groupId: 't2', paneIds: ['t2'], focusedPaneId: 't2' },
+        { groupId: 't4', paneIds: ['t3', 't4'], focusedPaneId: 't3' },
+      ],
+      { kind: 'pane', groupId: 't4', terminalId: 't3' },
+      paneDroppedTarget
+    ).groups;
+    assert.deepEqual(Array.from(unsplitFour, (g) => `${g.groupId}:${g.paneIds.join(',')}`), ['t1:t1', 't2:t2', 't3:t3', 't4:t4']);
     windowObj.Hangar.saveEngineMode('jetbox'); windowObj.Hangar.saveTabGroups('__terminal__', []);
     windowObj.Hangar.renderTerminalSlots({ topTermEl: makeEl(), bottomTermEl: makeEl(), topSlotId: '__terminal__', bottomSlotId: '', splitEnabled: false, terminals: [], workspacePath: 'C:\\repo' });
     assert.equal(apiCalls.filter((c) => c.path === '/api/terminal/create').length, 0);
@@ -573,6 +648,38 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     scRenameInp.emit('blur', {});
     const secondCid = windowObj.Hangar.getSideChatState().threads[1].cascadeId;
     assert.equal(windowObj.Hangar.readCustomSideChatTitles()[secondCid], 'Bug Triage Chat');
+    // Issue #2: foreign-nav state ("Back to Side Chat" button) must persist per thread across tab switches
+    for (const fn of winListeners.message || []) {
+      fn({
+        source: bgFrameWin,
+        data: {
+          type: 'hangar-sidechat-foreign-nav',
+          payload: { cascadeId: 'subagent-full-1', expectedCascadeId: firstCid, active: true },
+        },
+      });
+    }
+    // Active thread is currently secondCid, so backBtn stays hidden on secondCid
+    assert.equal(composer._els.backBtn.classList.contains('hidden'), true);
+    // Switch to firstCid -> backBtn must appear because firstCid is in Full View foreign-nav
+    composer._syncThreadsUi(firstCid, null);
+    assert.equal(composer._els.backBtn.classList.contains('hidden'), false);
+    // Switch back to secondCid -> backBtn must hide
+    composer._syncThreadsUi(secondCid, null);
+    assert.equal(composer._els.backBtn.classList.contains('hidden'), true);
+    // Switch back to firstCid -> backBtn must reappear, and clicking native breadcrumb (active: false) hides it
+    composer._syncThreadsUi(firstCid, null);
+    assert.equal(composer._els.backBtn.classList.contains('hidden'), false);
+    for (const fn of winListeners.message || []) {
+      fn({
+        source: bgFrameWin,
+        data: {
+          type: 'hangar-sidechat-foreign-nav',
+          payload: { cascadeId: firstCid, expectedCascadeId: firstCid, active: false },
+        },
+      });
+    }
+    assert.equal(composer._els.backBtn.classList.contains('hidden'), true);
+    composer._syncThreadsUi(secondCid, null);
     composer._els.popoutBtn.emit('click', { stopPropagation() {} });
     assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), true);
     const savedSideChatState = windowObj.Hangar.serializeSideChatState();
@@ -678,6 +785,20 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
     const otherProjPart = freshWin.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { tabOrder: ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__sidechat__'] }, []);
     assert.deepEqual(Array.from(otherProjPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__extensions__']);
+
+    // Projectless conversation (workspacePath === '') must not inherit global/last-project sideChatState or popped sidechat__ tabs
+    freshWin.Hangar.hydrateSideChatStateFromLayout(
+      {
+        sideChatState: savedSideChatState,
+        sideChatStateByWorkspace: { 'c:/users/arthu/ideaprojects/antigravity-hangar': savedSideChatState },
+        tabOrder: ['__sidechat__', `sidechat__${secondCid}`, 'sidechat__sc-popped-9'],
+      },
+      '',
+      'conv-without-project'
+    );
+    assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
+    assert.equal(freshWin.Hangar.getSideChatState().threads.length, 0);
+    assert.equal(freshWin.Hangar.getPoppedSideChatIds().size, 0);
   });
 
   it('forks tool-enabled SIDE_QUESTION cascades, streams AgentStateUpdates, and injects @terminal mentions into jetbox-chat', async () => {
@@ -1163,5 +1284,589 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       if (t.ms === 40) t.fn();
     }
     assert.equal(editorEvents.some((e) => e.type === 'keydown' && e.key === 'Enter'), true, 'must auto-submit Enter once model and trajectory chunk are ready');
+  });
+
+  it('evicts acknowledged chunks in pollChatStream, enforces a 2MB unconsumed byte cap, and preserves seq continuity after idle eviction', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59998';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf-tok';
+    try {
+      let streamCtrl = null;
+      const mockFetch = async () => ({
+        ok: true,
+        body: new ReadableStream({
+          start(c) {
+            streamCtrl = c;
+          },
+        }),
+      });
+      pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 0, fetchFn: mockFetch });
+      await new Promise((r) => setTimeout(r, 10));
+      assert.ok(streamCtrl, 'StreamAgentStateUpdates must open');
+
+      // Enqueue 3 frames
+      streamCtrl.enqueue(encodeConnectFrame({ step: 1, pad: 'a'.repeat(1024) }));
+      streamCtrl.enqueue(encodeConnectFrame({ step: 2, pad: 'b'.repeat(1024) }));
+      streamCtrl.enqueue(encodeConnectFrame({ step: 3, pad: 'c'.repeat(1024) }));
+      await new Promise((r) => setTimeout(r, 15));
+
+      const firstPoll = pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 0, fetchFn: mockFetch });
+      assert.deepEqual(firstPoll.chunks.map((c) => c.seq), [1, 2, 3]);
+
+      // Subscriber acknowledges up to seq 2 -> chunks 1 and 2 must be evicted from memory
+      const secondPoll = pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 2, fetchFn: mockFetch });
+      assert.deepEqual(secondPoll.chunks.map((c) => c.seq), [3]);
+
+      const checkRetained = pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 0, fetchFn: mockFetch });
+      assert.deepEqual(
+        checkRetained.chunks.map((c) => c.seq),
+        [3],
+        'acknowledged chunks (seq <= 2) must be removed from entry.chunks so they do not accumulate in RAM'
+      );
+
+      // Push five 600KB frames (~3MB total) without acknowledging -> older frames must be evicted to stay <= 2MB
+      const bigPad = 'x'.repeat(600 * 1024);
+      for (let i = 4; i <= 8; i++) {
+        streamCtrl.enqueue(encodeConnectFrame({ step: i, pad: bigPad }));
+      }
+      await new Promise((r) => setTimeout(r, 20));
+      const cappedPoll = pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 0, fetchFn: mockFetch });
+      const totalRetainedBytes = JSON.stringify(cappedPoll.chunks).length;
+      assert.ok(
+        totalRetainedBytes <= 2.2 * 1024 * 1024,
+        `unconsumed chat stream buffer must be capped near 2MB, got ${totalRetainedBytes} bytes`
+      );
+      assert.equal(cappedPoll.chunks.at(-1).seq, 8, 'newest chunk must always be preserved');
+
+      // Evict stale stream, then reconnect with afterSeq: 8 -> next frame must receive seq 9 (> 8)
+      evictStaleChatStreams(Date.now() + 300_000, 120_000);
+      pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 8, fetchFn: mockFetch });
+      await new Promise((r) => setTimeout(r, 10));
+      streamCtrl.enqueue(encodeConnectFrame({ step: 9 }));
+      await new Promise((r) => setTimeout(r, 15));
+      const afterReconnect = pollChatStream({ conversationId: 'conv-ack-evict', subscriberId: 'sub-1', afterSeq: 8, fetchFn: mockFetch });
+      assert.deepEqual(
+        afterReconnect.chunks.map((c) => c.seq),
+        [9],
+        'reconnected stream after idle eviction must initialize seq from afterSeq so frame 9 is not dropped'
+      );
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+  });
+
+  it('pauses chat-poll and summaries polling while hidden, wakes immediately on hangar-jetbox-shown, and diffs trajectorySummaries', async () => {
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'side-cascade-vis-diff', hostTheme: 'dark', csrfToken: 'csrf', uiToken: 'tok' });
+    const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const winListeners = {};
+    const fetchCalls = [];
+    let currentSummaries = {
+      'conv-1': { summary: 'Alpha', stepCount: 10, lastModifiedTime: '2026-11-06T05:00:00Z', status: 1 },
+      'conv-2': { summary: 'Beta', stepCount: 4, lastModifiedTime: '2026-11-06T05:01:00Z', status: 1 },
+      'sub-1': {
+        summary: 'Subagent Task',
+        stepCount: 2,
+        lastModifiedTime: '2026-11-06T05:02:00Z',
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        trajectoryMetadata: {
+          parentConversationId: 'conv-1',
+          subagentInfo: { displayName: 'Codebase Researcher' },
+        },
+      },
+    };
+    let chatSeq = 0;
+    const timers = [];
+    const parentPosts = [];
+    const removedDocAttrs = [];
+    const chatWin = {
+      innerWidth: 900,
+      navigator: { userAgent: 'Windows' },
+      localStorage: { setItem() {} },
+      history: { replaceState() {}, pushState() {} },
+      customElements: { get: () => false, define() {} },
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame() {},
+      Response: globalThis.Response,
+      fetch: async (url, init) => {
+        fetchCalls.push({ url, body: init?.body ? JSON.parse(init.body) : null });
+        if (url === '/api/terminal/chat-poll') {
+          chatSeq += 1;
+          return {
+            json: async () => ({
+              chunks: chatSeq === 1 ? [{ seq: 1, frameData: { update: { status: 1 } } }] : [],
+              closed: false,
+            }),
+          };
+        }
+        if (url === '/api/terminal/ls-rpc') {
+          return {
+            json: async () => ({ trajectorySummaries: JSON.parse(JSON.stringify(currentSummaries)) }),
+          };
+        }
+        return { json: async () => ({}) };
+      },
+      location: { origin: 'http://localhost:54824', pathname: '/c/side-cascade-vis-diff' },
+      parent: { postMessage: (msg) => parentPosts.push(msg) },
+      addEventListener: (ev, fn) => { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+      dispatchEvent() {},
+    };
+    const chatDoc = {
+      hidden: false,
+      documentElement: {
+        style: { setProperty() {} },
+        setAttribute: (attr, val) => { chatDoc._attrs = chatDoc._attrs || new Map(); chatDoc._attrs.set(attr, val); },
+        removeAttribute: (attr) => { chatDoc._attrs?.delete(attr); removedDocAttrs.push(attr); },
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    vm.runInContext(
+      chatScript,
+      vm.createContext({
+        window: chatWin,
+        document: chatDoc,
+        navigator: chatWin.navigator,
+        localStorage: chatWin.localStorage,
+        history: chatWin.history,
+        URL, TextEncoder, TextDecoder, Uint8Array, DataView, ReadableStream, JSON, Math, Object, String, Boolean, Number, Map, Set, Date, encodeURIComponent,
+        setTimeout: (fn, ms) => {
+          const item = { fn, ms, cleared: false };
+          timers.push(item);
+          return item;
+        },
+        clearTimeout: (item) => {
+          if (item && typeof item === 'object') item.cleared = true;
+        },
+      })
+    );
+
+    const flushTimers = async (matchMs) => {
+      const batch = timers.splice(0, timers.length).filter((t) => !t.cleared && (matchMs === undefined || t.ms === matchMs));
+      for (const t of batch) {
+        await t.fn();
+      }
+      for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+    };
+
+    // Start both StreamAgentStateUpdates and JetboxSubscribeToSummaries
+    const chatStreamRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/StreamAgentStateUpdates', {
+      body: new TextEncoder().encode(JSON.stringify({ conversationId: 'side-cascade-vis-diff' })),
+    });
+    const chatReader = chatStreamRes.body.getReader();
+    await chatReader.read();
+
+    // Non-local JetboxSubscribeToSummaries backends (Cloud=2, Enterprise=3) must return an idle stream without polling
+    const cloudCallsBefore = fetchCalls.length;
+    const cloudSumRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/JetboxSubscribeToSummaries', {
+      body: new TextEncoder().encode(JSON.stringify({ backend: 2 })),
+    });
+    let cloudResolved = false;
+    cloudSumRes.body.getReader().read().then(() => {
+      cloudResolved = true;
+    });
+    for (let i = 0; i < 4; i++) await new Promise((r) => setImmediate(r));
+    assert.equal(cloudResolved, false);
+    assert.equal(fetchCalls.length, cloudCallsBefore, 'Cloud/Enterprise summary stream must not poll GetAllCascadeTrajectories');
+
+    const sumStreamRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/JetboxSubscribeToSummaries', {
+      body: new TextEncoder().encode(JSON.stringify({ backend: 1 })),
+    });
+    const sumReader = sumStreamRes.body.getReader();
+    const firstSumChunk = await sumReader.read();
+    const firstSumFrames = parseConnectFrames(Buffer.from(firstSumChunk.value)).frames;
+    assert.equal(firstSumFrames.length, 1);
+    assert.deepEqual(Object.keys(firstSumFrames[0].data.updates), ['conv-1', 'conv-2', 'sub-1']);
+    assert.equal(
+      firstSumFrames[0].data.updates['sub-1'].notFullyIdle,
+      true,
+      'running subagent must have notFullyIdle=true synthesized so jetbox-main IC() and hideIdle=true do not filter it out'
+    );
+    assert.equal(firstSumFrames[0].data.updates['conv-1'].hasRunningSubagents, true);
+    assert.equal(firstSumFrames[0].data.updates['conv-1'].hasActiveChildren, true);
+    assert.equal(firstSumFrames[0].data.updates['conv-1'].notFullyIdle, true);
+    assert.equal(firstSumFrames[0].data.updates['conv-2'].notFullyIdle, false);
+
+    // Second summaries poll with identical data must NOT enqueue a duplicate frame
+    let secondReadResolved = false;
+    const secondReadProm = sumReader.read().then((res) => {
+      secondReadResolved = true;
+      return res;
+    });
+    await flushTimers();
+    assert.equal(secondReadResolved, false, 'unchanged trajectorySummaries must not enqueue a redundant Connect frame');
+
+    // Transition sub-1 to IDLE -> both sub-1 and parent conv-1 must be emitted in updates with notFullyIdle=false
+    currentSummaries['sub-1'].status = 'CASCADE_RUN_STATUS_IDLE';
+    await flushTimers();
+    assert.equal(secondReadResolved, true, 'subagent status transition must enqueue a Connect frame');
+    const secondSumChunk = await secondReadProm;
+    const secondSumFrames = parseConnectFrames(Buffer.from(secondSumChunk.value)).frames;
+    assert.deepEqual(
+      Object.keys(secondSumFrames[0].data.updates),
+      ['conv-1', 'sub-1'],
+      'both parent and child summaries must update when subagent finishes running'
+    );
+    assert.equal(secondSumFrames[0].data.updates['sub-1'].notFullyIdle, false);
+    assert.equal(secondSumFrames[0].data.updates['conv-1'].hasRunningSubagents, false);
+    assert.equal(secondSumFrames[0].data.updates['conv-1'].notFullyIdle, false);
+
+    // Clicking a subagent node inside overview-panel must clear data-hangar-overview and notify parent toolbar
+    for (const fn of winListeners.click || []) {
+      fn({
+        target: {
+          getAttribute: () => 'subagent-node',
+          closest: (sel) => (sel.includes('overview-panel') || sel.includes('subagent-node') ? {} : null),
+        },
+      });
+    }
+    assert.ok(removedDocAttrs.includes('data-hangar-overview'));
+    assert.ok(
+      parentPosts.some(
+        (m) => m?.type === 'hangar-sidechat-overview-state' && m.payload?.cascadeId === 'side-cascade-vis-diff' && m.payload?.open === false
+      )
+    );
+
+    // Issue #1: Opening a subagent in the Aux Side Panel (pathname is still /c/side-cascade-vis-diff) must NOT trigger hangar-sidechat-foreign-nav
+    const subAuxRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/StreamAgentStateUpdates', {
+      body: new TextEncoder().encode(JSON.stringify({ conversationId: 'sub-1' })),
+    });
+    await subAuxRes.body.cancel();
+    assert.equal(
+      parentPosts.some((m) => m?.type === 'hangar-sidechat-foreign-nav'),
+      false,
+      'Aux Pane subagent stream must not fire hangar-sidechat-foreign-nav while pathname is still the root Side Chat'
+    );
+    assert.equal(chatDoc._attrs?.get('data-hangar-foreign-nav'), undefined);
+
+    // Issue #3 & Breadcrumbs: Opening Overview Panel and promoting subagent to Full View (/c/sub-1) must set data-hangar-foreign-nav="true", post hangar-sidechat-foreign-nav (active: true), and auto-close Overview Panel
+    for (const fn of winListeners.message || []) {
+      fn({ source: chatWin.parent, origin: 'http://localhost:54824', data: { type: 'hangar-sidechat-toggle-overview', open: true } });
+    }
+    assert.equal(chatDoc._attrs?.get('data-hangar-overview'), 'open');
+    parentPosts.length = 0;
+    chatWin.history.pushState(null, '', '/c/sub-1');
+    assert.equal(chatDoc._attrs?.get('data-hangar-foreign-nav'), 'true', 'Full View promotion must unhide native breadcrumbs via data-hangar-foreign-nav="true"');
+    assert.equal(chatDoc._attrs?.has('data-hangar-overview'), false, 'Full View promotion must clear data-hangar-overview');
+    assert.ok(
+      parentPosts.some(
+        (m) => m?.type === 'hangar-sidechat-foreign-nav' && m.payload?.cascadeId === 'sub-1' && m.payload?.expectedCascadeId === 'side-cascade-vis-diff' && m.payload?.active === true
+      )
+    );
+    assert.ok(
+      parentPosts.some(
+        (m) => m?.type === 'hangar-sidechat-overview-state' && m.payload?.cascadeId === 'side-cascade-vis-diff' && m.payload?.open === false
+      ),
+      'Full View promotion must notify parent toolbar that Overview Panel closed'
+    );
+
+    // Navigating back to parent via native breadcrumb (/c/side-cascade-vis-diff) must clear data-hangar-foreign-nav and post active: false
+    parentPosts.length = 0;
+    chatWin.history.pushState(null, '', '/c/side-cascade-vis-diff');
+    assert.equal(chatDoc._attrs?.has('data-hangar-foreign-nav'), false);
+    assert.ok(
+      parentPosts.some(
+        (m) => m?.type === 'hangar-sidechat-foreign-nav' && m.payload?.expectedCascadeId === 'side-cascade-vis-diff' && m.payload?.active === false
+      )
+    );
+
+    // Hide Jetbox pane -> neither chat-poll nor GetAllCascadeTrajectories should be called while hidden
+    for (const fn of winListeners.message || []) {
+      fn({ source: chatWin.parent, origin: 'http://localhost:54824', data: { type: 'hangar-jetbox-hidden' } });
+    }
+    const callsBeforeHiddenTicks = fetchCalls.length;
+    await flushTimers();
+    await flushTimers();
+    assert.equal(
+      fetchCalls.length,
+      callsBeforeHiddenTicks,
+      'hidden Jetbox iframe must not poll /api/terminal/chat-poll or GetAllCascadeTrajectories'
+    );
+
+    // Show Jetbox pane -> immediately wakes without waiting for timer expiry
+    for (const fn of winListeners.message || []) {
+      fn({ source: chatWin.parent, origin: 'http://localhost:54824', data: { type: 'hangar-jetbox-shown', focus: false } });
+    }
+    for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r));
+    assert.ok(
+      fetchCalls.length > callsBeforeHiddenTicks,
+      'hangar-jetbox-shown must wake paused streams immediately'
+    );
+  });
+
+  it('caps terminal scrollback at 256 KB by default without corrupting UTF-8 boundaries, supports maxScrollbackBytes override, and deduplicates stored chunk payloads', async () => {
+    assert.equal(DEFAULT_MAX_SCROLLBACK_BYTES, 262144);
+    assert.equal(DEFAULT_HANGAR_CONFIG.layout.maxScrollbackBytes, 262144);
+
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59999';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf';
+
+    // Construct 400 chunks (~1 KB each = ~400 KB total) containing multi-byte UTF-8 characters ('─' = 3 bytes)
+    const unit = '─'.repeat(340) + '\n'; // 340 * 3 + 1 = 1021 bytes per chunk
+    const frames = [];
+    for (let i = 0; i < 400; i++) {
+      const line = `[chunk-${String(i).padStart(3, '0')}]${unit}`;
+      frames.push(
+        encodeConnectFrame({
+          output: Buffer.from(line, 'utf8').toString('base64'),
+          isScrollback: i === 0,
+          ...(i === 0 ? { title: 'pwsh-scroll', cwd: 'C:\\repo' } : {}),
+        })
+      );
+    }
+    const streamPayload = Buffer.concat(frames);
+    const mockFetch = async () => ({
+      ok: true,
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(streamPayload);
+          c.close();
+        },
+      }),
+    });
+    const mockRpc = async (method, body) => {
+      if (method === 'CreateTerminal') return { terminal: { terminalId: 'term-scroll-cap-1', pid: 501, title: 'pwsh' } };
+      if (method === 'CloseTerminal') return {};
+      return { body };
+    };
+
+    try {
+      await createWorkspaceTerminal({
+        workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub',
+        conversationId: 'conv-scroll',
+        rpcFn: mockRpc,
+        fetchFn: mockFetch,
+      });
+      await new Promise((r) => setTimeout(r, 35));
+
+      const polled = pollTerminalOutput({ terminalId: 'term-scroll-cap-1', afterSeq: 0, fetchFn: mockFetch });
+      const combinedText = polled.chunks.map((c) => c.text).join('');
+      const totalBytes = Buffer.byteLength(combinedText, 'utf8');
+      assert.ok(
+        totalBytes <= DEFAULT_MAX_SCROLLBACK_BYTES,
+        `expected retained scrollback (${totalBytes} bytes) <= ${DEFAULT_MAX_SCROLLBACK_BYTES} bytes`
+      );
+      assert.ok(totalBytes > 200 * 1024, 'expected retained scrollback to keep ~256 KB of recent output');
+      assert.ok(!combinedText.includes('\ufffd'), 'UTF-8 truncation must not produce U+FFFD replacement characters');
+      assert.ok(combinedText.endsWith(`[chunk-399]${unit}`), 'newest output at tail must be preserved');
+      assert.ok(!combinedText.includes('[chunk-000]'), 'oldest chunks beyond 256 KB must be evicted');
+
+      // Verify outputBase64 and rawFrame are derived on read in pollTerminalOutput
+      for (const c of polled.chunks) {
+        assert.equal(Buffer.from(c.outputBase64, 'base64').toString('utf8'), c.text);
+        if (c.text) assert.equal(c.rawFrame.output, c.outputBase64);
+      }
+
+      // Verify custom maxScrollbackBytes override trims retained scrollback to <= 4096 bytes
+      const cappedPolled = pollTerminalOutput({
+        terminalId: 'term-scroll-cap-1',
+        afterSeq: 0,
+        maxScrollbackBytes: 4096,
+        fetchFn: mockFetch,
+      });
+      const cappedText = cappedPolled.chunks.map((c) => c.text).join('');
+      const cappedBytes = Buffer.byteLength(cappedText, 'utf8');
+      assert.ok(cappedBytes <= 4096, `expected custom cap (${cappedBytes} bytes) <= 4096 bytes`);
+      assert.ok(cappedBytes > 3000, 'expected custom cap to retain ~4 KB tail');
+      assert.ok(!cappedText.includes('\ufffd'), 'custom cap must not corrupt multi-byte UTF-8 characters');
+      assert.ok(cappedText.endsWith(`[chunk-399]${unit}`), 'custom cap must preserve newest chunk');
+
+      // Verify terminal-manager.mjs does not store outputBase64 or rawFrame inside entry.chunks
+      const tmSrc = readFileSync(join(REPO_ROOT, 'lib/terminal-manager.mjs'), 'utf8');
+      assert.ok(
+        !tmSrc.includes('entry.chunks.push({ seq: entry.seq, text, outputBase64') &&
+          !tmSrc.includes('entry.chunks.splice(0, 150, { seq: headSeq, text: mergedText, outputBase64'),
+        'entry.chunks must not store duplicate outputBase64/rawFrame copies at rest'
+      );
+
+      await closeWorkspaceTerminal({ terminalId: 'term-scroll-cap-1', rpcFn: mockRpc });
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+  });
+
+  it('forwards native initial*PageBounds and PROD_UI verbosity, handles >16 MiB frames with zero-parse rawJson passthrough, and proxies /symbols-icons SVGs', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59997';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf-tok';
+    try {
+      let capturedUpstreamBody = null;
+      const hugeJson = JSON.stringify({ stepCount: 1157, blob: 'z'.repeat(18 * 1024 * 1024) });
+      const hugeFrame = encodeConnectFrame(hugeJson, 0);
+      const deltaFrame = encodeConnectFrame({ status: 2 }, 0);
+      const mockFetch = async (_url, init) => {
+        capturedUpstreamBody = parseConnectFrames(Buffer.from(init.body)).frames[0]?.data;
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(c) {
+              c.enqueue(hugeFrame.subarray(0, 6 * 1024 * 1024));
+              c.enqueue(hugeFrame.subarray(6 * 1024 * 1024));
+              c.enqueue(deltaFrame);
+              c.close();
+            },
+          }),
+        };
+      };
+
+      pollChatStream({
+        conversationId: '08a812ff-b19e-4ca6-9721-e7a71876f02d',
+        subscriberId: 'sub-big-1',
+        trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI',
+        initialStepsPageBounds: { startIndex: -50 },
+        initialGeneratorMetadatasPageBounds: { startIndex: -1 },
+        initialExecutorMetadatasPageBounds: { startIndex: 0, endIndexExclusive: 0 },
+        enableLatencyTelemetry: false,
+        afterSeq: 0,
+        fetchFn: mockFetch,
+      });
+      await new Promise((r) => setTimeout(r, 35));
+
+      assert.deepEqual(capturedUpstreamBody, {
+        conversationId: '08a812ff-b19e-4ca6-9721-e7a71876f02d',
+        subscriberId: 'sub-big-1',
+        trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI',
+        initialStepsPageBounds: { startIndex: -50 },
+        initialGeneratorMetadatasPageBounds: { startIndex: -1 },
+        initialExecutorMetadatasPageBounds: { startIndex: 0, endIndexExclusive: 0 },
+        enableLatencyTelemetry: false,
+      });
+
+      const polled = pollChatStream({
+        conversationId: '08a812ff-b19e-4ca6-9721-e7a71876f02d',
+        subscriberId: 'sub-big-1',
+        afterSeq: 0,
+        fetchFn: mockFetch,
+      });
+      // Both seq 1 (18 MiB initial snapshot) and seq 2 (delta) must be retained before first ack
+      assert.deepEqual(polled.chunks.map((c) => c.seq), [1, 2]);
+      assert.equal(polled.chunks[0].rawJson.length, hugeJson.length);
+      assert.equal(Object.keys(polled.chunks[0]).includes('frameData'), false, 'frameData must be non-enumerable so JSON.stringify skips AST serialization');
+
+      // Verify createChatConnectStream in jetbox-bootstrap.js forwards initial*PageBounds and enqueues rawJson directly
+      const chatHtml = buildJetboxChatHtml({ cascadeId: '08a812ff-b19e-4ca6-9721-e7a71876f02d', hostTheme: 'dark', uiToken: 'tok' });
+      const chatScript = chatHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
+      let pollReqBody = null;
+      const chatWin = {
+        innerWidth: 900,
+        navigator: { userAgent: 'Windows' },
+        localStorage: { setItem() {} },
+        history: { replaceState() {}, pushState() {} },
+        customElements: { get: () => false, define() {} },
+        requestAnimationFrame: () => 1,
+        cancelAnimationFrame() {},
+        Response: globalThis.Response,
+        fetch: async (url, init) => {
+          if (url === '/api/terminal/chat-poll') {
+            pollReqBody = JSON.parse(init.body);
+            return {
+              json: async () => ({
+                chunks: [{ seq: 1, rawJson: '{"update":{"conversationId":"08a812ff-b19e-4ca6-9721-e7a71876f02d"}}' }],
+                closed: true,
+              }),
+            };
+          }
+          return { json: async () => ({}) };
+        },
+        location: { origin: 'http://localhost:54824', pathname: '/c/08a812ff-b19e-4ca6-9721-e7a71876f02d' },
+        parent: { postMessage() {} },
+        addEventListener() {},
+        dispatchEvent() {},
+      };
+      const chatDoc = {
+        hidden: false,
+        documentElement: { style: { setProperty() {} }, setAttribute() {}, removeAttribute() {} },
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        addEventListener() {},
+        removeEventListener() {},
+      };
+      vm.runInContext(
+        chatScript,
+        vm.createContext({
+          window: chatWin, document: chatDoc, navigator: chatWin.navigator, localStorage: chatWin.localStorage,
+          history: chatWin.history, URL, TextEncoder, TextDecoder, Uint8Array, DataView, ReadableStream, JSON, Math, Object, String, Boolean, Number, Map, Set, Date, encodeURIComponent, setTimeout, clearTimeout,
+        })
+      );
+      const streamRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/StreamAgentStateUpdates', {
+        body: encodeConnectFrame({
+          conversationId: '08a812ff-b19e-4ca6-9721-e7a71876f02d',
+          subscriberId: 'sub-ui-1',
+          trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI',
+          initialStepsPageBounds: { startIndex: -50 },
+          initialGeneratorMetadatasPageBounds: { startIndex: -1 },
+          initialExecutorMetadatasPageBounds: { startIndex: 0, endIndexExclusive: 0 },
+        }),
+      });
+      const reader = streamRes.body.getReader();
+      const firstRead = await reader.read();
+      assert.deepEqual(pollReqBody, {
+        conversationId: '08a812ff-b19e-4ca6-9721-e7a71876f02d',
+        subscriberId: 'sub-ui-1',
+        trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI',
+        initialStepsPageBounds: { startIndex: -50 },
+        initialGeneratorMetadatasPageBounds: { startIndex: -1 },
+        initialExecutorMetadatasPageBounds: { startIndex: 0, endIndexExclusive: 0 },
+        afterSeq: 0,
+      });
+      const decodedUiFrames = parseConnectFrames(Buffer.from(firstRead.value)).frames;
+      assert.equal(decodedUiFrames[0].data.update.conversationId, '08a812ff-b19e-4ca6-9721-e7a71876f02d');
+
+      // Verify /symbols-icons/* route proxies valid file/folder SVGs and blocks path traversal
+      const pages = new Map();
+      let requestHandler = null;
+      const fakeServer = {
+        listeners: () => [(_req, res) => { res.writeHead(404); res.end('fallback-404'); }],
+        removeAllListeners() {},
+        on: (ev, fn) => { if (ev === 'request') requestHandler = fn; },
+      };
+      const fakeApp = {
+        page: (p, fn) => pages.set(p, fn),
+        api() {},
+        run: async () => fakeServer,
+      };
+      registerTerminalRoutes(fakeApp, {
+        fetchFn: async (url) => ({
+          ok: url.endsWith('/symbols-icons/icons/files/js.svg'),
+          status: url.endsWith('/symbols-icons/icons/files/js.svg') ? 200 : 404,
+          arrayBuffer: async () => new TextEncoder().encode('<svg id="js-icon"></svg>').buffer,
+        }),
+      });
+      assert.ok(pages.has('/symbols-icons/*'));
+      const blockedIcon = await pages.get('/symbols-icons/*')('/symbols-icons/icons/files/../secret.svg');
+      assert.equal(blockedIcon.status, 404);
+
+      await fakeApp.run();
+      assert.equal(typeof requestHandler, 'function');
+      let iconStatus = 0;
+      let iconHeaders = null;
+      let iconBody = '';
+      await requestHandler(
+        { method: 'GET', url: '/symbols-icons/icons/files/js.svg' },
+        {
+          writeHead(st, hdrs) { iconStatus = st; iconHeaders = hdrs; },
+          end(b) { iconBody = Buffer.from(b).toString('utf8'); },
+        }
+      );
+      assert.equal(iconStatus, 200);
+      assert.equal(iconHeaders['Content-Type'], 'image/svg+xml; charset=utf-8');
+      assert.equal(iconBody, '<svg id="js-icon"></svg>');
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
   });
 });
