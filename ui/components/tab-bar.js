@@ -180,6 +180,7 @@
       targetId,
       isPoppedTerm,
       isPoppedSc,
+      displayName: sc.displayName,
       label: sc.displayName,
       icon,
       iconSize: sc.isTerminal || (sc.isVirtual && !sc.isSideChat) ? 16 : 15,
