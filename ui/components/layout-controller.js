@@ -337,27 +337,45 @@
       const pinned = new Set(state.layout.pinnedTabIds || []);
       const closed = new Set(state.layout.closedTabIds || []);
       if (action === 'toggle-pin' || action === 'reopen') {
+        if (!sidecarId) return;
         if (action === 'toggle-pin') {
           if (pinned.has(sidecarId)) {
             pinned.delete(sidecarId);
           } else {
             closed.delete(sidecarId);
             pinned.add(sidecarId);
+            if (sidecarId === ns.TERMINAL_TAB_ID) ns.setMainTerminalOpen?.(true);
+            if (sidecarId === ns.SIDECHAT_TAB_ID && ns._sc) ns._sc.isOpen = true;
           }
-        } else {
-          closed.delete(sidecarId);
-          state.layout.pinnedTopSidecarId = sidecarId;
-          if (sidecarId === ns.TERMINAL_TAB_ID) ns.setMainTerminalOpen?.(true);
-          if (sidecarId === ns.SIDECHAT_TAB_ID) {
+          Object.assign(state.layout, { pinnedTabIds: [...pinned], closedTabIds: [...closed] });
+          await renderAndSave({
+            pinnedTabIds: state.layout.pinnedTabIds,
+            closedTabIds: state.layout.closedTabIds,
+          });
+          return;
+        }
+        closed.delete(sidecarId);
+        Object.assign(state.layout, { pinnedTabIds: [...pinned], closedTabIds: [...closed] });
+        if (sidecarId === ns.TERMINAL_TAB_ID) {
+          ns.setMainTerminalOpen?.(true);
+          const mainTerms = ns.getInstanceTerminals?.(state.terminals, '') || [];
+          if (!mainTerms.length) {
+            const created = await createWorkspaceTerminal();
+            if (created?.terminalId) ns.setActiveGroupId?.(ns.TERMINAL_TAB_ID, created.terminalId);
+          }
+        }
+        if (sidecarId === ns.SIDECHAT_TAB_ID) {
+          if (ns._sc) ns._sc.isOpen = true;
+          const scList = ns.getInstanceSideChats?.() || [];
+          if (!scList.length) {
             ns.openTerminalQuoteComposer?.(els.mainViewport, {}, { conversationId: convId(), skipActivate: true });
           }
         }
-        Object.assign(state.layout, { pinnedTabIds: [...pinned], closedTabIds: [...closed] });
-        await renderAndSave({
-          pinnedTabIds: state.layout.pinnedTabIds,
-          closedTabIds: state.layout.closedTabIds,
-          ...(action === 'reopen' ? { pinnedTopSidecarId: sidecarId } : {}),
-        });
+        activateTabInPane(sidecarId, pane);
+        if (state.layout.splitViewEnabled) {
+          state.layout.pinnedTopSidecarId = part().activeTopId;
+        }
+        await renderAndSaveFull({ pinnedTabIds: state.layout.pinnedTabIds });
         return;
       }
       if (action === 'toggle-global') {

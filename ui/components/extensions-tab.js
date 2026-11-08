@@ -50,6 +50,16 @@
         await apiCall('/api/store/self-update', payload);
         await new Promise((r) => setTimeout(r, 600));
         await syncStore();
+        if (state.hangar?.updateAvailable !== false) {
+          const poll = setInterval(async () => {
+            await syncStore();
+            if (state.hangar?.updateAvailable === false) {
+              clearInterval(poll);
+              window.location?.reload?.();
+            }
+          }, 600);
+          setTimeout(() => clearInterval(poll), 10000).unref?.();
+        }
       },
       onManageSidecar: async (sidecarId, action) => {
         if (!apiCall) return;
@@ -394,13 +404,19 @@
             sha256: h.sha256 || '',
             version: h.latestVersion || 'latest',
           });
-          ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 13)}<span>Update Hangar</span>`);
+          if ((storeViewEl._lastOpts || opts)?.hangar?.updateAvailable === false) {
+            ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 13)}<span>Update Hangar</span>`);
+            selfUpBtn.disabled = false;
+            window.location?.reload?.();
+          } else {
+            ns.setHtml(selfUpBtn, ns.html`<span>Restarting Hangar…</span>`);
+          }
         } catch (err) {
           selfUpError.textContent = err?.message || 'Self-update failed';
           ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 13)}<span>Retry Update</span>`);
           selfUpError.classList.remove('hidden');
+          selfUpBtn.disabled = false;
         }
-        selfUpBtn.disabled = false;
       });
     }
     storeViewEl._lastOpts = opts;

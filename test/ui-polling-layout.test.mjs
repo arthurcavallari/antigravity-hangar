@@ -745,4 +745,174 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.ok(buildAgyUiJs('tabs').includes('bindGlobalTabCycleKeydown'));
     assert.ok(readFileSync(join(UI_DIR, 'index.html'), 'utf8').includes('aria-label="Resize top and bottom split panes"'));
   });
+
+  it('unhides Terminal from the overflow (...) menu and seeds native Onyx High Contrast & userSettings in jetbox-bootstrap', async () => {
+    const { parseHTML } = await import('linkedom');
+    const { buildAgyUiJs } = await import('antigravity-sidecar-kit/ui');
+    const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+    const { window, document, CustomEvent, HTMLElement, DocumentFragment, Node } = parseHTML(indexHtml);
+    window.CSS = { escape: (s) => String(s) };
+    window.requestAnimationFrame = (fn) => { fn(); return 1; };
+    const ctx = vm.createContext({
+      window, document, CustomEvent, HTMLElement, DocumentFragment, Node,
+      CSS: window.CSS, URLSearchParams, console, Date, setTimeout, clearTimeout,
+      requestAnimationFrame: window.requestAnimationFrame,
+    });
+    vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+    for (const rel of ['core.js', 'components/terminal-groups.js', 'components/sidechat-store.js', 'components/tab-bar.js', 'components/layout-controller.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+
+    const savedLayouts = [];
+    const createdTerminals = [];
+    const state = {
+      workspaceUris: ['file:///c%3A/Proj/One'],
+      activeWorkspace: { workspacePath: 'C:\\Proj\\One', workspaceName: 'One' },
+      sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+      terminals: [{ terminalId: 'term-1', title: 'pwsh.exe', isExternal: false }],
+      layout: {
+        pinnedTopSidecarId: 'context-monitor',
+        topSplitTabIds: ['context-monitor', '__terminal__'],
+        tabOrder: ['context-monitor', '__terminal__'],
+        closedTabIds: ['__terminal__'],
+        pinnedTabIds: ['context-monitor'],
+        splitViewEnabled: false,
+        terminalDisplayMode: 'tab',
+        extensionsDisplayMode: 'button',
+      },
+    };
+    const els = {
+      tabStrip: document.getElementById('tab-strip'),
+      topOverflowBtn: document.getElementById('top-overflow-btn'),
+      bottomTabBar: document.getElementById('bottom-tab-bar'),
+      bottomTabStrip: document.getElementById('bottom-tab-strip'),
+      bottomOverflowBtn: document.getElementById('bottom-overflow-btn'),
+      tabOverflowPopover: document.getElementById('tab-overflow-popover'),
+      terminalToggleBtn: document.getElementById('terminal-toggle-btn'),
+      extensionsToggleBtn: document.getElementById('extensions-toggle-btn'),
+      splitToggleBtn: document.getElementById('split-toggle-btn'),
+      splitDividerGroup: document.getElementById('split-divider-group'),
+    };
+    window.Hangar.setMainTerminalOpen(false);
+    window.Hangar.apiCall = async (path, body) => {
+      if (path === '/api/layout/update') {
+        savedLayouts.push(body);
+        return { ok: true, layout: { ...state.layout, ...body } };
+      }
+      if (path === '/api/terminal/create') {
+        createdTerminals.push(body);
+        return { ok: true, terminal: { terminalId: 'term-new', title: 'pwsh' } };
+      }
+      return {};
+    };
+    let renderCount = 0;
+    const renderAll = () => {
+      renderCount++;
+      window.Hangar.renderTabBar({
+        tabStripEl: els.tabStrip,
+        topOverflowBtnEl: els.topOverflowBtn,
+        bottomTabBarEl: els.bottomTabBar,
+        bottomTabStripEl: els.bottomTabStrip,
+        bottomOverflowBtnEl: els.bottomOverflowBtn,
+        tabOverflowPopoverEl: els.tabOverflowPopover,
+        terminalBtnEl: els.terminalToggleBtn,
+        extensionsBtnEl: els.extensionsToggleBtn,
+        splitBtnEl: els.splitToggleBtn,
+        sidecars: state.sidecars,
+        terminals: state.terminals,
+        layout: state.layout,
+        hasActiveWorkspace: true,
+        onContextAction: (payload) => ctrl.handleTabContextAction(payload),
+      });
+    };
+    const ctrl = window.Hangar.createLayoutController({
+      state,
+      els,
+      hangarConversationId: 'conv-1',
+      bumpLayoutSeq: () => 1,
+      getRenderedLists: () => ({ singleIds: ['context-monitor'], topIds: ['context-monitor'], bottomIds: [] }),
+      renderAll,
+      refreshHangarState: async () => {},
+    });
+    renderAll();
+
+    assert.equal(els.topOverflowBtn.classList.contains('hidden'), false, 'Overflow (...) button is visible when Terminal is hidden');
+    assert.match(els.topOverflowBtn.textContent, /1/);
+    els.topOverflowBtn.click();
+    const hiddenRow = els.tabOverflowPopover.querySelector('.agy-tab-overflow-item.is-hidden-tab');
+    assert.ok(hiddenRow, 'Hidden Terminal row is rendered in tabOverflowPopover');
+    assert.equal(hiddenRow.getAttribute('title'), 'Show Terminal');
+    assert.equal(hiddenRow.querySelector('.agy-tab-overflow-item-title')?.textContent, 'Terminal');
+    assert.equal(hiddenRow.querySelector('.agy-tab-overflow-restore')?.textContent, 'Show');
+
+    hiddenRow.click();
+    await flush();
+    assert.equal(state.layout.closedTabIds.includes('__terminal__'), false, 'Terminal removed from closedTabIds');
+    assert.equal(window.Hangar.isMainTerminalOpen(), true, 'Main terminal reopened');
+    assert.equal(state.layout.pinnedTopSidecarId, '__terminal__', 'Terminal tab activated upon Show');
+    assert.equal(savedLayouts.length >= 1, true);
+
+    // Verify jetbox-bootstrap seeds hostStorage, userSettings, and enable-new-themes Mendel flag
+    const msgListeners = [];
+    const jbWin = {
+      __HANGAR_JETBOX_PARAMS__: {
+        mode: 'chat',
+        cascadeId: 'chat-123',
+        safeTheme: 'dark',
+        hostStorage: { 'jetski.contrast': '2', 'theme-preset-dark': 'Default Dark', 'jetski.typeface': 'inter' },
+        userSettings: { autoExecutionPolicy: 3, nonWorkspaceFileAccessPolicy: 2 },
+      },
+      location: { origin: 'http://127.0.0.1:51000', pathname: '/c/chat-123' },
+      navigator: { userAgent: 'Windows' },
+      parent: { postMessage() {} },
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ flags: [{ keyString: 'some-flag', disabled: false }] }),
+        text: async () => JSON.stringify({ flags: [{ keyString: 'some-flag', disabled: false }] }),
+      }),
+      addEventListener: (type, fn) => {
+        if (type === 'message') msgListeners.push(fn);
+      },
+    };
+    const bodyAttrs = new Map([['data-agy-theme', 'onyx-dark'], ['data-agy-font', 'inter']]);
+    const rootStyles = new Map([['--secondary-foreground', '#EAEBF1']]);
+    const jbDoc = {
+      hidden: false,
+      body: {
+        hasAttribute: (k) => bodyAttrs.has(k),
+        style: { fontFamily: 'system-ui' },
+      },
+      documentElement: {
+        style: {
+          getPropertyValue: (k) => rootStyles.get(k) || '',
+          setProperty: (k, v) => rootStyles.set(k, v),
+        },
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const jbCtx = vm.createContext({
+      window: jbWin, document: jbDoc, navigator: jbWin.navigator,
+      URL, TextEncoder, TextDecoder, DataView, Uint8Array, ReadableStream, Response,
+      setTimeout: () => 0, clearTimeout: () => {},
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'jetbox/jetbox-bootstrap.js'), 'utf8'), jbCtx, { filename: 'jetbox-bootstrap.js' });
+
+    assert.equal(jbWin.localStorage.getItem('jetski.contrast'), '2');
+    assert.equal(jbWin.localStorage.getItem('theme-preset-dark'), 'Default Dark');
+    assert.equal(jbWin.localStorage.getItem('jetski.typeface'), 'inter');
+
+    // Protected root CSS properties when data-agy-theme / data-agy-font are active on body
+    for (const fn of msgListeners) {
+      fn({
+        source: jbWin.parent,
+        origin: 'http://127.0.0.1:51000',
+        data: { type: 'theme-change', payload: { cssVariables: { '--secondary-foreground': '#8e9199' } } },
+        stopImmediatePropagation() {},
+      });
+    }
+    assert.equal(rootStyles.get('--secondary-foreground'), '#EAEBF1');
+    assert.equal(jbDoc.body.style.fontFamily, '');
+  });
 });

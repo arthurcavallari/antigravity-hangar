@@ -309,6 +309,7 @@
         behavior: 'smooth',
       });
     }
+    return items;
   }
 
   ns.renderTabBar = function renderTabBar(props) {
@@ -372,11 +373,21 @@
       onDropIntoTerminal,
       onContextAction,
     };
-    const reopen = (sidecarId) => onContextAction?.({ action: 'reopen', sidecarId });
     const scrollFn = window.AgyUI?.setupStripScroll || ns.setupStripScroll;
     const syncStrip = (stripEl, overBtn, list, actId, pane, onClick) => {
-      populateStrip(stripEl, list, actId, { ...baseOpts, pane, splitEnabled, onClick });
-      scrollFn?.(stripEl, overBtn, () => list, onClick, tabOverflowPopoverEl, () => closedTabs, reopen);
+      const stripOpts = { ...baseOpts, pane, splitEnabled, onClick };
+      const items = populateStrip(stripEl, list, actId, stripOpts) || [];
+      const closedItems = (closedTabs || []).map((sc) => buildStripItem(sc, actId, stripOpts));
+      scrollFn?.(
+        stripEl,
+        overBtn,
+        () => items,
+        onClick,
+        tabOverflowPopoverEl,
+        () => closedItems,
+        (sidecarId) => onContextAction?.({ action: 'reopen', sidecarId, pane }),
+        { idDatasetKey: 'sidecarId' },
+      );
     };
     if (!splitEnabled) {
       bottomTabBarEl?.classList.add('hidden');

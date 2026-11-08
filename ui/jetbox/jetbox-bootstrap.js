@@ -86,6 +86,13 @@
   try {
     const rawLs = window.localStorage;
     const mem = new Map();
+    if (params.hostStorage && typeof params.hostStorage === 'object') {
+      for (const [k, v] of Object.entries(params.hostStorage)) {
+        if (v !== undefined && v !== null) {
+          mem.set(String(k), String(v));
+        }
+      }
+    }
     const isoLs = {
       getItem: (k) => (mem.has(String(k)) ? mem.get(String(k)) : (rawLs?.getItem?.(k) ?? null)),
       setItem: (k, v) => {
@@ -286,8 +293,16 @@
 
   let savedThemeVars = null;
   let currentTermTitle = '';
+  const clearPreloadFontOverride = () => {
+    if (document.body?.hasAttribute?.('data-agy-font') && document.body.style?.fontFamily) {
+      document.body.style.fontFamily = '';
+    }
+  };
+  document.addEventListener?.('DOMContentLoaded', () => setTimeout(clearPreloadFontOverride, 0));
   const applySavedTheme = () => {
+    clearPreloadFontOverride();
     if (!savedThemeVars || !document.documentElement) return;
+    if (document.body?.hasAttribute?.('data-agy-theme')) return;
     for (const [k, v] of Object.entries(savedThemeVars)) {
       if (v) {
         document.documentElement.style.setProperty(k, v);
@@ -345,9 +360,16 @@
   };
   const LS_PREFIX = '/exa.language_server_pb.LanguageServerService/';
   const GRPC_WEB_HEADERS = { 'Content-Type': 'application/grpc-web+json' };
+  const hostUserSettings =
+    params.userSettings && typeof params.userSettings === 'object' ? params.userSettings : {};
   const STATE_STUB = {
     appState: { agentOnboardingCompleted: 2 },
-    userConfig: { userSettings: { themeMode: safeTheme === 'light' ? 2 : 1 } },
+    userConfig: {
+      userSettings: {
+        ...hostUserSettings,
+        themeMode: safeTheme === 'light' ? 2 : 1,
+      },
+    },
   };
 
   function encodeConnectFrame(obj, flags = 0) {
@@ -734,9 +756,21 @@
           targetConversationId: effectiveCascadeId,
         }),
       });
-      const rpcPayload = await rpcRes.json().catch(() => ({}));
+      let rpcPayload = await rpcRes.json().catch(() => ({}));
       if (rpcRes.ok === false) {
         return new window.Response(encodeGrpcTrailer(2), { status: 200, headers: GRPC_WEB_HEADERS });
+      }
+      if (method === 'GetMendelFlags') {
+        const exps = Array.isArray(rpcPayload?.experimentConfig?.experiments)
+          ? [...rpcPayload.experimentConfig.experiments]
+          : [];
+        if (!exps.some((x) => x?.keyString === 'enable-new-themes')) {
+          exps.push({ keyString: 'enable-new-themes', disabled: false });
+        }
+        rpcPayload = {
+          ...rpcPayload,
+          experimentConfig: { ...(rpcPayload?.experimentConfig || {}), experiments: exps },
+        };
       }
       return makeGrpcUnaryResponse(rpcPayload);
     }
@@ -1050,6 +1084,7 @@
     if (e?.source === null || (e?.source !== undefined && e.source !== window.parent)) return;
     if (e?.origin !== undefined && e.origin !== window.location?.origin) return;
     if (e.data?.type === 'theme-change' && e.data?.payload?.cssVariables) {
+      e.stopImmediatePropagation?.();
       savedThemeVars = e.data.payload.cssVariables;
       applySavedTheme();
     } else if (e.data?.type === 'hangar-jetbox-shown') {

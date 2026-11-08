@@ -203,5 +203,50 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.equal(settingsBtn.getAttribute('aria-pressed'), 'false');
     assert.equal(settingsPane.classList.contains('hidden'), true);
     assert.equal(storeViewEl.querySelector('[data-role="pane-installed"]').classList.contains('hidden'), false);
+
+    // Self-update button stays in "Restarting Hangar…" disabled state while LS restart is in flight,
+    // and triggers window.location.reload() when updateAvailable clears
+    let selfUpdateCalls = 0;
+    let reloaded = 0;
+    window.location = { reload: () => { reloaded++; } };
+    const hangarState = {
+      installedVersion: '1.2.5',
+      latestVersion: '1.4.0',
+      updateAvailable: true,
+      gitRepo: 'https://github.com/arthurcavallari/antigravity-hangar',
+      tarballUrl: 'https://registry.npmjs.org/antigravity-hangar/-/antigravity-hangar-1.4.0.tgz',
+    };
+    window.Hangar.renderExtensionsTab({
+      storeViewEl,
+      sidecars,
+      hangar: hangarState,
+      onSelfUpdate: async () => {
+        selfUpdateCalls++;
+      },
+    });
+    const selfUpBtn = storeViewEl.querySelector('[data-role="hangar-self-update-btn"]');
+    assert.equal(storeViewEl.querySelector('[data-role="hangar-update-banner"]').classList.contains('hidden'), false);
+    selfUpBtn.click();
+    await flush();
+    assert.equal(selfUpdateCalls, 1);
+    assert.equal(selfUpBtn.disabled, true);
+    assert.match(selfUpBtn.textContent, /Restarting Hangar/);
+    assert.equal(reloaded, 0);
+
+    // When onSelfUpdate clears updateAvailable on the same origin, reload() is called
+    selfUpBtn.disabled = false;
+    window.Hangar.renderExtensionsTab({
+      storeViewEl,
+      sidecars,
+      hangar: hangarState,
+      onSelfUpdate: async () => {
+        selfUpdateCalls++;
+        hangarState.updateAvailable = false;
+      },
+    });
+    selfUpBtn.click();
+    await flush();
+    assert.equal(selfUpdateCalls, 2);
+    assert.equal(reloaded, 1);
   });
 });
