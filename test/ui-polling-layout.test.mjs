@@ -542,6 +542,8 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(pluginPaneSrc, /uninstallBtn\?\.focus\?\.\(\)/);
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
+    assert.match(mktPaneSrc, /aria-label="Filter by category"/);
+    assert.match(mktPaneSrc, /aria-label="Sideload workspace scope"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
     assert.match(mktPaneSrc, /aria-label="GitHub repository URL or owner\/repo"/);
     assert.match(mktPaneSrc, /emptyEl\.className = 'agy-empty-state'/);

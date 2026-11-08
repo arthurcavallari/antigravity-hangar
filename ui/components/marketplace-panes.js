@@ -261,7 +261,7 @@
               <span class="agy-search-icon">${ns.iconSvg('search', 14)}</span>
               <input type="search" data-role="discover-search" class="agy-search-input" aria-label="Search sidecars and plugins" placeholder="Search sidecars and plugins…" />
             </div>
-            <agy-toggle-group class="agy-toggle-group">${catButtons}</agy-toggle-group>
+            <agy-toggle-group class="agy-toggle-group" aria-label="Filter by category">${catButtons}</agy-toggle-group>
           </div>
           <div data-role="discover-list"></div>
         </div>
@@ -328,7 +328,7 @@
                 </div>
                 <div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group">
+              <agy-toggle-group class="agy-toggle-group" aria-label="Sideload workspace scope">
                 <button type="button" data-scope="project" class="agy-toggle-item">
                   ${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span>
                 </button>
