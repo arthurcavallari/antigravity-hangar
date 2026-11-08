@@ -63,6 +63,8 @@ describe('Hangar Extensions tab and Settings pane', () => {
           author: { name: 'Arthur Cavallari', verified: true },
           funding: 'https://github.com/sponsors/arthurcavallari',
           categories: ['telemetry'],
+          license: 'MIT',
+          homepage: 'https://github.com/arthurcavallari/antigravity-context-monitor',
         },
         {
           id: 'unfunded-pkg',
@@ -70,6 +72,7 @@ describe('Hangar Extensions tab and Settings pane', () => {
           latestVersion: '1.0.0',
           capabilityTier: 'TIER_1_TELEMETRY',
           funding: 'javascript:alert(1)',
+          homepage: 'javascript:alert(1)',
           categories: ['devops'],
         },
       ],
@@ -89,7 +92,16 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.equal(headerSponsor.getAttribute('target'), '_blank');
     assert.equal(storeViewEl.querySelectorAll('[data-subtab]').length, 3);
     storeViewEl.querySelector('[data-subtab="discover"]').click();
-    assert.equal(storeViewEl.querySelectorAll('[data-cat]').length, 4);
+    assert.equal(storeViewEl.querySelectorAll('[data-cat]').length, 5);
+    const cmDiscover = storeViewEl.querySelector('.agy-card[data-pkg-id="context-monitor"]');
+    assert.equal(cmDiscover.querySelector('[data-role="pkg-license"]').textContent, 'MIT');
+    const cmHomepage = cmDiscover.querySelector('[data-role="pkg-homepage"]');
+    assert.equal(cmHomepage.getAttribute('href'), 'https://github.com/arthurcavallari/antigravity-context-monitor');
+    assert.equal(cmHomepage.getAttribute('target'), '_blank');
+    assert.equal(cmHomepage.getAttribute('rel'), 'noopener noreferrer');
+    const unfundedDiscover = storeViewEl.querySelector('.agy-card[data-pkg-id="unfunded-pkg"]');
+    assert.equal(unfundedDiscover.querySelector('[data-role="pkg-homepage"]'), null);
+    assert.equal(unfundedDiscover.querySelector('[data-role="pkg-license"]'), null);
     const fundedCardSponsor = storeViewEl.querySelector('.agy-card[data-pkg-id="context-monitor"] [data-role="pkg-sponsor-link"]');
     assert.equal(fundedCardSponsor.classList.contains('hidden'), false);
     assert.equal(fundedCardSponsor.getAttribute('href'), 'https://github.com/sponsors/arthurcavallari');

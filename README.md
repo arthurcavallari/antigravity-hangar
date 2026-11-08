@@ -106,6 +106,8 @@ Any Antigravity sidecar repository (`sidecar.json`) works with Hangar out of the
 
 A `registry.json` entry without `kind` is a sidecar. A plugin entry sets `"kind": "plugin"`. A plugin from another tool also sets `port.from` (`claude`, `gemini`, `cursor`, `roo`, `codex` or `auto`) and pins the upstream repository with `release.ref`, a tag or a full commit SHA. Hangar never redistributes the upstream code: it clones the pinned commit, ports and audits it locally, then installs it with `agy plugin install`. `release.path` picks a subfolder, for monorepos.
 
+Any entry can set `license`, an SPDX id or expression, and `homepage`, an https URL. Discover shows the license next to the author, and links to the homepage as **Source**. For a port, point `homepage` at the upstream folder at the pinned commit, so it shows the code Hangar ports.
+
 ```json
 {
   "id": "core-workflows",
@@ -113,6 +115,8 @@ A `registry.json` entry without `kind` is a sidecar. A plugin entry sets `"kind"
   "name": "Core Workflows",
   "latestVersion": "1.0.0",
   "capabilityTier": "TIER_2_LOCAL_TOOLING",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/owner/repo/tree/0123456789abcdef0123456789abcdef01234567/plugins/core-workflows",
   "port": { "from": "claude" },
   "release": {
     "gitRepo": "https://github.com/owner/repo",

@@ -23,6 +23,8 @@ const PORT_SOURCES = new Set(['claude', 'gemini', 'cursor', 'roo', 'codex', 'aut
 // A tag, branch or full commit SHA. git can't fetch an abbreviated SHA, and a leading "-" would be an option.
 const GIT_REF = /^[A-Za-z0-9_][A-Za-z0-9_./-]*$/;
 const SHORT_SHA = /^[0-9a-f]{7,39}$/i;
+// An SPDX id, or a simple expression of ids joined by AND, OR or WITH ("MIT", "Apache-2.0 OR MIT")
+const SPDX = /^[A-Za-z0-9][A-Za-z0-9.+-]*(?: (?:AND|OR|WITH) [A-Za-z0-9][A-Za-z0-9.+-]*)*$/;
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
@@ -99,6 +101,10 @@ export function validateRegistry(registry, { packageVersion } = {}) {
     if (pkg.categories !== undefined && !(Array.isArray(pkg.categories) && pkg.categories.every(isNonEmptyString))) {
       errors.push(`${where}.categories must be an array of strings`);
     }
+    if (pkg.license !== undefined && !(typeof pkg.license === 'string' && SPDX.test(pkg.license))) {
+      errors.push(`${where}.license must be an SPDX license id or expression`);
+    }
+    if (pkg.homepage !== undefined && !isHttpsUrl(pkg.homepage)) errors.push(`${where}.homepage must be an https URL`);
     const files = pkg.workspaceTriggers?.files;
     if (files !== undefined) {
       const bad = Array.isArray(files) ? files.filter((f) => !isRelativeInside(f)) : [files];

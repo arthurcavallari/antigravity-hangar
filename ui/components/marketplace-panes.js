@@ -171,6 +171,8 @@
         (pkg.categories || []).join(', '),
         pkg.tagline || '',
         pkg.funding || '',
+        pkg.license || '',
+        pkg.homepage || '',
       ]);
       if (card.dataset.metaSig !== metaSig) {
         card.dataset.metaSig = metaSig;
@@ -186,6 +188,7 @@
             sponsorEl.setAttribute('aria-label', sponsorTitle);
           }
         }
+        const homepageUrl = ns.sanitizeHttpsUrl ? ns.sanitizeHttpsUrl(pkg.homepage) : '';
         const tierEl = card.querySelector('[data-role="pkg-tier"]');
         tierEl.className = `agy-badge ${tier.state}`;
         ns.setHtml(tierEl, ns.html`${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.label)}</span>`);
@@ -194,7 +197,8 @@
           card.querySelector('[data-role="pkg-meta"]'),
           ns.html`
             ${pkg.author?.verified ? ns.iconSvg('verified', 12) : ''}
-            <span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}</span>
+            <span>${ns.escHtml(pkg.author?.name || 'Community')} • v${ns.escHtml(pkg.latestVersion || '1.0.0')} • ${ns.escHtml((pkg.categories || []).join(', '))}${pkg.license ? ns.html` • <span data-role="pkg-license" title="License">${pkg.license}</span>` : ''}</span>
+            ${homepageUrl ? ns.html`<a data-role="pkg-homepage" href="${homepageUrl}" target="_blank" rel="noopener noreferrer" title="Open the source">Source</a>` : ''}
           `,
         );
         card.querySelector('[data-role="pkg-desc"]').textContent = pkg.tagline || '';
@@ -250,7 +254,7 @@
     paneEl._ctx = ctx;
     let shell = paneEl.querySelector('[data-role="discover-shell"]');
     if (!shell) {
-      const categories = ['all', 'telemetry', 'devops', 'productivity'];
+      const categories = ['all', 'telemetry', 'devops', 'productivity', 'security'];
       const catButtons = categories.map(
         (c) => ns.html`<button type="button" data-cat="${c}" class="agy-toggle-item">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`,
       );

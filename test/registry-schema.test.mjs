@@ -33,6 +33,20 @@ describe('registry.json validation', () => {
     assert.match(validateRegistry({ ...base, packages: [pkg, pkg] }).join('\n'), /duplicate/);
     assert.match(validateRegistry({ ...base, featuredIds: ['nope'] }).join('\n'), /unknown package "nope"/);
     assert.match(validateRegistry(base, { packageVersion: '9.9.9' }).join('\n'), /must match package\.json version/);
+    assert.match(errorsFor({ license: '' }), /license must be an SPDX/);
+    assert.match(errorsFor({ license: 'MIT <b>' }), /license must be an SPDX/);
+    assert.match(errorsFor({ license: ['MIT'] }), /license must be an SPDX/);
+    assert.match(errorsFor({ homepage: 'http://github.com/a/b' }), /homepage must be an https URL/);
+    assert.match(errorsFor({ homepage: 'javascript:alert(1)' }), /homepage must be an https URL/);
+  });
+
+  it('accepts an SPDX license and an https homepage', () => {
+    const base = read('registry.json');
+    const pkg = base.packages[0];
+    const homepage = 'https://github.com/acme/plugins/tree/main/x';
+    for (const license of ['MIT', 'Apache-2.0', 'CC-BY-SA-4.0', 'Apache-2.0 OR MIT', 'GPL-2.0-only WITH Classpath-exception-2.0']) {
+      assert.deepEqual(validateRegistry({ ...base, packages: [{ ...pkg, license, homepage }] }), [], license);
+    }
   });
 
   it('accepts plugin entries, including ports pinned to a ref, and reads a missing kind as a sidecar', () => {
