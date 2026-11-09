@@ -427,6 +427,7 @@ describe('Hangar plugin installer', () => {
       };
 
       const first = await runAutoUpdates(catalog(), opts);
+      assert.equal(first.pluginsHeld, false, 'no Hangar update pending, so plugins update');
       assert.equal(first.plugins[0].ok, false);
       const record = loadHangarConfig(box.configPath).plugins['review-port'];
       assert.equal(record.installedVersion, '1.2.0');
@@ -440,6 +441,45 @@ describe('Hangar plugin installer', () => {
 
       await installRemotePlugin({ ...portRequest(box, { version: '1.3.0', ref: 'v1.3.0' }), porter: fakePorter(), rpcFn: async () => ({}), execFn });
       assert.equal(loadHangarConfig(box.configPath).plugins['review-port'].updateError, undefined, 'a successful update clears it');
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('holds automatic plugin updates while Hangar itself has an update, so an older installer never replaces a plugin', async () => {
+    const box = sandbox();
+    try {
+      const execFn = fakeExec(box, CLAUDE_SOURCE);
+      await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
+      const cfg = loadHangarConfig(box.configPath);
+      cfg.layout.autoUpdate = true;
+      writeJsonNoBom(box.configPath, cfg);
+      const catalog = {
+        hangar: { updateAvailable: true, latestVersion: '9.9.9', tarballUrl: 'https://example.invalid/hangar-9.9.9.tgz', sha256: 'a'.repeat(64) },
+        packages: [{
+          id: 'review-port', kind: 'plugin', latestVersion: '1.3.0', updateAvailable: true, capabilityTier: 'TIER_2_LOCAL_TOOLING',
+          port: { from: 'claude' }, release: { gitRepo: 'https://github.com/acme/plugins', ref: 'v1.3.0', path: 'plugins/review' },
+        }],
+      };
+      const execCalls = [];
+      const downloads = [];
+      const res = await runAutoUpdates(catalog, {
+        configPath: box.configPath, packagesDir: box.packagesDir, pluginsDir: box.pluginsDir,
+        sidecarsDir: join(box.dir, 'sidecars'), agyConfigPath: join(box.dir, 'config.json'),
+        rpcFn: async () => ({}), porter: fakePorter(), delayMs: 1,
+        execFn: (cmd, args, opts) => { execCalls.push([cmd, ...args]); return execFn(cmd, args, opts); },
+        // The Hangar download fails here, so nothing is installed or restarted
+        fetchFn: async (url) => { downloads.push(String(url)); throw new Error('offline'); },
+      });
+
+      assert.equal(res.pluginsHeld, true);
+      assert.deepEqual(res.plugins, [], 'the plugin update waits for the updated Hangar');
+      assert.deepEqual(execCalls, [], 'no git clone, no agy run for the plugin');
+      assert.deepEqual(downloads, ['https://example.invalid/hangar-9.9.9.tgz'], 'Hangar still tries to update itself');
+      assert.equal(res.hangar.ok, false);
+      const record = loadHangarConfig(box.configPath).plugins['review-port'];
+      assert.equal(record.installedVersion, '1.2.0');
+      assert.equal(record.updateError, undefined, 'a held update is not a failed one');
     } finally {
       box.cleanup();
     }
