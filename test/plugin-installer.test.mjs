@@ -375,17 +375,37 @@ describe('Hangar plugin installer', () => {
     }
   });
 
-  it('uninstalls with agy plugin uninstall, since the Language Server refuses DeletePlugin to sidecars', async () => {
+  it('switches the plugin off, waits for its sidecars to stop, then uninstalls with agy, since the Language Server refuses DeletePlugin to sidecars', async () => {
     const box = sandbox();
     try {
       const execFn = fakeExec(box, CLAUDE_SOURCE);
       await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
+      const calls = [];
+      let paneStatus = 'SIDECAR_STATUS_RUNNING';
+      const rpcFn = async (method, body) => {
+        calls.push({ method, body });
+        if (method === 'ManageSidecar') setTimeout(() => { paneStatus = 'SIDECAR_STATUS_STOPPED'; }, 30);
+        if (method !== 'GetSidecars') return {};
+        return { sidecars: [
+          { sidecarId: 'review-port/pane', status: paneStatus },
+          { sidecarId: 'review-port-other/pane', status: 'SIDECAR_STATUS_RUNNING' },
+        ] };
+      };
       const execCalls = [];
       const res = await uninstallPlugin({
-        pluginId: 'review-port', ...box, execFn: (cmd, args, opts) => { execCalls.push({ cmd, args, opts }); execFn(cmd, args); },
+        pluginId: 'review-port', ...box, rpcFn, pollMs: 5,
+        execFn: (cmd, args, opts) => {
+          execCalls.push({ cmd, args, opts, paneStatus });
+          execFn(cmd, args);
+        },
       });
 
+      assert.deepEqual(calls[0], { method: 'JetboxWriteState', body: { userConfig: { plugins: { 'review-port': { enabled: false } } } } });
+      assert.deepEqual(calls.filter((c) => c.method === 'ManageSidecar').map((c) => c.body), [
+        { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'review-port/pane' },
+      ], "stops only this plugin's sidecars");
       assert.deepEqual(execCalls.map((c) => [c.cmd, ...c.args]), [['agy', 'plugin', 'uninstall', 'review-port']]);
+      assert.equal(execCalls[0].paneStatus, 'SIDECAR_STATUS_STOPPED', 'agy runs once the sidecar has stopped');
       assert.equal(execCalls[0].opts.input, 'y\n', 'answers the y/N prompt the user already answered in Hangar');
       assert.equal(res.method, 'agy');
       assert.equal(existsSync(join(box.pluginsDir, 'review-port')), false);
@@ -396,25 +416,36 @@ describe('Hangar plugin installer', () => {
     }
   });
 
-  it('keeps the record when agy fails or leaves the folder, deletes the folder itself without agy, and refuses plugins Hangar did not install', async () => {
+  it('retries agy while a folder is in use, keeps the record when agy fails or leaves the folder, deletes the folder itself without agy, and refuses plugins Hangar did not install', async () => {
     const box = sandbox();
     try {
-      await installRemotePlugin({
-        ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn: fakeExec(box, CLAUDE_SOURCE),
-      });
-      const failing = () => { throw Object.assign(new Error('exit 1'), { stderr: 'close the other Antigravity process and retry' }); };
-      await assert.rejects(uninstallPlugin({ pluginId: 'review-port', ...box, execFn: failing }), /agy plugin uninstall failed: close the other/);
-      await assert.rejects(uninstallPlugin({ pluginId: 'review-port', ...box, execFn: () => '' }), /is still there/);
+      const execFn = fakeExec(box, CLAUDE_SOURCE);
+      await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
+      const { rpcFn } = recordingRpc();
+      const opts = { pluginId: 'review-port', ...box, rpcFn, retryMs: 0 };
+      const inUse = () => { throw Object.assign(new Error('exit 1'), { stderr: 'plugin is in use by another process' }); };
+      let attempts = 0;
+      await assert.rejects(uninstallPlugin({ ...opts, execFn: () => { attempts++; inUse(); } }), /in use by another process/);
+      assert.equal(attempts, 3, 'gives up after three tries');
+
+      const failing = () => { throw Object.assign(new Error('exit 1'), { stderr: 'unknown error' }); };
+      await assert.rejects(uninstallPlugin({ ...opts, execFn: failing }), /agy plugin uninstall failed: unknown error/);
+      await assert.rejects(uninstallPlugin({ ...opts, execFn: () => '' }), /is still there/);
       assert.ok(loadHangarConfig(box.configPath).plugins['review-port'], 'a failed uninstall keeps the record, so it can be retried');
       assert.equal(existsSync(join(box.pluginsDir, 'review-port', 'plugin.json')), true);
 
+      attempts = 0;
+      const res = await uninstallPlugin({ ...opts, execFn: (cmd, args) => (++attempts === 1 ? inUse() : execFn(cmd, args)) });
+      assert.equal(res.method, 'agy', 'succeeds once the folder is free');
+      assert.equal(attempts, 2);
+
+      await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
       const noAgy = () => { throw Object.assign(new Error('spawn agy ENOENT'), { code: 'ENOENT' }); };
-      const res = await uninstallPlugin({ pluginId: 'review-port', ...box, execFn: noAgy });
-      assert.equal(res.method, 'removed');
+      assert.equal((await uninstallPlugin({ ...opts, execFn: noAgy })).method, 'removed');
       assert.equal(existsSync(join(box.pluginsDir, 'review-port')), false);
 
       writeTree(join(box.pluginsDir, 'theirs'), { 'plugin.json': '{"name":"theirs"}' });
-      await assert.rejects(uninstallPlugin({ pluginId: 'theirs', ...box, execFn: noAgy }), /Hangar didn't install the plugin "theirs"/);
+      await assert.rejects(uninstallPlugin({ ...opts, pluginId: 'theirs', execFn: noAgy }), /Hangar didn't install the plugin "theirs"/);
       assert.equal(existsSync(join(box.pluginsDir, 'theirs', 'plugin.json')), true);
     } finally {
       box.cleanup();
