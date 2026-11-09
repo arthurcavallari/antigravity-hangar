@@ -786,7 +786,7 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       });
 
       const rpcCalls = [];
-      const catalog = await fetchRegistry({
+      const registryOpts = {
         configPath: cfgPath,
         agyConfigPath: agyCfgPath,
         sidecarsDir,
@@ -835,7 +835,8 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
             }),
           };
         },
-      });
+      };
+      const catalog = await fetchRegistry(registryOpts);
 
       const byId = Object.fromEntries(catalog.packages.map((p) => [p.id, p]));
       assert.equal(byId['safe-sc'].installedVersion, '1.1.0');
@@ -849,11 +850,18 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       assert.equal(byId['escalated-sc'].installedVersion, '1.0.0');
       assert.equal(byId['escalated-sc'].updateAvailable, true);
 
-      // Plugin and Hangar updated cleanly
-      assert.equal(byId['safe-plugin'].installedVersion, '1.1.0');
-      assert.equal(byId['safe-plugin'].updateAvailable, false);
+      // Hangar updated; the plugin waits for the updated Hangar, since this (older) Hangar's installer would replace it
       assert.equal(catalog.hangar.installedVersion, '99.0.0');
       assert.equal(catalog.hangar.updateAvailable, false);
+      assert.equal(byId['safe-plugin'].installedVersion, '1.0.0');
+      assert.equal(byId['safe-plugin'].updateAvailable, true);
+
+      // The next registry check, with Hangar current, updates the plugin
+      const next = await fetchRegistry(registryOpts);
+      const nextById = Object.fromEntries(next.packages.map((p) => [p.id, p]));
+      assert.equal(next.hangar.updateAvailable, false);
+      assert.equal(nextById['safe-plugin'].installedVersion, '1.1.0');
+      assert.equal(nextById['safe-plugin'].updateAvailable, false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
