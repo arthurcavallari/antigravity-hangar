@@ -10,6 +10,7 @@ import {
 } from '../lib/plugin-installer.mjs';
 import { inspectInstalledPluginHealth } from '../lib/plugin-diagnostics.mjs';
 import { fetchHangarState } from '../lib/state-orchestrator.mjs';
+import { runAutoUpdates } from '../lib/registry-catalog.mjs';
 import { loadHangarConfig, writeJsonNoBom } from '../lib/config-store.mjs';
 
 const SHA = 'a'.repeat(40);
@@ -328,6 +329,97 @@ describe('Hangar plugin installer', () => {
     }
   });
 
+  it('switches an installed plugin off and stops its sidecars before replacing it on update, then starts them again', async () => {
+    const box = sandbox();
+    try {
+      const execFn = fakeExec(box, CLAUDE_SOURCE);
+      const first = recordingRpc();
+      await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: first.rpcFn, execFn });
+      assert.equal(first.calls.some((c) => c.method === 'ManageSidecar' || c.method === 'GetSidecars'), false,
+        'a first install has nothing to stop');
+
+      const calls = [];
+      let paneStatus = 'SIDECAR_STATUS_RUNNING';
+      const rpcFn = async (method, body) => {
+        calls.push({ method, body });
+        if (method === 'ManageSidecar' && body.action === 'SIDECAR_ACTION_DISABLE') paneStatus = 'SIDECAR_STATUS_STOPPED';
+        if (method !== 'GetSidecars') return {};
+        return { sidecars: [
+          { sidecarId: 'review-port/pane', status: paneStatus },
+          { sidecarId: 'other/pane', status: 'SIDECAR_STATUS_RUNNING' },
+        ] };
+      };
+      let agyInstalls = 0;
+      const updateExec = (cmd, args, opts) => {
+        if (cmd === 'agy' && args[1] === 'install' && ++agyInstalls === 1) {
+          assert.equal(paneStatus, 'SIDECAR_STATUS_STOPPED', 'agy runs once the sidecar has stopped');
+          throw Object.assign(new Error('exit 1'), { stderr: 'plugin is in use by another process' });
+        }
+        return execFn(cmd, args, opts);
+      };
+      const res = await installRemotePlugin({
+        ...portRequest(box, { version: '1.3.0', ref: 'v1.3.0' }), porter: fakePorter(), rpcFn, execFn: updateExec, retryMs: 0,
+      });
+
+      assert.equal(res.ok, true);
+      assert.equal(agyInstalls, 2, 'retries agy while the folder is still in use');
+      const writes = calls.filter((c) => c.method === 'JetboxWriteState' || c.method === 'ManageSidecar');
+      assert.deepEqual(writes.map((c) => c.body), [
+        { userConfig: { plugins: { 'review-port': { enabled: false } } } },
+        { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'review-port/pane' },
+        { userConfig: { plugins: { 'review-port': { enabled: true } } } },
+        { action: 'SIDECAR_ACTION_ENABLE', sidecarId: 'review-port/pane' },
+      ], "touches only this plugin's sidecars");
+      assert.equal(loadHangarConfig(box.configPath).plugins['review-port'].installedVersion, '1.3.0');
+    } finally {
+      box.cleanup();
+    }
+  });
+
+  it('records a failed automatic plugin update on the plugin, and leaves that version for the user to retry', async () => {
+    const box = sandbox();
+    try {
+      const execFn = fakeExec(box, CLAUDE_SOURCE);
+      await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
+      const cfg = loadHangarConfig(box.configPath);
+      cfg.layout.autoUpdate = true;
+      writeJsonNoBom(box.configPath, cfg);
+      const catalog = () => ({ packages: [{
+        id: 'review-port', kind: 'plugin', latestVersion: '1.3.0', updateAvailable: true, capabilityTier: 'TIER_2_LOCAL_TOOLING',
+        port: { from: 'claude' }, release: { gitRepo: 'https://github.com/acme/plugins', ref: 'v1.3.0', path: 'plugins/review' },
+      }] });
+      let agyCalls = 0;
+      const failingAgy = (cmd, args, opts) => {
+        if (cmd === 'agy') {
+          agyCalls++;
+          throw Object.assign(new Error('exit 1'), { stderr: 'disk full' });
+        }
+        return execFn(cmd, args, opts);
+      };
+      const opts = {
+        configPath: box.configPath, packagesDir: box.packagesDir, pluginsDir: box.pluginsDir,
+        rpcFn: async () => ({}), execFn: failingAgy, porter: fakePorter(), delayMs: 1,
+      };
+
+      const first = await runAutoUpdates(catalog(), opts);
+      assert.equal(first.plugins[0].ok, false);
+      const record = loadHangarConfig(box.configPath).plugins['review-port'];
+      assert.equal(record.installedVersion, '1.2.0');
+      assert.equal(record.updateError.version, '1.3.0');
+      assert.match(record.updateError.message, /disk full/);
+
+      const callsAfterFirst = agyCalls;
+      const second = await runAutoUpdates(catalog(), opts);
+      assert.deepEqual(second.plugins, [], 'the failed version is not retried automatically');
+      assert.equal(agyCalls, callsAfterFirst);
+
+      await installRemotePlugin({ ...portRequest(box, { version: '1.3.0', ref: 'v1.3.0' }), porter: fakePorter(), rpcFn: async () => ({}), execFn });
+      assert.equal(loadHangarConfig(box.configPath).plugins['review-port'].updateError, undefined, 'a successful update clears it');
+    } finally {
+      box.cleanup();
+    }
+  });
+
   it('copies the plugin into the profile when the agy CLI is missing, and reports a real agy failure', async () => {
     const box = sandbox();
     try {
@@ -456,6 +548,8 @@ describe('Hangar plugin installer', () => {
     const box = sandbox();
     try {
       writeTree(join(box.pluginsDir, 'fresh-install'), { 'plugin.json': '{"name":"fresh-install"}' });
+      // What a failed update left live on 2.29: an empty folder that a running sidecar held
+      mkdirSync(join(box.pluginsDir, 'gutted', 'sidecars', 'cockpit'), { recursive: true });
       const pluginsRes = {
         plugins: [
           {
@@ -473,16 +567,25 @@ describe('Hangar plugin installer', () => {
       };
       const hangarConfig = {
         plugins: {
-          'review-port': { dir: 'review-port', installedVersion: '1.2.0', capabilityTier: 'TIER_2_LOCAL_TOOLING', portedFrom: ['claude'] },
+          'review-port': {
+            dir: 'review-port', installedVersion: '1.2.0', capabilityTier: 'TIER_2_LOCAL_TOOLING', portedFrom: ['claude'],
+            updateError: { version: '1.3.0', message: 'disk full', at: '2026-11-09T00:00:00.000Z' },
+          },
           'fresh-install': { dir: 'fresh-install', installedVersion: '0.1.0' },
+          gutted: { dir: 'gutted', installedVersion: '0.2.1' },
           gone: { dir: 'gone' },
         },
       };
       const list = listInstalledPlugins(pluginsRes, hangarConfig, { pluginsDir: box.pluginsDir });
 
       assert.equal(JSON.stringify(list).includes('SECRET'), false);
-      assert.deepEqual(list.map((p) => p.dir), ['fresh-install', 'review-port', 'science']);
-      const [fresh, review, science] = list;
+      assert.deepEqual(list.map((p) => p.dir), ['fresh-install', 'gutted', 'review-port', 'science']);
+      const [fresh, gutted, review, science] = list;
+      assert.equal(gutted.incomplete, true, 'a folder without plugin.json is an unfinished install');
+      assert.equal(gutted.restartRequired, false, 'a restart would not load it');
+      assert.equal(fresh.incomplete, false);
+      assert.deepEqual(review.updateError, { version: '1.3.0', message: 'disk full', at: '2026-11-09T00:00:00.000Z' });
+      assert.equal(fresh.updateError, null);
       assert.deepEqual(review.counts, { skills: 2, agents: 1, rules: 1, mcpServers: 1, hooks: 2 });
       assert.equal(review.disabled, true);
       assert.equal(review.pluginId, 'review-port');

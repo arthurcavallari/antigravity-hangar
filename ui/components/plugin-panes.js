@@ -142,6 +142,8 @@
         </div>
       </div>
       <div data-role="restart-note" class="agy-banner hidden">Installed. Restart Antigravity to load it.</div>
+      <div data-role="incomplete-note" class="agy-banner is-error hidden" role="alert">The last install or update didn't finish, so Antigravity can't load this plugin. Uninstall it, then install it again.</div>
+      <div data-role="update-error" class="agy-banner is-error hidden" role="alert"></div>
       <div data-role="consent-bar" class="agy-consent-bar hidden">
         <span data-role="consent-text" class="consent-text"></span>
         <div class="consent-actions">
@@ -226,6 +228,8 @@
       p.disabled,
       p.builtin,
       p.restartRequired,
+      p.incomplete,
+      p.updateError,
       p.capabilityTier,
       p.installedVersion,
       p.counts,
@@ -239,6 +243,7 @@
         ns.pluginBadgesHtml(p),
         tier ? `<span class="agy-badge ${ns.escHtml(tier.state)}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
         p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
+        p.incomplete ? '<span class="agy-badge errored">Unfinished</span>' : '',
         p.disabled ? '<span class="agy-badge stopped">Disabled</span>' : '',
         p.builtin ? '<span class="agy-badge stopped">Built-in</span>' : '',
         missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
@@ -249,6 +254,12 @@
         : (p.builtin ? 'ships with Antigravity' : 'installed outside Hangar');
       card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
       card.querySelector('[data-role="restart-note"]').classList.toggle('hidden', !p.restartRequired);
+      card.querySelector('[data-role="incomplete-note"]').classList.toggle('hidden', !p.incomplete);
+      const updateError = card.querySelector('[data-role="update-error"]');
+      updateError.textContent = p.updateError
+        ? `The automatic update to v${p.updateError.version} failed: ${p.updateError.message}`
+        : '';
+      updateError.classList.toggle('hidden', !p.updateError);
     }
     const uninstallBtn = card.querySelector('[data-role="uninstall-btn"]');
     uninstallBtn.classList.toggle('hidden', !managed);
