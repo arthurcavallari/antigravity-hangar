@@ -186,7 +186,7 @@
     const uninstallCancelBtn = q('uninstall-cancel');
     uninstallBtn.addEventListener('click', () => {
       const p = card._plugin;
-      q('uninstall-confirm-text').textContent = `Uninstall ${p.name}?${p.disabled ? ' Hangar turns it back on first, so a later reinstall is not left disabled.' : ''}`;
+      q('uninstall-confirm-text').textContent = `Uninstall ${p.name}?`;
       uninstallConfirm.classList.remove('hidden');
       uninstallCancelBtn?.focus?.();
     });
