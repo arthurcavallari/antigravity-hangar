@@ -4,7 +4,7 @@
     "id": "hangar",
     "name": "Antigravity Hangar",
     "npmPackage": "antigravity-hangar",
-    "latestVersion": "1.5.2",
+    "latestVersion": "1.5.3",
     "funding": "https://github.com/sponsors/arthurcavallari",
     "release": {
       "gitRepo": "https://github.com/arthurcavallari/antigravity-hangar"
