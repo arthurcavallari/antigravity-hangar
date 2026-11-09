@@ -348,9 +348,9 @@ describe('config-store and child iframe URL normalization', () => {
         maxWaitMs: 200,
       });
 
+      // Only the plugin entry: the Language Server refuses ManageSidecar for a plugin's sidecars
       assert.deepEqual(calls, [
         ['JetboxWriteState', { userConfig: { plugins: { '-1870732469773246571': { enabled: false } } } }],
-        ['ManageSidecar', { action: 'SIDECAR_ACTION_DISABLE', sidecarId: id }],
       ]);
       assert.equal(currentStatus, 'SIDECAR_STATUS_STOPPED');
       assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, [id]);
@@ -367,7 +367,6 @@ describe('config-store and child iframe URL normalization', () => {
 
       assert.deepEqual(calls, [
         ['JetboxWriteState', { userConfig: { plugins: { '-1870732469773246571': { enabled: true } } } }],
-        ['ManageSidecar', { action: 'SIDECAR_ACTION_ENABLE', sidecarId: id }],
       ]);
       assert.equal(currentStatus, 'SIDECAR_STATUS_RUNNING');
       assert.deepEqual(loadHangarConfig(cfgPath).manuallyStopped, []);

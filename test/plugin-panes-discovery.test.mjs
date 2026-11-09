@@ -150,9 +150,9 @@ describe('Hangar multi-sidecar plugin discovery and security sanitization', () =
         maxWaitMs: 10,
       });
 
+      // Only the plugin entry: the Language Server refuses ManageSidecar for a plugin's sidecars
       assert.deepEqual(rpcCalls, [
         ['JetboxWriteState', { userConfig: { plugins: { 'android-cli-plugin': { enabled: false } } } }],
-        ['ManageSidecar', { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'android-cli-plugin/compose-preview' }],
       ]);
 
       const singleDir = join(pluginsDir, 'single-plugin');
@@ -170,7 +170,6 @@ describe('Hangar multi-sidecar plugin discovery and security sanitization', () =
       assert.deepEqual(rpcCalls, [
         ['GetSidecars', {}],
         ['JetboxWriteState', { userConfig: { plugins: { 'single-plugin': { enabled: false } } } }],
-        ['ManageSidecar', { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'single-plugin' }],
       ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
