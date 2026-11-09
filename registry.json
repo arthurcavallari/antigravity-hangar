@@ -57,7 +57,7 @@
         "verified": true
       },
       "funding": "https://github.com/sponsors/arthurcavallari",
-      "latestVersion": "0.2.1",
+      "latestVersion": "0.2.2",
       "pricing": "free",
       "categories": [
         "productivity"
@@ -66,8 +66,8 @@
       "license": "MIT",
       "homepage": "https://github.com/arthurcavallari/agy-plugin-porter",
       "release": {
-        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.2.1/agy-plugin-porter-plugin-0.2.1.tgz",
-        "sha256": "ab962077d1dad36268094a1db2d2a2faeafd32bbdedf9a9f6c3f566e677e0f7b"
+        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.2.2/agy-plugin-porter-plugin-0.2.2.tgz",
+        "sha256": "acf75405d72a50ac361b251ac789a50c9fd593334b5806f0fc1887637a77bd69"
       }
     },
     {
