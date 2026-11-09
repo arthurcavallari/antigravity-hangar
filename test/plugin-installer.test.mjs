@@ -95,6 +95,40 @@ function portRequest(box, overrides = {}) {
   };
 }
 
+// The Language Server as seen live on 2.29: switching a plugin off stops its sidecars, but its MCP servers keep
+// running until the next RefreshMcpServers; switching it on starts the sidecars, and the MCP servers come back on
+// the next refresh. Another plugin's MCP server is listed too, and must not hold up the wait.
+function fakeLanguageServer(dir) {
+  const calls = [];
+  let pluginOn = true;
+  let sidecar = true;
+  let mcp = true;
+  const later = (fn) => setTimeout(fn, 30);
+  const rpcFn = async (method, body) => {
+    calls.push([method, body]);
+    if (method === 'JetboxWriteState') {
+      pluginOn = body.userConfig.plugins[dir].enabled;
+      later(() => { sidecar = pluginOn; });
+    }
+    if (method === 'RefreshMcpServers') later(() => { mcp = pluginOn; });
+    if (method === 'GetSidecars') {
+      return { sidecars: [{ sidecarId: `${dir}/pane`, status: sidecar ? 'SIDECAR_STATUS_RUNNING' : 'SIDECAR_STATUS_STOPPED' }] };
+    }
+    if (method === 'GetMcpServerStates') {
+      return { states: [
+        ...(mcp ? [{ status: 'MCP_SERVER_STATUS_READY', spec: { serverName: `${dir}_cli`, pluginName: dir } }] : []),
+        { status: 'MCP_SERVER_STATUS_READY', spec: { serverName: 'other_docs', pluginName: 'other' } },
+      ] };
+    }
+    return {};
+  };
+  return {
+    rpcFn,
+    running: () => ({ sidecar, mcp }),
+    writes: () => calls.filter(([m]) => ['JetboxWriteState', 'RefreshMcpServers', 'ManageSidecar'].includes(m)),
+  };
+}
+
 function recordingRpc(responses = {}) {
   const calls = [];
   const rpcFn = async (method, body) => {
@@ -329,47 +363,38 @@ describe('Hangar plugin installer', () => {
     }
   });
 
-  it('switches an installed plugin off and stops its sidecars before replacing it on update, then starts them again', async () => {
+  it('switches an installed plugin off and waits for its sidecars and MCP servers to stop before replacing it on update, then starts them again', async () => {
     const box = sandbox();
     try {
       const execFn = fakeExec(box, CLAUDE_SOURCE);
       const first = recordingRpc();
       await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: first.rpcFn, execFn });
-      assert.equal(first.calls.some((c) => c.method === 'ManageSidecar' || c.method === 'GetSidecars'), false,
+      assert.equal(first.calls.some((c) => ['GetSidecars', 'GetMcpServerStates', 'RefreshMcpServers'].includes(c.method)), false,
         'a first install has nothing to stop');
 
-      const calls = [];
-      let paneStatus = 'SIDECAR_STATUS_RUNNING';
-      const rpcFn = async (method, body) => {
-        calls.push({ method, body });
-        if (method === 'ManageSidecar' && body.action === 'SIDECAR_ACTION_DISABLE') paneStatus = 'SIDECAR_STATUS_STOPPED';
-        if (method !== 'GetSidecars') return {};
-        return { sidecars: [
-          { sidecarId: 'review-port/pane', status: paneStatus },
-          { sidecarId: 'other/pane', status: 'SIDECAR_STATUS_RUNNING' },
-        ] };
-      };
+      const ls = fakeLanguageServer('review-port');
       let agyInstalls = 0;
       const updateExec = (cmd, args, opts) => {
         if (cmd === 'agy' && args[1] === 'install' && ++agyInstalls === 1) {
-          assert.equal(paneStatus, 'SIDECAR_STATUS_STOPPED', 'agy runs once the sidecar has stopped');
+          assert.deepEqual(ls.running(), { sidecar: false, mcp: false }, 'agy runs once the sidecar and the MCP server have stopped');
           throw Object.assign(new Error('exit 1'), { stderr: 'plugin is in use by another process' });
         }
         return execFn(cmd, args, opts);
       };
       const res = await installRemotePlugin({
-        ...portRequest(box, { version: '1.3.0', ref: 'v1.3.0' }), porter: fakePorter(), rpcFn, execFn: updateExec, retryMs: 0,
+        ...portRequest(box, { version: '1.3.0', ref: 'v1.3.0' }), porter: fakePorter(), rpcFn: ls.rpcFn, execFn: updateExec, retryMs: 0,
+        pollMs: 5, maxWaitMs: 2000,
       });
 
       assert.equal(res.ok, true);
       assert.equal(agyInstalls, 2, 'retries agy while the folder is still in use');
-      const writes = calls.filter((c) => c.method === 'JetboxWriteState' || c.method === 'ManageSidecar');
-      assert.deepEqual(writes.map((c) => c.body), [
-        { userConfig: { plugins: { 'review-port': { enabled: false } } } },
-        { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'review-port/pane' },
-        { userConfig: { plugins: { 'review-port': { enabled: true } } } },
-        { action: 'SIDECAR_ACTION_ENABLE', sidecarId: 'review-port/pane' },
-      ], "touches only this plugin's sidecars");
+      assert.deepEqual(ls.writes(), [
+        ['JetboxWriteState', { userConfig: { plugins: { 'review-port': { enabled: false } } } }],
+        ['RefreshMcpServers', { shallow: false }],
+        ['JetboxWriteState', { userConfig: { plugins: { 'review-port': { enabled: true } } } }],
+        ['RefreshMcpServers', { shallow: false }],
+      ], 'switches the plugin off and on, with no per-sidecar ManageSidecar (the Language Server refuses it for plugin sidecars)');
+      assert.deepEqual(ls.running(), { sidecar: true, mcp: true }, 'its sidecar and MCP server run again');
       assert.equal(loadHangarConfig(box.configPath).plugins['review-port'].installedVersion, '1.3.0');
     } finally {
       box.cleanup();
@@ -467,37 +492,27 @@ describe('Hangar plugin installer', () => {
     }
   });
 
-  it('switches the plugin off, waits for its sidecars to stop, then uninstalls with agy, since the Language Server refuses DeletePlugin to sidecars', async () => {
+  it('switches the plugin off, waits for its sidecars and MCP servers to stop, then uninstalls with agy, since the Language Server refuses DeletePlugin to sidecars', async () => {
     const box = sandbox();
     try {
       const execFn = fakeExec(box, CLAUDE_SOURCE);
       await installRemotePlugin({ ...portRequest(box), porter: fakePorter(), rpcFn: async () => ({}), execFn });
-      const calls = [];
-      let paneStatus = 'SIDECAR_STATUS_RUNNING';
-      const rpcFn = async (method, body) => {
-        calls.push({ method, body });
-        if (method === 'ManageSidecar') setTimeout(() => { paneStatus = 'SIDECAR_STATUS_STOPPED'; }, 30);
-        if (method !== 'GetSidecars') return {};
-        return { sidecars: [
-          { sidecarId: 'review-port/pane', status: paneStatus },
-          { sidecarId: 'review-port-other/pane', status: 'SIDECAR_STATUS_RUNNING' },
-        ] };
-      };
+      const ls = fakeLanguageServer('review-port');
       const execCalls = [];
       const res = await uninstallPlugin({
-        pluginId: 'review-port', ...box, rpcFn, pollMs: 5,
+        pluginId: 'review-port', ...box, rpcFn: ls.rpcFn, pollMs: 5, maxWaitMs: 2000,
         execFn: (cmd, args, opts) => {
-          execCalls.push({ cmd, args, opts, paneStatus });
+          execCalls.push({ cmd, args, opts, running: ls.running() });
           execFn(cmd, args);
         },
       });
 
-      assert.deepEqual(calls[0], { method: 'JetboxWriteState', body: { userConfig: { plugins: { 'review-port': { enabled: false } } } } });
-      assert.deepEqual(calls.filter((c) => c.method === 'ManageSidecar').map((c) => c.body), [
-        { action: 'SIDECAR_ACTION_DISABLE', sidecarId: 'review-port/pane' },
-      ], "stops only this plugin's sidecars");
+      assert.deepEqual(ls.writes(), [
+        ['JetboxWriteState', { userConfig: { plugins: { 'review-port': { enabled: false } } } }],
+        ['RefreshMcpServers', { shallow: false }],
+      ]);
       assert.deepEqual(execCalls.map((c) => [c.cmd, ...c.args]), [['agy', 'plugin', 'uninstall', 'review-port']]);
-      assert.equal(execCalls[0].paneStatus, 'SIDECAR_STATUS_STOPPED', 'agy runs once the sidecar has stopped');
+      assert.deepEqual(execCalls[0].running, { sidecar: false, mcp: false }, 'agy runs once the sidecar and the MCP server have stopped');
       assert.equal(execCalls[0].opts.input, 'y\n', 'answers the y/N prompt the user already answered in Hangar');
       assert.equal(res.method, 'agy');
       assert.equal(existsSync(join(box.pluginsDir, 'review-port')), false);
