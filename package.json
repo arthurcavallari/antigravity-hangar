@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "agy-plugin-porter": "^0.2.2",
-    "antigravity-sidecar-kit": "^1.5.1"
+    "antigravity-sidecar-kit": "^1.6.0"
   },
   "devDependencies": {
     "linkedom": "^0.18.15"
