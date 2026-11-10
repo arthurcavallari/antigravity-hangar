@@ -1008,6 +1008,10 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
 
 :is(.term-shell > .agy-toast, .term-quote-toast) {
   position: absolute;
+  /* sidecar-kit 1.7's toast spans left to right with a max width; this one keeps its own size */
+  left: auto;
+  max-width: none;
+  margin-left: 0;
   right: 12px;
   top: auto;
   bottom: 12px;
