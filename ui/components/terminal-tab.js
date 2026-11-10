@@ -36,7 +36,7 @@
               aria-label="Split Terminal"
               aria-pressed="false"
               title="Split Terminal"
-            >${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
+            >${ns.iconSvg('splitscreen_vertical_add', 16)}</button>
             <button
               type="button"
               class="agy-icon-btn"
@@ -44,7 +44,7 @@
               aria-label="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
               aria-pressed="${rootId ? 'true' : 'false'}"
               title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
-            >${ns.iconSvg('dock_to_right', 14)}</button>
+            >${ns.iconSvg('dock_to_right', 16)}</button>
           </div>
         </div>
         <div class="term-stage" data-role="stage"></div>

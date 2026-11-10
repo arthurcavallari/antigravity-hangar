@@ -244,7 +244,7 @@
         ns.html`
           <div class="empty-split-zone">
             <button type="button" class="agy-btn agy-btn-primary has-icon" data-role="spawn-empty">
-              ${ns.iconSvg('add', 14)}
+              ${ns.iconSvg('add', 16)}
               <span>Launch Interactive Terminal</span>
             </button>
           </div>

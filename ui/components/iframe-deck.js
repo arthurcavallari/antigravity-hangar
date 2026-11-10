@@ -325,7 +325,7 @@
               <span>${ns.escHtml(msg)}</span>
               ${slotId ? ns.html`
                 <button type="button" class="agy-btn agy-btn-primary has-icon" data-role="enable-sidecar" data-sidecar-id="${ns.escHtml(slotId)}">
-                  ${ns.iconSvg('play_arrow', 14)}
+                  ${ns.iconSvg('play_arrow', 16)}
                   <span>Enable Sidecar</span>
                 </button>
               ` : ''}

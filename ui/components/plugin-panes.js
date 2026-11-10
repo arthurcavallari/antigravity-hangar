@@ -137,7 +137,7 @@
         <div class="agy-card-actions">
           <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden"></button>
           <button type="button" data-role="uninstall-btn" class="agy-icon-btn hidden" title="Uninstall plugin" aria-label="Uninstall plugin">
-            ${ns.iconSvg('delete', 14)}
+            ${ns.iconSvg('delete', 16)}
           </button>
         </div>
       </div>
@@ -169,7 +169,7 @@
       reset: (label) => {
         els.btn.disabled = false;
         els.btn.dataset.btnState = '';
-        ns.setHtml(els.btn, ns.html`${ns.iconSvg('download', 13)}<span>${ns.escHtml(label)}</span>`);
+        ns.setHtml(els.btn, ns.html`${ns.iconSvg('download', 16)}<span>${ns.escHtml(label)}</span>`);
       },
     };
     els.reset('Update');

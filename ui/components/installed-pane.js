@@ -104,16 +104,16 @@
         </div>
         <div class="agy-card-actions">
           <button type="button" data-role="fix-agent-btn" class="agy-btn agy-btn-outline has-icon hidden" title="Send sidecar error diagnostics to the agent">
-            ${ns.iconSvg('bolt', 13)}<span>Fix with Agent</span>
+            ${ns.iconSvg('bolt', 16)}<span>Fix with Agent</span>
           </button>
           <button type="button" data-role="update-btn" class="agy-btn agy-btn-primary has-icon hidden" title="Update sidecar">
-            ${ns.iconSvg('download', 13)}<span>Update</span>
+            ${ns.iconSvg('download', 16)}<span>Update</span>
           </button>
           <button type="button" data-role="restart-btn" class="agy-icon-btn" title="Restart sidecar" aria-label="Restart sidecar">
-            ${ns.iconSvg('refresh', 14)}
+            ${ns.iconSvg('refresh', 16)}
           </button>
           <button type="button" data-role="uninstall-btn" class="agy-icon-btn" title="Uninstall sidecar" aria-label="Uninstall sidecar">
-            ${ns.iconSvg('delete', 14)}
+            ${ns.iconSvg('delete', 16)}
           </button>
           <button type="button" role="switch" data-role="proc-btn" class="agy-switch" title="Enable or disable sidecar" aria-label="Enable or disable sidecar">
             <agy-switch><span class="agy-switch-thumb"></span></agy-switch>
@@ -141,7 +141,7 @@
         <div class="manager-scope-actions">
           <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
           <agy-toggle-group class="agy-toggle-group" role="group" aria-label="Workspace Scope">
-            <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 13)}<span>Global (*)</span></button>
+            <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 16)}<span>Global (*)</span></button>
             <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
           </agy-toggle-group>
         </div>
@@ -150,7 +150,7 @@
       <div class="ws-add-row">
         <input type="text" class="ws-input" aria-label="Add workspace path or glob" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
         <button type="button" data-role="add-rule-btn" class="agy-btn agy-btn-secondary has-icon">
-          ${ns.iconSvg('add', 14)}<span>Add</span>
+          ${ns.iconSvg('add', 16)}<span>Add</span>
         </button>
       </div>
     `);
@@ -351,7 +351,7 @@
       if (hibBtn.dataset.sig !== hibSig) {
         hibBtn.dataset.sig = hibSig;
         hibBtn.className = `agy-btn has-icon ${sc.autoHibernate ? 'agy-btn-secondary' : 'agy-btn-outline'}`;
-        ns.setHtml(hibBtn, ns.html`${ns.iconSvg('bolt', 13)}<span>Auto-Sleep</span>`);
+        ns.setHtml(hibBtn, ns.html`${ns.iconSvg('bolt', 16)}<span>Auto-Sleep</span>`);
         hibBtn.title = sc.autoHibernateLocked
           ? "A plugin's sidecar starts and stops with its plugin, so it never hibernates"
           : 'Automatically hibernate process when workspace is inactive';
