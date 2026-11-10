@@ -38,7 +38,7 @@
             title="Sponsor author"
             aria-label="Sponsor author"
           >
-            ${ns.iconSvg('favorite', 14)}
+            ${ns.iconSvg('favorite', 16)}
           </a>
           <button type="button" data-role="pkg-install-btn" class="agy-btn has-icon"></button>
         </div>
@@ -66,7 +66,7 @@
     const resetInstallBtn = (label) => setBtn(
       false,
       label === 'Install' ? 'install' : 'retry',
-      ns.html`${ns.iconSvg('download', 13)}<span>${label}</span>`,
+      ns.html`${ns.iconSvg('download', 16)}<span>${label}</span>`,
     );
     const pluginEls = { btn, consentBar, consentText, errorEl, reset: resetInstallBtn };
     const runInstall = async () => {
@@ -262,7 +262,7 @@
         <div data-role="discover-shell">
           <div class="discover-toolbar">
             <div class="agy-search-box">
-              <span class="agy-search-icon">${ns.iconSvg('search', 14)}</span>
+              <span class="agy-search-icon">${ns.iconSvg('search', 16)}</span>
               <input type="search" data-role="discover-search" class="agy-search-input" aria-label="Search sidecars and plugins" placeholder="Search sidecars and plugins…" />
             </div>
             <agy-toggle-group class="agy-toggle-group" aria-label="Filter by category">${catButtons}</agy-toggle-group>
@@ -334,20 +334,20 @@
               </div>
               <agy-toggle-group class="agy-toggle-group" aria-label="Sideload workspace scope">
                 <button type="button" data-scope="project" class="agy-toggle-item">
-                  ${ns.iconSvg('folder', 13)}<span data-role="ws-scope-label"></span>
+                  ${ns.iconSvg('folder', 16)}<span data-role="ws-scope-label"></span>
                 </button>
                 <button type="button" data-scope="global" class="agy-toggle-item">
-                  ${ns.iconSvg('globe', 13)}<span>Global (*)</span>
+                  ${ns.iconSvg('globe', 16)}<span>Global (*)</span>
                 </button>
               </agy-toggle-group>
             </div>
             <div class="ws-add-row">
               <input type="text" data-role="local-path-input" class="ws-input" aria-label="Local sidecar directory path" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" />
               <button type="button" data-role="validate-btn" class="agy-btn agy-btn-outline has-icon">
-                ${ns.iconSvg('shield', 13)}<span>Validate</span>
+                ${ns.iconSvg('shield', 16)}<span>Validate</span>
               </button>
               <button type="button" data-role="link-btn" class="agy-btn agy-btn-primary has-icon">
-                ${ns.iconSvg('link', 13)}<span>Link Folder</span>
+                ${ns.iconSvg('link', 16)}<span>Link Folder</span>
               </button>
             </div>
           </div>
@@ -364,7 +364,7 @@
             <div class="ws-add-row">
               <input type="text" data-role="github-repo-input" class="ws-input" aria-label="GitHub repository URL or owner/repo" placeholder="https://github.com/owner/repo or owner/repo…" />
               <button type="button" data-role="github-install-btn" class="agy-btn agy-btn-primary has-icon">
-                ${ns.iconSvg('download', 13)}<span>Install</span>
+                ${ns.iconSvg('download', 16)}<span>Install</span>
               </button>
             </div>
             <div data-role="gh-consent-bar" class="agy-consent-bar hidden">

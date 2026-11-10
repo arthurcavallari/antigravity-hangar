@@ -214,7 +214,7 @@
                 rel="noopener noreferrer"
                 class="agy-btn agy-btn-outline has-icon sponsor-cta-btn"
               >
-                ${ns.iconSvg('favorite', 13)}<span>Sponsor</span>
+                ${ns.iconSvg('favorite', 16)}<span>Sponsor</span>
               </a>
             </div>
           </div>
@@ -310,11 +310,11 @@
         <div data-role="store-shell">
           <div data-role="hangar-update-banner" class="agy-banner update hidden">
             <div class="hangar-update-info">
-              ${ns.iconSvg('bolt', 14)}
+              ${ns.iconSvg('bolt', 16)}
               <span data-role="hangar-update-text"></span>
             </div>
             <button type="button" data-role="hangar-self-update-btn" class="agy-btn agy-btn-primary has-icon">
-              ${ns.iconSvg('download', 13)}<span>Update Hangar</span>
+              ${ns.iconSvg('download', 16)}<span>Update Hangar</span>
             </button>
           </div>
           <div data-role="hangar-update-error" class="agy-banner is-error hidden" role="alert"></div>
@@ -335,7 +335,7 @@
                 <button type="button" data-subtab="sideload" class="agy-toggle-item">Sideload</button>
               </agy-toggle-group>
               <button type="button" data-role="check-updates-btn" class="agy-icon-btn" title="Check for updates" aria-label="Check for updates">
-                ${ns.iconSvg('refresh', 14)}
+                ${ns.iconSvg('refresh', 16)}
               </button>
               <a
                 data-role="sponsor-header-link"
@@ -346,10 +346,10 @@
                 title="Sponsor Hangar development"
                 aria-label="Sponsor Hangar development"
               >
-                ${ns.iconSvg('favorite', 14)}
+                ${ns.iconSvg('favorite', 16)}
               </a>
               <button type="button" data-role="settings-btn" class="agy-icon-btn" title="Hangar settings" aria-label="Hangar settings" aria-pressed="false">
-                ${ns.iconSvg('settings', 14)}
+                ${ns.iconSvg('settings', 16)}
               </button>
               <span data-role="running-count" class="agy-badge running"></span>
             </div>
@@ -405,7 +405,7 @@
             version: h.latestVersion || 'latest',
           });
           if ((storeViewEl._lastOpts || opts)?.hangar?.updateAvailable === false) {
-            ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 13)}<span>Update Hangar</span>`);
+            ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 16)}<span>Update Hangar</span>`);
             selfUpBtn.disabled = false;
             window.location?.reload?.();
           } else {
@@ -413,7 +413,7 @@
           }
         } catch (err) {
           selfUpError.textContent = err?.message || 'Self-update failed';
-          ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 13)}<span>Retry Update</span>`);
+          ns.setHtml(selfUpBtn, ns.html`${ns.iconSvg('download', 16)}<span>Retry Update</span>`);
           selfUpError.classList.remove('hidden');
           selfUpBtn.disabled = false;
         }
