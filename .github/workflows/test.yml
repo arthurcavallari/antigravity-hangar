@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The repin-ports workflow starts this on its branch: its own pushes can't trigger pull_request runs
+  workflow_dispatch:
 
 jobs:
   test:

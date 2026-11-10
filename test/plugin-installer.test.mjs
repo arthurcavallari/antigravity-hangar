@@ -56,7 +56,7 @@ function fakePorter({ tier = 'TIER_2_LOCAL_TOOLING', flags = [], ecosystems = ['
     calls,
     portPackage: async ({ srcDir, outDir, slug }) => {
       calls.push({ port: srcDir, outDir, slug });
-      writeTree(outDir, { 'plugin.json': JSON.stringify({ name: slug }), 'skills/review/SKILL.md': '---\nname: review\n---\n' });
+      writeTree(outDir, { 'plugin.json': JSON.stringify({ name: slug, version: '1.2.0' }), 'skills/review/SKILL.md': '---\nname: review\n---\n' });
       const report = {
         slug, ecosystems, ported: ['skill:review'], unported: [{ item: 'hook:UserPromptSubmit', reason: 'no agy event' }],
         warnings: [], flags, tier, tierReasons: ['hooks: PreToolUse'],
@@ -520,6 +520,7 @@ describe('Hangar plugin installer', () => {
       });
       assert.equal(preview.ok, true);
       assert.equal(preview.scannedTier, 'TIER_2_LOCAL_TOOLING');
+      assert.equal(preview.version, '1.2.0', "the ported plugin.json's version, for the registry");
       assert.equal(preview.flagsDigest, flagsDigest([HIGH_FLAG]));
       assert.equal(preview.report.unported.length, 1);
       assert.equal('restartRequired' in preview, false, 'a dry run can not know, so it says nothing');
