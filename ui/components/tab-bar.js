@@ -32,6 +32,30 @@
     matchesWorkspace: true,
   };
 
+  // What the Extensions tab and the top-bar button flag: a Hangar update, sidecar updates, and updates to plugins
+  // Hangar installed. A plugin's registry entry has updateAvailable while it's behind the listed version or pin,
+  // which also covers an automatic update that failed; a recorded failure counts even if the registry moved on.
+  ns.countUpdates = function countUpdates({ sidecars = [], registryPackages = [], plugins = [], hangar = null } = {}) {
+    const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
+    const sidecarCount = (sidecars || []).filter((s) => s.updateAvailable || regMap.get(s.sidecarId)?.updateAvailable).length;
+    const pluginIds = new Set(
+      (registryPackages || []).filter((p) => p.kind === 'plugin' && p.updateAvailable).map((p) => p.id)
+    );
+    for (const p of plugins || []) if (p.updateError && p.pluginId) pluginIds.add(p.pluginId);
+    return sidecarCount + pluginIds.size + (hangar?.updateAvailable ? 1 : 0);
+  };
+
+  // The top-bar button's version of the tab's blue dot, with the count in its spoken label too
+  ns.syncUpdateIndicator = function syncUpdateIndicator(btnEl, updateCount = 0) {
+    if (!btnEl) return;
+    const label = updateCount > 0
+      ? `Extensions (${updateCount} update${updateCount === 1 ? '' : 's'} available)`
+      : 'Extensions';
+    btnEl.classList.toggle('has-update', updateCount > 0);
+    btnEl.title = label;
+    btnEl.setAttribute?.('aria-label', label);
+  };
+
   ns.partitionSplitTabs = function partitionSplitTabs(sidecars = [], layout = {}, terminals = null) {
     const popped = ns.getPoppedTerminalIds?.() || new Set();
     const customTitles = ns.readCustomTermTitles?.() || {};
@@ -328,6 +352,7 @@
       sidecars,
       terminals,
       registryPackages,
+      plugins,
       hangar,
       bottomActiveTabId,
       layout,
@@ -340,13 +365,11 @@
       onContextAction,
     } = props;
     const splitEnabled = Boolean(layout?.splitViewEnabled);
-    const regMap = new Map((registryPackages || []).map((p) => [p.id, p]));
     if (splitBtnEl) {
       splitBtnEl.classList.toggle('active', splitEnabled);
       splitBtnEl.setAttribute?.('aria-pressed', String(splitEnabled));
     }
-    const updateCount = (sidecars || []).filter((s) => s.updateAvailable || regMap.get(s.sidecarId)?.updateAvailable).length +
-      (hangar?.updateAvailable ? 1 : 0);
+    const updateCount = ns.countUpdates({ sidecars, registryPackages, plugins, hangar });
     const { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
       sidecars || [],
       layout,
@@ -361,11 +384,7 @@
     };
     syncChromeBtn(terminalBtnEl, layout?.terminalDisplayMode === 'button', ns.TERMINAL_TAB_ID);
     syncChromeBtn(extensionsBtnEl, layout?.extensionsDisplayMode === 'button', ns.EXTENSIONS_TAB_ID);
-    if (extensionsBtnEl) {
-      extensionsBtnEl.title = updateCount > 0
-        ? `Extensions (${updateCount} update${updateCount === 1 ? '' : 's'} available)`
-        : 'Extensions';
-    }
+    ns.syncUpdateIndicator(extensionsBtnEl, updateCount);
     const baseOpts = {
       updateCount,
       hasActiveWorkspace: Boolean(hasActiveWorkspace),

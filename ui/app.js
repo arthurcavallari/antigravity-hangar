@@ -185,6 +185,7 @@
       sidecars: state.sidecars,
       terminals: visibleTerminals,
       registryPackages: state.registryPackages,
+      plugins: state.plugins,
       hangar: state.hangar,
       bottomActiveTabId: state.bottomActiveTabId,
       layout: state.layout,
