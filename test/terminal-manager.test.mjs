@@ -98,8 +98,8 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       const created = await createWorkspaceTerminal({ workspacePath: 'c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub', conversationId: 'conv-abc', cols: 120, rows: 32, rpcFn: mockRpc, fetchFn: mockFetch });
       assert.equal(created.terminalId, 'term-live-1'); assert.equal(created.conversationId, 'conv-abc');
       assert.equal(rpcCalls[0].method, 'CreateTerminal');
-      assert.equal(rpcCalls[0].body.workspaceUri, 'file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
-      assert.equal(rpcCalls[0].body.projectId, 'file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
+      assert.equal(rpcCalls[0].body.workspaceUri, 'hangar+file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
+      assert.equal(rpcCalls[0].body.projectId, 'hangar:file:///c:/Users/arthu/IdeaProjects/antigravity-sidecar-hub');
       assert.equal(rpcCalls[0].body.conversationId, 'hangar:conv-abc');
       const initCall = rpcCalls.find((c) => c.method === 'SendTerminalInput' && c.body.inputStreamId === 'hangar-init');
       assert.equal(initCall, undefined);
