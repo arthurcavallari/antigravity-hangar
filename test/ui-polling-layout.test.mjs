@@ -408,7 +408,9 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     };
     window.AgyUI.showToast('Sent to Side Chat', { container: hostContainer });
     assert.equal(customContainerChildren.length, 1);
-    assert.equal(docBodyChildren.length, 0);
+    // The toast stays in its container. From sidecar-kit 1.7, the message is announced from hidden live regions in
+    // the body (as Antigravity's toasts do), so those are the only thing the body may gain.
+    assert.deepEqual(docBodyChildren.map((c) => c.className), docBodyChildren.map(() => 'agy-toast-live'));
 
     const splitBtnEl = makeEl('button');
     window.Hangar.renderTabBar({
