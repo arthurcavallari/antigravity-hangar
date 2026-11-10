@@ -108,6 +108,14 @@ A `registry.json` entry without `kind` is a sidecar. A plugin entry sets `"kind"
 
 Any entry can set `license`, an SPDX id or expression, and `homepage`, an https URL. Discover shows the license next to the author, and links to the homepage as **Source**. For a port, point `homepage` at the upstream folder at the pinned commit, so it shows the code Hangar ports.
 
+#### Keeping ports up to date
+
+The pin is the review point: it ties the listed tier and audit to code someone checked, and installed copies are offered an update only when it moves. The `repin-ports` workflow (weekly, or from the Actions tab) does the legwork. For each port pinned to a commit, it looks for a newer upstream commit that changes the plugin's folder. It ports that commit and the current pin with Hangar's own `previewPluginPort`, then opens a PR from `bot/repin-ports` that moves the pins. The PR shows, for each plugin, a link to the upstream diff and what changed in the tier, the audit findings, the items not ported and the warnings. Nothing merges on its own; read the upstream diff before you merge, since merging offers the update to every Hangar.
+
+To open the PR, the workflow needs **Allow GitHub Actions to create and approve pull requests** (**Settings** > **Actions** > **General**). Without it, the run pushes the branch and links a ready-made PR in its summary. Because the workflow's own pushes can't trigger `pull_request` runs, it starts the test workflow on the branch itself.
+
+To try it locally without changing anything, run `node scripts/repin-ports.mjs --report report.md`. Add `--write` to move the pins in `registry.json`, `--only <id,id>` to check some entries, or `--registry <file>` to use another copy of the registry.
+
 ```json
 {
   "id": "core-workflows",

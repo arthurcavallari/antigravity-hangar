@@ -1,0 +1,78 @@
+name: repin-ports
+
+# Weekly (or from the Actions tab), proposes moving the pins of the ported plugins in registry.json to their
+# upstream's latest commit. scripts/repin-ports.mjs ports each changed plugin at its current pin and at the new
+# commit, the way Hangar's installer does, and writes a report of what changed. This workflow opens (or updates) a
+# PR from the bot/repin-ports branch with that report. Nothing merges on its own: the pin is the review point.
+#
+# The workflow's token is given only to the last step, never to npm install or the porter. A push made with that
+# token doesn't start other workflows, so the last step dispatches the test workflow on the branch, whose checks
+# are the ones main requires. Opening the PR needs "Allow GitHub Actions to create and approve pull requests"
+# (Settings > Actions > General). Without it, the run pushes the branch and links a ready-made PR in its summary.
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repin-ports
+  cancel-in-progress: false
+
+jobs:
+  repin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # push the bot/repin-ports branch
+      pull-requests: write # open or update its PR
+      actions: write # start the test workflow on that branch
+    env:
+      BRANCH: bot/repin-ports
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm install --no-audit --no-fund
+      - name: Port the changed plugins and move their pins
+        id: repin
+        run: node scripts/repin-ports.mjs --write --report "${RUNNER_TEMP}/repin-report.md"
+      - name: Check the registry and run the tests
+        if: steps.repin.outputs.count != '0'
+        run: npm test
+      - name: Push the branch, open or update the PR, and start the tests on it
+        if: steps.repin.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COUNT: ${{ steps.repin.outputs.count }}
+        run: |
+          report="${RUNNER_TEMP}/repin-report.md"
+          cat "${report}" >> "${GITHUB_STEP_SUMMARY}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git add registry.json
+          git commit -q -m "feat(registry): move the pins of ${COUNT} ported plugin(s)" -m "Proposed by the repin-ports workflow. The PR has each port's report compared to the current pin's."
+          # The branch belongs to this workflow: each run replaces it with a fresh proposal on top of main
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          title="feat(registry): move the pins of ${COUNT} ported plugin(s)"
+          existing="$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh pr edit "${existing}" --title "${title}" --body-file "${report}"
+            echo "Updated PR #${existing}."
+          elif gh pr create --head "${BRANCH}" --base main --title "${title}" --body-file "${report}"; then
+            echo "Opened the PR."
+          else
+            url="https://github.com/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1"
+            echo "::warning::GitHub refused to open the PR. Turn on \"Allow GitHub Actions to create and approve pull requests\" in Settings > Actions > General, or open it from ${url} with the report from this run's summary."
+            printf '\n---\nOpen the PR: %s\n' "${url}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+          gh workflow run test.yml --ref "${BRANCH}"
+      - name: Nothing to repin
+        if: steps.repin.outputs.count == '0'
+        run: cat "${RUNNER_TEMP}/repin-report.md" >> "${GITHUB_STEP_SUMMARY}"
