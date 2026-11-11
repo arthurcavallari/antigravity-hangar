@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { parseHTML } from 'linkedom';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { checkCommandExists, inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from '../lib/plugin-diagnostics.mjs';
 import { fetchHangarState } from '../lib/state-orchestrator.mjs';
@@ -16,7 +17,7 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
     let extBtnClicks = 0;
     let scrolledCard = null;
     const window = { location: { origin: 'http://127.0.0.1:51000' }, addEventListener() {} };
-    const cardSel = '.agy-card[data-plugin-dir="android-cli-plugin/device-hub"], .agy-card[data-plugin-id="android-cli-plugin/device-hub"], .agy-card[data-sidecar-id="android-cli-plugin/device-hub"], .agy-card[data-pkg-id="android-cli-plugin/device-hub"]';
+    const cardSel = '.agy-card[data-sidecar-id="android-cli-plugin/device-hub"]';
     const cards = { [cardSel]: { scrollIntoView: () => (scrolledCard = 'android-cli-plugin/device-hub') } };
     const storeView = { classList: { contains: () => false } };
     const document = {
@@ -248,5 +249,121 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it('highlights plugin cards when manifest name !== dir (aem-65 vs aem-65-plugin), enforces selector priority over DOM order, skips hidden sub-panes, and re-pulses after scrollIntoView Promise', async () => {
+    const { window, document } = parseHTML(`<!doctype html><html><body>
+      <section id="store-view" class="store-view">
+        <div data-role="pane-installed">
+          <div data-role="installed-sidecars">
+            <div class="agy-card" data-sidecar-id="single-root"></div>
+          </div>
+          <div data-role="installed-plugins"></div>
+        </div>
+        <div data-role="pane-discover" class="hidden">
+          <div class="agy-card" data-pkg-id="ghost-pkg"></div>
+          <div class="agy-card" data-pkg-id="aem-65"></div>
+        </div>
+      </section>
+    </body></html>`);
+    Object.defineProperty(window, 'location', { value: { origin: 'http://127.0.0.1:51000', search: '' } });
+    const ctx = vm.createContext({
+      window,
+      document,
+      URL,
+      URLSearchParams,
+      CSS: { escape: (s) => String(s).replace(/([^a-zA-Z0-9_-])/g, '\\$1') },
+      setTimeout,
+      clearTimeout,
+    });
+    vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+    for (const rel of ['core.js', 'components/plugin-panes.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+    const ns = window.Hangar;
+    const pluginsSection = document.querySelector('[data-role="installed-plugins"]');
+    ns.renderInstalledPlugins(pluginsSection, {
+      plugins: [
+        { name: 'aem-65', dir: 'aem-65-plugin', pluginId: '', counts: { skills: 12, rules: 1, mcpServers: 1 } },
+        { name: 'foo', dir: 'alpha-plugin', pluginId: '', counts: { skills: 1 } },
+        { name: 'single-root', dir: 'single-root', pluginId: 'single-root', counts: { mcpServers: 1 } },
+        { name: 'zeta', dir: 'foo', pluginId: '', counts: { skills: 1 } },
+      ],
+    });
+
+    const aemCard = pluginsSection.querySelector('[data-plugin-dir="aem-65-plugin"]');
+    const alphaCard = pluginsSection.querySelector('[data-plugin-dir="alpha-plugin"]');
+    const fooDirCard = pluginsSection.querySelector('[data-plugin-dir="foo"]');
+    const singlePluginCard = pluginsSection.querySelector('[data-plugin-dir="single-root"]');
+    const singleSidecarCard = document.querySelector('[data-sidecar-id="single-root"]');
+    const hiddenDiscoverCard = document.querySelector('[data-pkg-id="ghost-pkg"]');
+    assert.equal(aemCard.dataset.pluginName, 'aem-65');
+
+    // 1. Navigating by manifest name "aem-65" (when dir is "aem-65-plugin") highlights aemCard and ignores hidden Discover card
+    let resolveScroll;
+    const scrollPromise = new Promise((r) => {
+      resolveScroll = r;
+    });
+    let pulseStarts = 0;
+    const origAdd = aemCard.classList.add.bind(aemCard.classList);
+    aemCard.classList.add = (...cls) => {
+      if (cls.includes('agy-card-highlight')) pulseStarts += 1;
+      return origAdd(...cls);
+    };
+    aemCard.scrollIntoView = () => scrollPromise;
+
+    assert.equal(
+      ns.handleHangarNavigateMessage({
+        origin: 'http://127.0.0.1:50596',
+        data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'aem-65' },
+      }),
+      true
+    );
+    assert.equal(aemCard.classList.contains('agy-card-highlight'), true);
+    assert.equal(pulseStarts, 1);
+    resolveScroll();
+    await scrollPromise;
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(pulseStarts, 2, 're-triggers pulse once scrollIntoView Promise resolves');
+
+    // 2. Navigating by dir "aem-65-plugin" also highlights the same card
+    assert.equal(
+      ns.handleHangarNavigateMessage({
+        origin: 'http://127.0.0.1:50596',
+        data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'aem-65-plugin' },
+      }),
+      true
+    );
+    assert.equal(aemCard.classList.contains('agy-card-highlight'), true);
+
+    // 3. Exact data-plugin-dir="foo" beats alphabetically earlier data-plugin-name="foo" (alpha-plugin)
+    ns.handleHangarNavigateMessage({
+      origin: 'http://127.0.0.1:50596',
+      data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'foo' },
+    });
+    assert.equal(fooDirCard.classList.contains('agy-card-highlight'), true);
+    assert.equal(alphaCard.classList.contains('agy-card-highlight'), false);
+
+    // 4. Single-root plugin+sidecar: targetTab="plugins" highlights plugin card; targetTab="sidecars" highlights sidecar card
+    ns.handleHangarNavigateMessage({
+      origin: 'http://127.0.0.1:50596',
+      data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'single-root' },
+    });
+    assert.equal(singlePluginCard.classList.contains('agy-card-highlight'), true);
+    assert.equal(singleSidecarCard.classList.contains('agy-card-highlight'), false);
+
+    ns.handleHangarNavigateMessage({
+      origin: 'http://127.0.0.1:50596',
+      data: { type: 'hangar-navigate', targetTab: 'sidecars', pluginId: 'single-root', targetId: 'single-root' },
+    });
+    assert.equal(singleSidecarCard.classList.contains('agy-card-highlight'), true);
+    assert.equal(singlePluginCard.classList.contains('agy-card-highlight'), false);
+
+    // 5. Hidden Discover sub-pane cards are ignored when subTab === "installed"
+    ns.handleHangarNavigateMessage({
+      origin: 'http://127.0.0.1:50596',
+      data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'ghost-pkg' },
+    });
+    assert.equal(hiddenDiscoverCard.classList.contains('agy-card-highlight'), false);
   });
 });

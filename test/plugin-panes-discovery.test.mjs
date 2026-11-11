@@ -223,4 +223,57 @@ describe('Hangar multi-sidecar plugin discovery and security sanitization', () =
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('aligns plugin sidecar IDs to folder dir when plugin.json#name differs and merges live GetSidecars entries by pluginPath without duplicates', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-name-vs-dir-'));
+    try {
+      const pluginsDir = join(tmp, 'plugins');
+      const aemDir = join(pluginsDir, 'aem-65-plugin');
+      mkdirSync(join(aemDir, 'sidecars', 'ops-console'), { recursive: true });
+      writeFileSync(join(aemDir, 'plugin.json'), JSON.stringify({ name: 'aem-65' }), 'utf8');
+      writeFileSync(
+        join(aemDir, 'sidecars', 'ops-console', 'sidecar.json'),
+        JSON.stringify({ displayName: 'AEM Ops Console', hasWebUi: true }),
+        'utf8'
+      );
+
+      // Discovery uses folder dir ("aem-65-plugin") consistently whether pluginsRes is provided or scanned from disk
+      const fromScan = enrichSidecarList([], {}, { pluginsDir, sidecarsDir: join(tmp, 'sidecars') });
+      assert.equal(fromScan.length, 1);
+      assert.equal(fromScan[0].sidecarId, 'aem-65-plugin/ops-console');
+      assert.equal(fromScan[0].parentPluginId, 'aem-65-plugin');
+
+      const fromPluginsRes = enrichSidecarList([], {}, {
+        pluginsDir,
+        pluginsRes: { plugins: [{ name: 'aem-65', path: aemDir }] },
+        sidecarsDir: join(tmp, 'sidecars'),
+      });
+      assert.equal(fromPluginsRes.length, 1);
+      assert.equal(fromPluginsRes[0].sidecarId, 'aem-65-plugin/ops-console');
+
+      // Even if GetSidecars reports the manifest name prefix ("aem-65/ops-console"), pluginPath + subSlug merges without duplicating
+      const merged = enrichSidecarList(
+        [
+          {
+            sidecarId: 'aem-65/ops-console',
+            status: 'SIDECAR_STATUS_RUNNING',
+            webPort: 51999,
+            pluginPath: `file://${aemDir.startsWith('/') ? '' : '/'}${aemDir.replace(/\\/g, '/')}`,
+            config: { displayName: 'AEM Ops Console', hasWebUi: true },
+          },
+        ],
+        {},
+        {
+          pluginsDir,
+          pluginsRes: { plugins: [{ name: 'aem-65', path: aemDir }] },
+          sidecarsDir: join(tmp, 'sidecars'),
+        }
+      );
+      assert.equal(merged.length, 1);
+      assert.equal(merged[0].sidecarId, 'aem-65/ops-console');
+      assert.equal(merged[0].isRunning, true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

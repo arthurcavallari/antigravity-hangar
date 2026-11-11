@@ -215,6 +215,7 @@
   function syncPluginCard(card) {
     const p = card._plugin;
     card.dataset.pluginId = p.pluginId || p.dir || '';
+    card.dataset.pluginName = p.name || '';
     const diag = card._diag || p.diagnostics || null;
     const missingBins = (diag?.mcpServers || [])
       .filter((s) => s.transport === 'stdio' && s.commandExists === false)

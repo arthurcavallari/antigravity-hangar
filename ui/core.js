@@ -155,6 +155,38 @@
     SAFE_ID_RE.test(val.trim()) &&
     !val.trim().split('/').some((s) => s === '.' || s === '..')
   );
+  let currentNavScrollId = 0;
+  function queryVisibleCard(root, selector) {
+    if (typeof root?.querySelectorAll === 'function') {
+      const list = root.querySelectorAll(selector);
+      if (list && typeof list[Symbol.iterator] === 'function') {
+        let sawAny = false;
+        for (const el of list) {
+          sawAny = true;
+          if (el && !el.closest?.('.hidden')) return el;
+        }
+        if (sawAny) return null;
+      }
+    }
+    const el = root?.querySelector?.(selector) || null;
+    return el && !el.closest?.('.hidden') ? el : null;
+  }
+  function cardSelectorsFor(id, targetTab, subTab, preferSidecar) {
+    const sidecarSel = `.agy-card[data-sidecar-id="${id}"]`;
+    const pluginSels = [
+      `.agy-card[data-plugin-dir="${id}"]`,
+      `.agy-card[data-plugin-id="${id}"]`,
+      `.agy-card[data-plugin-name="${id}"]`,
+    ];
+    const pkgSel = `.agy-card[data-pkg-id="${id}"]`;
+    if (subTab === 'discover' || targetTab === 'discover') {
+      return [pkgSel, ...pluginSels, sidecarSel];
+    }
+    if (preferSidecar) {
+      return [sidecarSel, ...pluginSels];
+    }
+    return [...pluginSels, sidecarSel];
+  }
   ns.handleHangarNavigateMessage = function handleHangarNavigateMessage(event) {
     const data = event?.data;
     if (!data || typeof data !== 'object' || data.type !== 'hangar-navigate' || event?.source === null || !ns.isTrustedSidecarOrigin(event.origin)) {
@@ -165,6 +197,7 @@
       : ((typeof data.sidecarId === 'string' && data.sidecarId.trim()) ? data.sidecarId : (data.targetId || ''));
     const rawId = String(rawCandidate).trim();
     if (!isSafeId(rawId)) return false;
+    const hasExplicitSidecar = isSafeId(data.targetId) || isSafeId(data.sidecarId);
     const effectiveSidecarId = isSafeId(data.targetId)
       ? data.targetId.trim()
       : (isSafeId(data.sidecarId) ? data.sidecarId.trim() : rawId);
@@ -193,12 +226,22 @@
         }
       }
       document.querySelector?.(`[data-subtab="${subTab}"]`)?.click?.();
+      const activePane = storeView?.querySelector?.(`[data-role="pane-${subTab}"]`);
+      const queryRoot = typeof activePane?.querySelector === 'function'
+        ? activePane
+        : (typeof storeView?.querySelector === 'function' ? storeView : document);
       for (const id of new Set([effectiveSidecarId, rawId].filter(Boolean))) {
-        const selector = `.agy-card[data-plugin-dir="${id}"], .agy-card[data-plugin-id="${id}"], .agy-card[data-sidecar-id="${id}"], .agy-card[data-pkg-id="${id}"]`;
-        const card = document.querySelector?.(selector);
+        const preferSidecar = targetTab === 'sidecars' || id.includes('/') || (hasExplicitSidecar && id === effectiveSidecarId);
+        let card = null;
+        for (const selector of cardSelectorsFor(id, targetTab, subTab, preferSidecar)) {
+          card = queryVisibleCard(queryRoot, selector);
+          if (card) break;
+        }
         if (card) {
+          const navScrollId = ++currentNavScrollId;
           let settleTimer = null;
-          let scrollCleanupTimer = null;
+          let scrollIdleTimer = null;
+          let didScroll = false;
           const settlePulse = () => {
             if (settleTimer && typeof clearTimeout === 'function') {
               clearTimeout(settleTimer);
@@ -218,36 +261,58 @@
               settleTimer?.unref?.();
             }
           };
-          const onScrollEnd = () => {
-            if (scrollCleanupTimer && typeof clearTimeout === 'function') {
-              clearTimeout(scrollCleanupTimer);
-              scrollCleanupTimer = null;
+          const detachScrollListeners = () => {
+            if (scrollIdleTimer && typeof clearTimeout === 'function') {
+              clearTimeout(scrollIdleTimer);
+              scrollIdleTimer = null;
             }
-            startPulse();
+            storeView?.removeEventListener?.('scrollend', onScrollEnd);
+            storeView?.removeEventListener?.('scroll', onScroll);
+          };
+          const onScrollEnd = () => {
+            detachScrollListeners();
+            if (navScrollId === currentNavScrollId) startPulse();
+          };
+          const onScroll = () => {
+            didScroll = true;
+            if (scrollIdleTimer && typeof clearTimeout === 'function') clearTimeout(scrollIdleTimer);
+            if (typeof setTimeout === 'function') {
+              scrollIdleTimer = setTimeout(() => {
+                detachScrollListeners();
+                if (didScroll && navScrollId === currentNavScrollId) startPulse();
+              }, 120);
+              scrollIdleTimer?.unref?.();
+            }
           };
           const clearAll = () => {
+            ++currentNavScrollId;
             if (settleTimer && typeof clearTimeout === 'function') clearTimeout(settleTimer);
-            if (scrollCleanupTimer && typeof clearTimeout === 'function') clearTimeout(scrollCleanupTimer);
-            storeView?.removeEventListener?.('scrollend', onScrollEnd);
+            detachScrollListeners();
             card.removeEventListener?.('animationend', settlePulse);
             document.removeEventListener?.('pointerdown', clearAll, true);
             document.removeEventListener?.('keydown', clearAll, true);
+            document.removeEventListener?.('wheel', clearAll, true);
             card.classList?.remove?.('agy-card-highlight', 'agy-card-highlight-settled');
             if (ns._clearCardHighlight === clearAll) ns._clearCardHighlight = null;
           };
           ns._clearCardHighlight = clearAll;
-          card.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+          const scrollResult = card.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
           startPulse();
-          storeView?.addEventListener?.('scrollend', onScrollEnd, { once: true });
-          if (typeof setTimeout === 'function') {
-            scrollCleanupTimer = setTimeout(() => {
-              storeView?.removeEventListener?.('scrollend', onScrollEnd);
-              scrollCleanupTimer = null;
-            }, 450);
-            scrollCleanupTimer?.unref?.();
+          if (typeof scrollResult?.then === 'function') {
+            scrollResult.then(() => {
+              if (navScrollId === currentNavScrollId) startPulse();
+            }, () => {});
+          } else {
+            storeView?.addEventListener?.('scrollend', onScrollEnd, { once: true });
+            storeView?.addEventListener?.('scroll', onScroll, { passive: true });
+            if (typeof setTimeout === 'function') {
+              scrollIdleTimer = setTimeout(detachScrollListeners, 150);
+              scrollIdleTimer?.unref?.();
+            }
           }
           document.addEventListener?.('pointerdown', clearAll, true);
           document.addEventListener?.('keydown', clearAll, true);
+          document.addEventListener?.('wheel', clearAll, { capture: true, passive: true });
           break;
         }
       }
