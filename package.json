@@ -54,7 +54,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "agy-plugin-porter": "^0.2.2",
+    "agy-plugin-porter": "^0.3.2",
     "antigravity-sidecar-kit": "^1.6.0"
   },
   "devDependencies": {

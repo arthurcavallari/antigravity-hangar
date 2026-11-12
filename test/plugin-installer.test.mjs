@@ -980,4 +980,41 @@ describe('Hangar plugin installer', () => {
       box.cleanup();
     }
   });
+
+  it('SH-17: bumps agy-plugin-porter to ^0.3.2 and preserves 2.31.0 SKILL.md frontmatter + nested metadata', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.3.2');
+    const porterPkg = JSON.parse(readFileSync(new URL('../node_modules/agy-plugin-porter/package.json', import.meta.url), 'utf8'));
+    assert.equal(porterPkg.version, '0.3.2');
+    assert.equal(existsSync(new URL('../node_modules/agy-plugin-porter/lib/mod-compiler.mjs', import.meta.url)), true);
+
+    const box = sandbox();
+    try {
+      const srcDir = join(box.packagesDir, 'deploy-src');
+      const outDir = join(box.packagesDir, 'deploy-out');
+      writeTree(srcDir, {
+        '.claude-plugin/plugin.json': JSON.stringify({ name: 'deploy-pack', version: '1.0.0' }),
+        'skills/deploy/SKILL.md': [
+          '---',
+          'name: deploy',
+          'description: Production deploy workflow',
+          'disable-model-invocation: true',
+          'user-invocable: false',
+          'metadata:',
+          '  icon: rocket',
+          '---',
+          'Deploy body.',
+        ].join('\n'),
+      });
+      const { portPackage } = await import('agy-plugin-porter');
+      await portPackage({ srcDir, outDir, slug: 'deploy-pack' });
+      const portedSkill = readFileSync(join(outDir, 'skills', 'deploy', 'SKILL.md'), 'utf8');
+      assert.match(portedSkill, /disable-model-invocation:\s*true/);
+      assert.match(portedSkill, /disable-slash-command:\s*true/);
+      assert.match(portedSkill, /metadata:\r?\n\s+icon:\s*rocket/);
+      assert.doesNotMatch(portedSkill, /\[object Object\]/);
+    } finally {
+      box.cleanup();
+    }
+  });
 });
