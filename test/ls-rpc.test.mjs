@@ -261,4 +261,59 @@ describe('hangarRpc shared state reads', () => {
     });
     assert.match(state.activeWorkspace.workspacePath, /proj[\\/]cold/i);
   });
+
+  it('SH-10: prefers trusted hangar runtime.json LS credentials over ANTIGRAVITY_AGENT=1 run_command token', async () => {
+    const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { getLsConfig, manageSidecar } = await import('antigravity-sidecar-kit/rpc');
+
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-sh10-'));
+    try {
+      const runtimeDir = join(tmp, 'hangar', 'data');
+      mkdirSync(runtimeDir, { recursive: true });
+      writeFileSync(
+        join(runtimeDir, 'runtime.json'),
+        JSON.stringify({ lsAddress: '127.0.0.1:59999', csrfToken: 'trusted-hangar-token' }),
+        'utf8'
+      );
+
+      const agentEnv = {
+        ANTIGRAVITY_AGENT: '1',
+        ANTIGRAVITY_LS_ADDRESS: '127.0.0.1:59999',
+        ANTIGRAVITY_CSRF_TOKEN: 'restricted-run-command-token',
+      };
+      const cfg = getLsConfig({ sidecarDataRoot: tmp, sidecarId: 'hangar', env: agentEnv });
+      assert.equal(cfg.csrfToken, 'trusted-hangar-token');
+
+      const seenTokens = [];
+      const fetchFn = async (_url, init) => {
+        const tok = init.headers['x-codeium-csrf-token'];
+        seenTokens.push(tok);
+        if (tok === 'restricted-run-command-token') {
+          return {
+            ok: false,
+            status: 403,
+            text: async () => JSON.stringify({ code: 'permission_denied', message: 'principal "run_command" denied' }),
+          };
+        }
+        return { ok: true, status: 200, text: async () => '{"sidecars":[]}' };
+      };
+
+      await manageSidecar('hangar', 'SIDECAR_ACTION_RESTART', {
+        sidecarDataRoot: tmp,
+        sidecarId: 'hangar',
+        env: agentEnv,
+        fetchFn,
+      });
+      await hangarRpc('CreateTerminal', { cwd: 'C:/proj' }, {
+        sidecarDataRoot: tmp,
+        env: agentEnv,
+        fetchFn,
+      });
+      assert.deepEqual(seenTokens, ['trusted-hangar-token', 'trusted-hangar-token']);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

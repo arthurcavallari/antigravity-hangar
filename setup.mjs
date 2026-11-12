@@ -44,7 +44,7 @@ async function migrateLegacySidecarHub() {
   }
 
   if (existsSync(LEGACY_JUNCTION_PATH)) {
-    await manageSidecar(LEGACY_SIDECAR_ID, 'SIDECAR_ACTION_DISABLE').catch(() => {});
+    await manageSidecar(LEGACY_SIDECAR_ID, 'SIDECAR_ACTION_DISABLE', { sidecarId: SIDECAR_ID }).catch(() => {});
     removeLinkOrDir(LEGACY_JUNCTION_PATH);
     console.log(`[${SIDECAR_ID}] Removed legacy junction ${LEGACY_JUNCTION_PATH}`);
   }
