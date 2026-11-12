@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import vm from 'node:vm';
@@ -1888,6 +1889,58 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
       if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
       else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+  });
+
+  it('resolves AGY_BROWSER_ACTIVE_PORT_FILE for syncQuoteWithHostWindow before legacy DevToolsActivePort [SH-11]', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sh11-'));
+    const portFile = join(dir, 'ActivePortFile');
+    writeFileSync(portFile, '61420\n/devtools/browser/test\n', 'utf8');
+    const prevPortFile = process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+    const prevAppData = process.env.APPDATA;
+    process.env.AGY_BROWSER_ACTIVE_PORT_FILE = `  ${portFile}  `;
+    process.env.APPDATA = join(dir, 'missing-appdata');
+    let queriedUrl = '';
+    class MockWs {
+      constructor(url) {
+        this.url = url;
+        setImmediate(() => this.onopen?.());
+      }
+      send(raw) {
+        const { id } = JSON.parse(raw);
+        setImmediate(() => this.onmessage?.({ data: JSON.stringify({ id, result: { result: { value: 'injected-drop' } } }) }));
+      }
+      close() {}
+    }
+    try {
+      const res = await syncQuoteWithHostWindow({
+        conversationId: 'conv-sh11',
+        terminalId: 'term-sh11',
+        name: 'pwsh',
+        selectionContent: 'echo ok',
+        action: 'drop',
+        fetchFn: async (url) => {
+          queriedUrl = url;
+          return {
+            json: async () => [{
+              id: 'p1',
+              type: 'page',
+              title: 'Hub',
+              url: 'https://127.0.0.1:50000/c/conv-sh11',
+              webSocketDebuggerUrl: 'ws://127.0.0.1:61420/devtools/page/p1',
+            }],
+          };
+        },
+        WebSocketClass: MockWs,
+      });
+      assert.equal(queriedUrl, 'http://127.0.0.1:61420/json');
+      assert.deepEqual(res, { ok: true, targetId: 'p1', result: 'injected-drop' });
+    } finally {
+      if (prevPortFile === undefined) delete process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+      else process.env.AGY_BROWSER_ACTIVE_PORT_FILE = prevPortFile;
+      if (prevAppData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = prevAppData;
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
