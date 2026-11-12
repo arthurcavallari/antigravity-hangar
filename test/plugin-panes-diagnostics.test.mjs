@@ -8,6 +8,7 @@ import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { checkCommandExists, inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from '../lib/plugin-diagnostics.mjs';
+import { checkJetboxAuth } from '../lib/jetbox-proxy.mjs';
 import { fetchHangarState } from '../lib/state-orchestrator.mjs';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
@@ -365,5 +366,46 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
       data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'ghost-pkg' },
     });
     assert.equal(hiddenDiscoverCard.classList.contains('agy-card-highlight'), false);
+  });
+
+  it('SH-07: accepts Antigravity plugin:// custom scheme origins while enforcing X-Sidecar-Token', () => {
+    const prevToken = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = 'plugin-origin-tok-99';
+    try {
+      assert.equal(
+        isAuthorizedSidecarRequest({ headers: { origin: 'plugin://hangar-61676', 'x-sidecar-token': 'plugin-origin-tok-99' } }),
+        true
+      );
+      assert.equal(
+        isAuthorizedSidecarRequest({ headers: { origin: 'plugin://agy-plugin-porter--cockpit-61668', 'x-sidecar-token': 'plugin-origin-tok-99' } }),
+        true
+      );
+      assert.equal(
+        isAuthorizedSidecarRequest({ headers: { origin: 'plugin://hangar-61676', 'x-sidecar-token': 'wrong' } }),
+        false
+      );
+      assert.equal(
+        checkJetboxAuth({}, { headers: { origin: 'plugin://hangar-61676', 'x-sidecar-token': 'plugin-origin-tok-99' } }).ok,
+        true
+      );
+      assert.equal(
+        checkJetboxAuth({}, { headers: { origin: 'plugin://hangar-61676', 'x-sidecar-token': 'wrong' } }).status,
+        401
+      );
+      assert.equal(
+        checkJetboxAuth({}, { headers: { origin: 'https://evil.example', 'x-sidecar-token': 'plugin-origin-tok-99' } }).status,
+        403
+      );
+    } finally {
+      if (prevToken === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+      else process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = prevToken;
+    }
+
+    const window = { location: { origin: 'http://127.0.0.1:61676', search: '' }, addEventListener() {} };
+    const ctx = vm.createContext({ window, document: {}, URL, URLSearchParams });
+    vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+    assert.equal(window.Hangar.isTrustedSidecarOrigin('plugin://hangar-61676'), true);
+    assert.equal(window.Hangar.isTrustedSidecarOrigin('plugin://agy-plugin-porter--cockpit-61668'), true);
+    assert.equal(window.Hangar.isTrustedSidecarOrigin('https://evil.example'), false);
   });
 });

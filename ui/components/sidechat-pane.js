@@ -28,7 +28,12 @@
   const isTrustedSideChatMessage = (e) => {
     if (e?.origin !== undefined) {
       const locOrigin = window.location?.origin;
-      if (locOrigin ? e.origin !== locOrigin : !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(String(e.origin))) {
+      const isPluginOrigin = (ns.PLUGIN_ORIGIN_RE || /^plugin:\/\/[a-z0-9][a-z0-9._-]*-\d+\/?$/i).test(String(e.origin));
+      if (
+        locOrigin
+          ? e.origin !== locOrigin && !isPluginOrigin
+          : !/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(String(e.origin)) && !isPluginOrigin
+      ) {
         return false;
       }
     }

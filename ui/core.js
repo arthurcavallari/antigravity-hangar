@@ -157,8 +157,13 @@
   };
   const SAFE_ID_RE = (ns.SAFE_ID_RE = /^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?$/);
   const LOOPBACK_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
+  const PLUGIN_ORIGIN_RE = (ns.PLUGIN_ORIGIN_RE = /^plugin:\/\/[a-z0-9][a-z0-9._-]*-\d+\/?$/i);
   ns.isTrustedSidecarOrigin = (origin) => (
-    origin === undefined || (Boolean(origin) && (origin === window.location?.origin || LOOPBACK_ORIGIN_RE.test(String(origin))))
+    origin === undefined ||
+    (Boolean(origin) &&
+      (origin === window.location?.origin ||
+        LOOPBACK_ORIGIN_RE.test(String(origin)) ||
+        PLUGIN_ORIGIN_RE.test(String(origin))))
   );
   const isSafeId = (val) => (
     typeof val === 'string' &&
