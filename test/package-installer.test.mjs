@@ -629,4 +629,39 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('SH-01: selfUpdateHangar marks activation true when fallback ManageSidecar(ENABLE) throws project name already exists', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sh01-selfupdate-'));
+    try {
+      const agyCfgPath = join(dir, 'config.json');
+      writeFileSync(agyCfgPath, JSON.stringify({ sidecars: { hangar: { enabled: true } } }), 'utf8');
+      const res = await selfUpdateHangar({
+        version: '9.0.0',
+        packagesDir: join(dir, 'packages'),
+        sidecarsDir: join(dir, 'sidecars'),
+        agyConfigPath: agyCfgPath,
+        delayMs: 0,
+        execFn: (cmd, args) => {
+          if (cmd === 'git' && args[0] === 'clone') {
+            const dest = args[args.length - 1];
+            mkdirSync(dest, { recursive: true });
+            writeFileSync(join(dest, 'sidecar.json'), JSON.stringify({ command: 'node', args: ['server.mjs'], display_name: 'Hangar' }), 'utf8');
+            writeFileSync(join(dest, 'package.json'), JSON.stringify({ name: 'antigravity-hangar', version: '9.0.0', dependencies: { 'antigravity-sidecar-kit': '^1.7.0' } }), 'utf8');
+          }
+        },
+        rpcFn: async (method, payload) => {
+          if (method === 'ManageSidecar' && payload.action === 'SIDECAR_ACTION_RESTART') {
+            throw new Error('sidecar disabled');
+          }
+          if (method === 'ManageSidecar' && payload.action === 'SIDECAR_ACTION_ENABLE') {
+            throw new Error('LanguageServerService/ManageSidecar failed: HTTP 500: grpc-status: 13: project name already exists');
+          }
+          return { sidecars: [{ sidecarId: 'hangar', status: 'SIDECAR_STATUS_RUNNING' }] };
+        },
+      });
+      assert.deepEqual(res.activation, { activated: true, method: 'enable' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

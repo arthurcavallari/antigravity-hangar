@@ -84,4 +84,17 @@ describe('HibernationManager debounced idle-TTL lifecycle', () => {
     );
     assert.deepEqual(calls, [{ action: 'SIDECAR_ACTION_ENABLE', id: 'db-inspector' }]);
   });
+
+  it('SH-01: records auto-wake lifecycle event when ManageSidecar(ENABLE) throws project name already exists', async () => {
+    const mgr = new HibernationManager();
+    const events = await mgr.reconcile(
+      [{ sidecarId: 'db-inspector', status: 'SIDECAR_STATUS_STOPPED', matchesWorkspace: true, autoHibernate: true }],
+      {
+        manageSidecarFn: async () => {
+          throw new Error('LanguageServerService/ManageSidecar failed: HTTP 500: grpc-status: 13: project name already exists');
+        },
+      }
+    );
+    assert.deepEqual(events, [{ sidecarId: 'db-inspector', action: 'SIDECAR_ACTION_ENABLE', reason: 'workspace_match' }]);
+  });
 });

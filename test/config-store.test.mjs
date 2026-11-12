@@ -448,4 +448,35 @@ describe('config-store and child iframe URL normalization', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('SH-01: manageChildSidecar treats ManageSidecar(ENABLE) project name already exists as registered and restarts if still stopped', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-sh01-manage-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      const calls = [];
+      let status = 'SIDECAR_STATUS_STOPPED';
+      const res = await manageChildSidecar('context-monitor', 'SIDECAR_ACTION_ENABLE', {
+        configPath: cfgPath,
+        pluginsDir: join(dir, 'plugins'),
+        rpcFn: async (method, payload) => {
+          calls.push({ method, payload });
+          if (method === 'ManageSidecar' && payload.action === 'SIDECAR_ACTION_ENABLE') {
+            throw new Error('LanguageServerService/ManageSidecar failed: HTTP 500: grpc-status: 13: project name already exists');
+          }
+          if (method === 'GetSidecars') {
+            return { sidecars: [{ sidecarId: 'context-monitor', status }] };
+          }
+          if (method === 'ManageSidecar' && payload.action === 'SIDECAR_ACTION_RESTART') {
+            status = 'SIDECAR_STATUS_RUNNING';
+            return {};
+          }
+          return {};
+        },
+      });
+      assert.equal(res.ok, true);
+      assert.equal(calls.some((c) => c.method === 'ManageSidecar' && c.payload.action === 'SIDECAR_ACTION_RESTART'), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
