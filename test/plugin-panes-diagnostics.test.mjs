@@ -9,7 +9,7 @@ import { parseHTML } from 'linkedom';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { checkCommandExists, inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from '../lib/plugin-diagnostics.mjs';
 import { checkJetboxAuth } from '../lib/jetbox-proxy.mjs';
-import { fetchHangarState } from '../lib/state-orchestrator.mjs';
+import { fetchHangarState, isBuiltinSidecarEntry, manageChildSidecar } from '../lib/state-orchestrator.mjs';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 
@@ -446,6 +446,58 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
       assert.equal(health[0].healthy, true);
       assert.deepEqual(health[0].mcpServers[0].missingEnvVars, []);
       assert.equal(health[0].hooks.length, 1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('SH-19: marks built-in Antigravity sidecars (swarm/swarm_board) as builtin, blocks disable mutations, and ignores ${flag:...} Mendel placeholders', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-sh19-'));
+    try {
+      const swarmRaw = {
+        sidecarId: 'swarm/swarm_board',
+        parentPluginId: 'swarm',
+        pluginPath: 'C:\\Program Files\\Antigravity\\resources\\app\\extensions\\antigravity\\builtin\\plugins\\swarm',
+        status: 'SIDECAR_STATUS_RUNNING',
+        webPort: 62140,
+        baseUrl: 'http://127.0.0.1:62140',
+        config: { displayName: 'Swarm Board', uiConfig: { displayName: 'Swarm Board', views: [{ path: '/' }] } },
+      };
+      assert.equal(isBuiltinSidecarEntry(swarmRaw), true);
+      const state = await fetchHangarState({
+        configPath: join(tmp, 'hangar.json'),
+        sidecarsDir: join(tmp, 'sidecars'),
+        packagesDir: join(tmp, 'packages'),
+        pluginsDir: join(tmp, 'plugins'),
+        rpcFn: async (m) => (m === 'GetSidecars' ? { sidecars: [swarmRaw] } : { plugins: [], trajectorySummaries: {}, terminals: [] }),
+      });
+      const swarmSc = state.sidecars.find((s) => s.sidecarId === 'swarm/swarm_board');
+      assert.equal(swarmSc.builtin, true);
+      assert.equal(swarmSc.source, 'builtin');
+      assert.equal(swarmSc.autoHibernateLocked, true);
+
+      const rpcMutations = [];
+      await assert.rejects(
+        () => manageChildSidecar('swarm/swarm_board', 'SIDECAR_ACTION_DISABLE', {
+          configPath: join(tmp, 'hangar.json'),
+          rawSidecars: [swarmRaw],
+          rpcFn: async (m, b) => { rpcMutations.push({ m, b }); return {}; },
+        }),
+        /Built-in Antigravity sidecar/
+      );
+      assert.deepEqual(rpcMutations, []);
+
+      const pDir = join(tmp, 'plugins', 'mendel-flag-plugin');
+      mkdirSync(pDir, { recursive: true });
+      writeFileSync(join(pDir, 'plugin.json'), '{"name":"mendel-flag-plugin"}', 'utf8');
+      writeFileSync(
+        join(pDir, 'mcp_config.json'),
+        JSON.stringify({ mcpServers: { demo: { command: 'node', args: ['s.js'], env: { F: '${flag:enable-swarm-ui}' } } } }),
+        'utf8'
+      );
+      const diag = inspectInstalledPluginHealth(join(tmp, 'plugins'), {});
+      assert.equal(diag[0].healthy, true);
+      assert.deepEqual(diag[0].mcpServers[0].missingEnvVars, []);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

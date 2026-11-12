@@ -52,6 +52,7 @@
       if (triggerBtn) {
         if (spin) triggerBtn.classList?.remove?.('spinning');
         const keepDisabled =
+          (triggerBtn.dataset?.role === 'proc-btn' && Boolean(card._sc?.builtin)) ||
           (triggerBtn.dataset?.role === 'hibernate-btn' && Boolean(card._sc?.autoHibernateLocked)) ||
           (triggerBtn.dataset?.role === 'add-ws-btn' && !card._activeWorkspace?.workspacePath);
         triggerBtn.disabled = keepDisabled;
@@ -99,6 +100,7 @@
           <div class="manager-card-title-row">
             <span data-role="title" class="manager-card-title"></span>
             <span data-role="status-badge" class="agy-badge"></span>
+            <span data-role="builtin-badge" class="agy-badge hidden">Built-in</span>
           </div>
           <div class="agy-card-meta">${ns.iconSvg('folder', 13)}<span data-role="meta-sub"></span></div>
         </div>
@@ -327,9 +329,13 @@
       q('restart-btn').setAttribute?.('aria-label', `Restart ${scLabel}`);
       q('uninstall-btn').title = `Uninstall ${scLabel}`;
       q('uninstall-btn').setAttribute?.('aria-label', `Uninstall ${scLabel}`);
-      q('proc-btn').title = `Enable or disable ${scLabel}`;
+      q('proc-btn').title = sc.builtin
+        ? 'Built-in Antigravity sidecar — managed by the IDE'
+        : `Enable or disable ${scLabel}`;
       q('proc-btn').setAttribute?.('aria-label', `Enable or disable ${scLabel}`);
-      q('meta-sub').textContent = `${sc.sidecarId} • ${verLabel} • ${sc.source}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
+      const metaOrigin = sc.builtin ? 'ships with Antigravity' : `${verLabel} • ${sc.source}`;
+      q('meta-sub').textContent = `${sc.sidecarId} • ${metaOrigin}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
+      q('builtin-badge')?.classList.toggle('hidden', !sc.builtin);
       const statusBadge = q('status-badge');
       const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;
       if (statusBadge.dataset.sig !== badgeSig) {
@@ -381,12 +387,21 @@
         runCardAction(card, () => onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== pat)));
       });
       const procBtn = q('proc-btn');
-      if (!procBtn.disabled) {
+      if (sc.builtin) {
         if (window.AgyUI?.syncSwitchState) {
-          window.AgyUI.syncSwitchState(procBtn, Boolean(sc.isRunning));
+          window.AgyUI.syncSwitchState(procBtn, Boolean(sc.isRunning), true);
         } else {
           procBtn.classList.toggle('on', Boolean(sc.isRunning));
           procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+          procBtn.disabled = true;
+        }
+      } else if (!card._busy) {
+        if (window.AgyUI?.syncSwitchState) {
+          window.AgyUI.syncSwitchState(procBtn, Boolean(sc.isRunning), false);
+        } else {
+          procBtn.classList.toggle('on', Boolean(sc.isRunning));
+          procBtn.setAttribute('aria-checked', String(Boolean(sc.isRunning)));
+          procBtn.disabled = false;
         }
       }
     }

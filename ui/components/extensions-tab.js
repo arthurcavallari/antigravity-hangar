@@ -4,7 +4,10 @@
   let activeSubTab = 'installed';
   let settingsFeedback = null;
   ns.canUninstallSidecar = (sc) => (
-    !sc.sidecarId.includes('/') && !sc.parentPluginId && !String(sc.source || '').startsWith('plugin:')
+    !sc.builtin &&
+    !sc.sidecarId.includes('/') &&
+    !sc.parentPluginId &&
+    !String(sc.source || '').startsWith('plugin:')
   );
   ns.setExtensionsSubTab = (tab) => {
     activeSubTab = tab;
