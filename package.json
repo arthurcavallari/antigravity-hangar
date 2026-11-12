@@ -1,6 +1,6 @@
 {
   "name": "antigravity-hangar",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "type": "module",
   "description": "Hangar — Chrome-style project-aware tab multiplexer, split-pane telemetry host, and extension marketplace for Google Antigravity Auxiliary Pane sidecars.",
   "license": "MIT",
@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "agy-plugin-porter": "^0.3.2",
-    "antigravity-sidecar-kit": "^1.6.0"
+    "antigravity-sidecar-kit": "^1.8.0"
   },
   "devDependencies": {
     "linkedom": "^0.18.15"

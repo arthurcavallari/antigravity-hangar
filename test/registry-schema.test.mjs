@@ -94,4 +94,29 @@ describe('registry.json validation', () => {
       /only supported with kind "plugin"/
     );
   });
+
+  it('SH-18: bumps Hangar to 1.5.5, pins antigravity-sidecar-kit ^1.8.0, and ships a clean lockfileVersion 3 package-lock.json', () => {
+    const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    const lockRaw = readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8');
+    const pkg = JSON.parse(pkgRaw);
+    const lock = JSON.parse(lockRaw);
+    const reg = read('registry.json');
+    const installedKit = read('node_modules/antigravity-sidecar-kit/package.json');
+
+    assert.equal(pkg.version, '1.5.5');
+    assert.equal(reg.hangar.latestVersion, '1.5.5');
+    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.8.0');
+    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.3.2');
+    assert.equal(installedKit.version, '1.8.0');
+    assert.equal(lock.lockfileVersion, 3);
+    assert.equal(lock.version, '1.5.5');
+    assert.equal(lock.packages[''].version, '1.5.5');
+    assert.equal(lock.packages['node_modules/antigravity-sidecar-kit']?.version, '1.8.0');
+    assert.equal(lock.packages['node_modules/agy-plugin-porter']?.version, '0.3.2');
+    assert.equal(pkgRaw.includes('file:'), false, 'package.json must not contain file: specifiers');
+    assert.equal(lockRaw.includes('file:'), false, 'package-lock.json must not contain file: specifiers');
+    assert.equal(lockRaw.includes('"link":'), false, 'package-lock.json must not contain link entries');
+    assert.equal(Object.keys(lock.packages).some((k) => k.startsWith('..')), false, 'package-lock.json must not reference parent paths');
+    assert.deepEqual(validateRegistry(reg, { packageVersion: pkg.version }), []);
+  });
 });
