@@ -213,11 +213,12 @@ describe('config-store and child iframe URL normalization', () => {
     assert.equal(own.activeWorkspace.workspacePath, 'c:/OldProject');
     assert.equal(own.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/?conversationId=conv-old');
 
-    // A new-conversation pane: children see _new too, and the workspace is the one the host pushed
+    // A new-conversation pane: _new sentinel is stripped from child iframe URLs (SH-05), and workspace comes from host
     const fresh = await stateFor('_new', ['file:///c:/Projects/Next']);
     assert.equal(fresh.activeWorkspace.conversationId, '');
     assert.equal(fresh.activeWorkspace.workspacePath, 'c:/Projects/Next');
-    assert.equal(fresh.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/?conversationId=_new');
+    assert.equal(fresh.sidecars[0].iframeUrl, 'http://127.0.0.1:51234/');
+    assert.equal(buildChildIframeUrl('http://localhost:51235', '/', '_new', 51234), 'http://127.0.0.1:51234/');
 
     // Opened without an id (outside any conversation): the most recently viewed one is the best guess
     const guess = await stateFor('');

@@ -276,19 +276,29 @@
         deckFrames.delete(sc.sidecarId);
         continue;
       }
-      const baseKey = stripConversationParam(sc.iframeUrl);
+      const sanitizeFrameUrl = (raw = '') => {
+        try {
+          const u = new URL(raw);
+          if (u.searchParams.get('conversationId') === '_new') u.searchParams.delete('conversationId');
+          return u.toString();
+        } catch {
+          return raw;
+        }
+      };
+      const cleanIframeUrl = sanitizeFrameUrl(sc.iframeUrl);
+      const baseKey = stripConversationParam(cleanIframeUrl);
       const frameTitle = `${sc.displayName || sc.sidecarId} Sidecar`;
       let frame = deckFrames.get(sc.sidecarId);
       if (!frame) {
         frame = Object.assign(document.createElement('iframe'), {
           className: 'child-sidecar-frame',
-          src: sc.iframeUrl,
+          src: cleanIframeUrl,
           title: frameTitle,
           allow: ns.SIDECAR_IFRAME_ALLOW || '',
         });
         frame.setAttribute?.('title', frameTitle);
         if (ns.SIDECAR_IFRAME_ALLOW) frame.setAttribute?.('allow', ns.SIDECAR_IFRAME_ALLOW);
-        Object.assign(frame.dataset, { sidecarId: sc.sidecarId, baseKey, loadedUrl: sc.iframeUrl });
+        Object.assign(frame.dataset, { sidecarId: sc.sidecarId, baseKey, loadedUrl: cleanIframeUrl });
         frame.addEventListener('load', () => {
           if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');
           if (latestWorkspaceEvent) frame.contentWindow?.postMessage(latestWorkspaceEvent, '*');
@@ -302,12 +312,12 @@
           frame.setAttribute?.('title', frameTitle);
         }
         if (frame.dataset.baseKey !== baseKey) {
-          Object.assign(frame.dataset, { baseKey, loadedUrl: sc.iframeUrl });
-          frame.src = sc.iframeUrl;
-        } else if (frame.dataset.loadedUrl !== sc.iframeUrl) {
-          frame.dataset.loadedUrl = sc.iframeUrl;
+          Object.assign(frame.dataset, { baseKey, loadedUrl: cleanIframeUrl });
+          frame.src = cleanIframeUrl;
+        } else if (frame.dataset.loadedUrl !== cleanIframeUrl) {
+          frame.dataset.loadedUrl = cleanIframeUrl;
           try {
-            const convId = new URL(sc.iframeUrl).searchParams.get('conversationId') || '';
+            const convId = new URL(cleanIframeUrl).searchParams.get('conversationId') || '';
             frame.contentWindow?.postMessage({ type: 'conversation-change', payload: { conversationId: convId } }, '*');
           } catch {
             /* ignore */
