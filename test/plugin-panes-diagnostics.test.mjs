@@ -408,4 +408,46 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
     assert.equal(window.Hangar.isTrustedSidecarOrigin('plugin://agy-plugin-porter--cockpit-61668'), true);
     assert.equal(window.Hangar.isTrustedSidecarOrigin('https://evil.example'), false);
   });
+
+  it('SH-09: treats PLUGIN_DATA, HOME, and USERPROFILE as host-injected BUILTIN_PATH_VARS without false missingEnvVars', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-diag-plugindata-'));
+    try {
+      const pDir = join(tmp, 'memory-ledger');
+      mkdirSync(join(pDir, 'hooks'), { recursive: true });
+      writeFileSync(join(pDir, 'plugin.json'), JSON.stringify({ name: 'memory-ledger' }), 'utf8');
+      writeFileSync(
+        join(pDir, '.mcp.json'),
+        JSON.stringify({
+          mcpServers: {
+            ledger: {
+              command: 'node',
+              args: ['${PLUGIN_ROOT}/server.mjs'],
+              env: {
+                DATA_DIR: '${PLUGIN_DATA}',
+                UNIX_HOME: '${HOME}',
+                WIN_HOME: '${USERPROFILE}',
+              },
+            },
+          },
+        }),
+        'utf8'
+      );
+      writeFileSync(
+        join(pDir, 'hooks', 'hooks.json'),
+        JSON.stringify({
+          hooks: {
+            SessionStart: [{ hooks: [{ type: 'command', command: 'node "${PLUGIN_ROOT}/init.mjs" "${PLUGIN_DATA}"' }] }],
+          },
+        }),
+        'utf8'
+      );
+      const health = inspectInstalledPluginHealth(tmp, {});
+      assert.equal(health.length, 1);
+      assert.equal(health[0].healthy, true);
+      assert.deepEqual(health[0].mcpServers[0].missingEnvVars, []);
+      assert.equal(health[0].hooks.length, 1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
