@@ -468,7 +468,9 @@
       },
     },
   );
+  let didInitialWorkspaceHydrate = false;
   window.sidecar?.onWorkspaceChange?.((uris) => {
+    didInitialWorkspaceHydrate = true;
     state.workspaceUris = Array.isArray(uris) ? uris : [];
     refreshHangarState();
   });
@@ -493,7 +495,18 @@
   }
   document.addEventListener('visibilitychange', syncHostVisibility);
   refreshRegistry();
-  refreshHangarState();
+  if (typeof window.sidecar?.getWorkspaceUris === 'function') {
+    Promise.resolve(window.sidecar.getWorkspaceUris())
+      .catch(() => null)
+      .then((uris) => {
+        if (!didInitialWorkspaceHydrate) {
+          if (Array.isArray(uris)) state.workspaceUris = uris;
+          refreshHangarState();
+        }
+      });
+  } else {
+    refreshHangarState();
+  }
   ns.subscribeStateSyncEvents?.({
     getConversationId: () => hangarConversationId,
     onStateEvent: () => {

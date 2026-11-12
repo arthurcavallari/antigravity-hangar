@@ -309,4 +309,37 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
       { type: 'toggle-conversation', payload: { split: true } },
     ]);
   });
+
+  it('SH-08: hydrates initial workspaceUris via window.sidecar.getWorkspaceUris() before the first /api/state poll', async () => {
+    const requests = [];
+    const window = {
+      location: { search: '' },
+      addEventListener() {},
+      sidecar: {
+        getWorkspaceUris: async () => ['file:///c%3A/Users/arthu/IdeaProjects/antigravity-sidecar-hub'],
+        onWorkspaceChange() {},
+      },
+      Hangar: {
+        partitionSplitTabs: () => ({ workspaceTabs: [], topTabs: [], bottomTabs: [], topSet: new Set() }),
+        apiCall: (path, body) => {
+          if (path === '/api/state') requests.push(body);
+          return new Promise(() => {});
+        },
+      },
+    };
+    window.parent = {};
+    const ctx = vm.createContext({
+      window,
+      document: { hidden: false, getElementById: () => null, addEventListener() {} },
+      URLSearchParams,
+      sessionStorage: { getItem: () => '', setItem() {} },
+      console,
+      setTimeout,
+      setInterval: () => 0,
+    });
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].workspaceUris, ['file:///c%3A/Users/arthu/IdeaProjects/antigravity-sidecar-hub']);
+  });
 });
