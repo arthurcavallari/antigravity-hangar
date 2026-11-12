@@ -15,11 +15,38 @@
     'publickey-credentials-get *',
     'publickey-credentials-create *',
   ].join('; ');
+  const baseNotifyAgent = window.AgyShell?.notifyAgent;
   if (window.AgyShell) {
     Object.entries(window.AgyShell).forEach(([k, v]) => {
       if (ns[k] === undefined) ns[k] = v;
     });
   }
+  ns.notifyAgent = async function notifyAgent(message, conversationId = '', title = 'Sidecar State', extraOpts = {}) {
+    const opts = extraOpts && typeof extraOpts === 'object' ? extraOpts : {};
+    const rawConv = typeof conversationId === 'string' ? conversationId.trim() : '';
+    const cleanConv = rawConv === '_new' ? '' : rawConv;
+    let ws = opts.workspace || ns.getActiveWorkspacePath?.() || window.sidecar?.workspace || '';
+    if (!ws && typeof window.sidecar?.getWorkspaceUris === 'function') {
+      try {
+        const uris = await window.sidecar.getWorkspaceUris();
+        if (Array.isArray(uris) && typeof uris[0] === 'string') {
+          ws = uris[0];
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const mergedOpts = ws ? { ...opts, workspace: ws } : opts;
+    if (typeof baseNotifyAgent === 'function') {
+      return baseNotifyAgent(message, cleanConv, title, mergedOpts);
+    }
+    return ns.apiCall('/api/notify', {
+      message,
+      ...(cleanConv ? { conversationId: cleanConv } : {}),
+      ...(ws ? { workspace: ws } : {}),
+      title: opts.title || title,
+    });
+  };
   const ui = window.AgyUI || {};
   const FAVORITE_PATH =
     'm480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62' +

@@ -230,10 +230,13 @@
       if (!curSc || fixAgentBtn.disabled) return;
       fixAgentBtn.disabled = true;
       await runCardAction(card, async () => {
-        const convId = card._activeWorkspace?.conversationId || '';
+        const rawConv = card._activeWorkspace?.conversationId || '';
+        const convId = rawConv === '_new' ? '' : rawConv;
+        const wsPath = card._activeWorkspace?.workspacePath || ns.getActiveWorkspacePath?.() || '';
+        const extra = wsPath ? { workspace: wsPath } : {};
         const msg = `Sidecar "${curSc.displayName || curSc.sidecarId}" (${curSc.sidecarId}) is in an errored state (${curSc.statusBadge || 'ERROR'}). Please inspect its setup and server logs and fix the issue.`;
-        const res = await (ns.notifyAgent?.(msg, convId, `Sidecar Error: ${curSc.sidecarId}`) ||
-          window.AgyShell?.notifyAgent?.(msg, convId, `Sidecar Error: ${curSc.sidecarId}`));
+        const res = await (ns.notifyAgent?.(msg, convId, `Sidecar Error: ${curSc.sidecarId}`, extra) ||
+          window.AgyShell?.notifyAgent?.(msg, convId, `Sidecar Error: ${curSc.sidecarId}`, extra));
         if (res?.ok === false) throw new Error(res.error || 'Could not send message to agent');
         const span = fixAgentBtn.querySelector('span');
         if (span) {

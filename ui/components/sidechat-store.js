@@ -72,10 +72,14 @@
     const cur = hostObj._payload || { cleanName: 'terminal', terminalId: '', selectionContent: '' };
     Object.assign(sendBtn, { disabled: true, textContent: 'Sending…' });
     try {
+      const rawConv = hostObj._convId || '';
+      const convId = rawConv === '_new' ? '' : rawConv;
+      const wsPath = hostObj._workspace || ns.getActiveWorkspacePath?.() || '';
       const res = await ns.notifyAgent?.(
         ns.formatTerminalAgentMessage(cur, input.value),
-        hostObj._convId || '',
-        `Terminal Quote: ${cur.cleanName}`
+        convId,
+        `Terminal Quote: ${cur.cleanName}`,
+        wsPath ? { workspace: wsPath } : {}
       );
       if (res?.ok === false) {
         throw new Error(res.error || 'Could not send message to agent');

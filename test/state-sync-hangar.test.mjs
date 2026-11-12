@@ -223,4 +223,73 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.ok(jbSharedCss.includes('#070708'));
     assert.ok(jbTermCss.includes('#070708'));
   });
+
+  it('SH-04: Hangar.notifyAgent and _submitQuoteToMain pass workspace fallback and create new-conversation on _new panes', async () => {
+    const { StateSync } = await import('antigravity-sidecar-kit/state-sync');
+    const agentApiCalls = [];
+    const sync = new StateSync({
+      sidecarId: 'hangar',
+      initialState: () => ({ status: 'running' }),
+      agentApiFn: async (args, opts) => {
+        agentApiCalls.push({ args, opts });
+        if (args[0] === 'start-conversation') {
+          throw new Error('unknown subcommand "start-conversation"');
+        }
+        return { conversationId: 'conv-new-1' };
+      },
+    });
+
+    const toasts = [];
+    const sandbox = {
+      window: null,
+      document: {
+        documentElement: {
+          dataset: {},
+          classList: { contains: () => false },
+          style: { setProperty() {}, getPropertyValue: () => '' },
+          toggleAttribute() {},
+        },
+        querySelectorAll: () => [],
+      },
+      location: { search: '?conversationId=_new', origin: 'http://127.0.0.1:43100' },
+      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+      sidecar: {
+        conversationId: '_new',
+        getWorkspaceUris: async () => ['file:///C:/Users/arthu/IdeaProjects/antigravity-sidecar-hub'],
+        fetch: async (_url, init) => {
+          const out = await sync.handleNotify(JSON.parse(init.body));
+          return { ok: (out.status || 200) < 400, status: out.status || 200, json: async () => out };
+        },
+      },
+      URL,
+      URLSearchParams,
+    };
+    sandbox.window = sandbox;
+    vm.runInNewContext(createShellClientHandler()().body, sandbox);
+    vm.runInNewContext(readFileSync(join(ROOT, 'ui', 'core.js'), 'utf8'), sandbox);
+    vm.runInNewContext(readFileSync(join(ROOT, 'ui', 'components', 'sidechat-store.js'), 'utf8'), sandbox);
+    sandbox.Hangar.formatTerminalAgentMessage = (p, note) => `${p.selectionContent}\n${note}`;
+    sandbox.Hangar.showTerminalQuoteToast = (_r, text, isErr = false) => toasts.push({ text, isErr });
+
+    const fixRes = await sandbox.Hangar.notifyAgent('Fix sidecar', '_new', 'Sidecar Error: context-monitor');
+    assert.equal(fixRes.ok, true);
+
+    const sendBtn = { disabled: false, textContent: 'Send to Main' };
+    const input = { value: 'Explain trace', style: {} };
+    await sandbox.Hangar._submitQuoteToMain(
+      { _payload: { cleanName: 'zsh', selectionContent: 'ECONNREFUSED' }, _convId: '_new' },
+      {},
+      sendBtn,
+      'Send to Main',
+      input,
+      () => {},
+      () => {}
+    );
+
+    assert.equal(agentApiCalls.length, 2);
+    assert.equal(agentApiCalls[0].args[0], 'new-conversation');
+    assert.match(String(agentApiCalls[0].opts.workspace), /antigravity-sidecar-hub/);
+    assert.equal(agentApiCalls[1].args[0], 'new-conversation');
+    assert.deepEqual(toasts, [{ text: 'Sent quote from "zsh" to Main Chat', isErr: false }]);
+  });
 });

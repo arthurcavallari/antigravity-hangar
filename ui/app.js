@@ -18,6 +18,7 @@
     bottomActiveTabId: '',
     isResizingSplit: false,
   };
+  ns.getActiveWorkspacePath = () => state.activeWorkspace?.workspacePath || state.workspaceUris?.[0] || '';
   const byId = (id) => document.getElementById(id);
   const els = {
     tabStrip: byId('tab-strip'),
