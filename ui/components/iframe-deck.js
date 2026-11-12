@@ -23,17 +23,45 @@
     }
   }
 
+  let lastAppFontScale = '';
   ns.applyThemePayload = function applyThemePayload(payload, fromHostMessage = false) {
     if (!payload || typeof payload.cssVariables !== 'object') return;
+    const rootStyle = document.documentElement.style;
+    if (!fromHostMessage) {
+      const nextScale = payload.cssVariables['--app-font-scale'] || '';
+      const nextFontSize = payload.cssVariables['--font-size'] || '';
+      if (nextScale) {
+        rootStyle.setProperty('--app-font-scale', nextScale);
+        if (nextFontSize) rootStyle.setProperty('--font-size', nextFontSize);
+      } else {
+        rootStyle.removeProperty?.('--app-font-scale');
+        rootStyle.removeProperty?.('--font-size');
+      }
+      if (nextScale !== lastAppFontScale) {
+        lastAppFontScale = nextScale;
+        if (hasLiveHostTheme && latestThemeEvent?.payload?.cssVariables) {
+          if (nextScale) {
+            latestThemeEvent.payload.cssVariables['--app-font-scale'] = nextScale;
+            if (nextFontSize) latestThemeEvent.payload.cssVariables['--font-size'] = nextFontSize;
+          } else {
+            delete latestThemeEvent.payload.cssVariables['--app-font-scale'];
+            delete latestThemeEvent.payload.cssVariables['--font-size'];
+          }
+          broadcastToChildFrames(latestThemeEvent);
+        }
+      }
+    }
     if (fromHostMessage) {
       hasLiveHostTheme = true;
+      if (lastAppFontScale && !payload.cssVariables['--app-font-scale']) {
+        payload.cssVariables['--app-font-scale'] = lastAppFontScale;
+      }
     } else {
       if (hasLiveHostTheme) return;
       const sig = JSON.stringify(payload.cssVariables);
       if (sig === lastConfigThemeSig && latestThemeEvent) return;
       lastConfigThemeSig = sig;
     }
-    const rootStyle = document.documentElement.style;
     const hasHostFollowVars = Boolean(
       payload.cssVariables['--background'] ||
       payload.cssVariables['--foreground'] ||

@@ -1,10 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { createShellClientHandler, createShellCssHandler } from 'antigravity-sidecar-kit/server';
+import { fetchHangarState } from '../lib/state-orchestrator.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -178,6 +180,33 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
         .split(/\r?\n/)
         .filter((l) => !l.includes('for (') && (l.match(/;/g) || []).length >= 3);
       assert.deepEqual(multiStmt, [], `${rel} contains packed multi-statement lines`);
+    }
+  });
+
+  it('SH-15: steps up UI typography tokens for 2.31.0 and syncs jetski.fontSize to --app-font-scale', async () => {
+    const stylesCss = readFileSync(join(ROOT, 'ui', 'styles.css'), 'utf8');
+    const compCss = readFileSync(join(ROOT, 'ui', 'components.css'), 'utf8');
+    assert.match(stylesCss, /html,\s*body\s*\{[\s\S]*?font-size:\s*var\(--text-base,\s*0\.875rem\);/);
+    assert.match(stylesCss, /\.empty-split-zone\s*\{[\s\S]*?font-size:\s*var\(--text-compact,\s*0\.8125rem\);/);
+    assert.match(compCss, /\.manager-card-title\s*\{[\s\S]*?font-size:\s*var\(--text-base,\s*0\.875rem\);/);
+    assert.match(compCss, /\.manager-card-desc\s*\{[\s\S]*?font-size:\s*var\(--text-sm,\s*0\.75rem\);/);
+
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-sh15-'));
+    try {
+      const appStoragePath = join(tmp, 'app_storage.json');
+      writeFileSync(appStoragePath, JSON.stringify({ 'jetski.fontSize': '16' }), 'utf8');
+      const state16 = await fetchHangarState({
+        configPath: join(tmp, 'hangar.json'),
+        sidecarsDir: join(tmp, 'sidecars'),
+        packagesDir: join(tmp, 'packages'),
+        pluginsDir: join(tmp, 'plugins'),
+        appStoragePath,
+        rpcFn: async () => ({ sidecars: [], trajectorySummaries: {}, plugins: [], terminals: [] }),
+      });
+      assert.equal(state16.theme.cssVariables['--app-font-scale'], '1.142857');
+      assert.equal(state16.theme.cssVariables['--font-size'], '16px');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 });

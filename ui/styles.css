@@ -41,7 +41,7 @@ body {
   background: var(--hub-bg) !important;
   color: var(--hub-fg) !important;
   font-family: var(--hub-font-sans) !important;
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-base, 0.875rem);
   line-height: 1.25rem;
   -webkit-text-size-adjust: 100%;
   tab-size: 4;
@@ -103,7 +103,7 @@ body:is(.resizing-split, .dragging-tab) .child-sidecar-frame {
   height: 100%;
   padding: 16px;
   color: var(--hub-muted);
-  font-size: var(--text-sm, 0.875rem);
+  font-size: var(--text-compact, 0.8125rem);
   text-align: center;
 }
 

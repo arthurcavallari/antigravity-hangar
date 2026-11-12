@@ -92,6 +92,11 @@
           mem.set(String(k), String(v));
         }
       }
+      const rawFontSize = Number(params.hostStorage['jetski.fontSize']);
+      if (rawFontSize === 12 || rawFontSize === 16) {
+        document.documentElement?.style?.setProperty('--app-font-scale', String(Number((rawFontSize / 14).toFixed(6))));
+        document.documentElement?.style?.setProperty('--font-size', `${rawFontSize}px`);
+      }
     }
     const isoLs = {
       getItem: (k) => (mem.has(String(k)) ? mem.get(String(k)) : (rawLs?.getItem?.(k) ?? null)),
