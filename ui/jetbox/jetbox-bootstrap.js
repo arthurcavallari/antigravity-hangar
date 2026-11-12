@@ -599,12 +599,20 @@
         while (!cancelled) {
           if (!isJetboxPaused()) {
             try {
-              const res = await sidecarFetch()('/api/terminal/ls-rpc', {
+              let res = await sidecarFetch()('/api/terminal/ls-rpc', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ method: 'GetAllCascadeTrajectories', body: {} }),
+                body: JSON.stringify({ method: 'GetMergedCascadeTrajectories', body: {} }),
               });
-              const data = await res.json().catch(() => ({}));
+              let data = await res.json().catch(() => ({}));
+              if (!res.ok || !data?.trajectorySummaries) {
+                res = await sidecarFetch()('/api/terminal/ls-rpc', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ method: 'GetAllCascadeTrajectories', body: {} }),
+                });
+                data = await res.json().catch(() => ({}));
+              }
               const summaries = data?.trajectorySummaries;
               if (summaries && typeof summaries === 'object') {
                 const activeParentIds = new Set();
@@ -655,10 +663,18 @@
                     changedCount += 1;
                   }
                 }
-                for (const oldCid of [...prevDigests.keys()]) {
-                  if (!(oldCid in summaries)) {
-                    prevDigests.delete(oldCid);
-                    deletes.push(oldCid);
+                if (Array.isArray(data?.deletedIds)) {
+                  for (const delCid of data.deletedIds) {
+                    prevDigests.delete(delCid);
+                    if (!deletes.includes(delCid)) deletes.push(delCid);
+                  }
+                }
+                if (data?.persistedComplete === true || data?.persistedComplete === undefined) {
+                  for (const oldCid of [...prevDigests.keys()]) {
+                    if (!(oldCid in summaries)) {
+                      prevDigests.delete(oldCid);
+                      if (!deletes.includes(oldCid)) deletes.push(oldCid);
+                    }
                   }
                 }
                 if (changedCount > 0 || deletes.length > 0) {

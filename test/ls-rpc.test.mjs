@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { STATE_RPC_TTL_MS, hangarRpc, invalidateStateReads } from '../lib/ls-rpc.mjs';
+import { encodeConnectFrame } from 'antigravity-sidecar-kit/rpc';
+import {
+  STATE_RPC_TTL_MS,
+  fetchJetboxSummaries,
+  fetchMergedCascadeTrajectories,
+  hangarRpc,
+  invalidateStateReads,
+} from '../lib/ls-rpc.mjs';
+import { fetchHangarState } from '../lib/state-orchestrator.mjs';
 
 describe('hangarRpc shared state reads', () => {
   it('sets STATE_RPC_TTL_MS >= 2500ms and does not invalidate cached state when Jetbox read RPCs run', async () => {
@@ -183,5 +191,64 @@ describe('hangarRpc shared state reads', () => {
     failTrajectories = true;
     const fallbackTraj = await hangarRpc('GetAllCascadeTrajectories', {}, options);
     assert.deepEqual(fallbackTraj, { trajectorySummaries: { 'conv-1': { summary: 'Test' } } });
+  });
+
+  it('SH-06: merges JetboxSubscribeToSummaries persisted threads with resident GetAllCascadeTrajectories without RAM-eviction loss', async () => {
+    invalidateStateReads();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encodeConnectFrame(
+            {
+              updates: {
+                'cold-disk-1': {
+                  summary: 'Cold Thread',
+                  workspaces: [{ workspaceFolderAbsoluteUri: 'file:///c:/proj/cold' }],
+                },
+                'ram-evicted-1': { summary: 'Evicted Thread' },
+                'deleted-1': { summary: 'Soon Deleted' },
+              },
+              deletes: ['deleted-1'],
+            },
+            0
+          )
+        );
+        // Leave stream open without end-of-stream flag to verify settle-timer abort on live LS streams
+      },
+    });
+    const persisted = await fetchJetboxSummaries({
+      noCache: true,
+      lsAddress: '127.0.0.1:59994',
+      csrfToken: 'tok',
+      settleMs: 10,
+      timeoutMs: 500,
+      fetchFn: async () => ({ ok: true, status: 200, body: stream }),
+    });
+    assert.equal(persisted.ok, true);
+    assert.deepEqual(Object.keys(persisted.summaries).sort(), ['cold-disk-1', 'ram-evicted-1']);
+    assert.deepEqual(persisted.deletedIds, ['deleted-1']);
+
+    const merged = await fetchMergedCascadeTrajectories({
+      rpcFn: async () => ({
+        trajectorySummaries: {
+          'side-q-1': { summary: 'Side Question', trajectoryType: 22 },
+        },
+      }),
+      summariesFn: async () => persisted,
+    });
+    assert.equal(merged.persistedComplete, true);
+    assert.deepEqual(Object.keys(merged.trajectorySummaries).sort(), [
+      'cold-disk-1',
+      'ram-evicted-1',
+      'side-q-1',
+    ]);
+    assert.deepEqual(merged.deletedIds, ['deleted-1']);
+
+    const state = await fetchHangarState({
+      conversationId: 'cold-disk-1',
+      rpcFn: async () => ({ sidecars: [], trajectorySummaries: {} }),
+      summariesFn: async () => persisted,
+    });
+    assert.match(state.activeWorkspace.workspacePath, /proj[\\/]cold/i);
   });
 });
