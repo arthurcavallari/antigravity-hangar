@@ -125,7 +125,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
       const renamed = await renameWorkspaceTerminal({ terminalId: 'term-live-1', title: '  api-worker  ', rpcFn: mockRpc });
       assert.deepEqual(renamed, { ok: true, terminalId: 'term-live-1', title: 'api-worker' });
-      assert.deepEqual(rpcCalls.find((c) => c.method === 'RenameTerminal')?.body, { terminalId: 'term-live-1', title: 'api-worker' });
+      assert.equal(rpcCalls.some((c) => c.method === 'RenameTerminal'), false);
       assert.equal(pollTerminalOutput({ terminalId: 'term-live-1', afterSeq: 0, fetchFn: mockFetch }).title, 'api-worker');
       await renameWorkspaceTerminal({ terminalId: 'term-live-1', title: '', rpcFn: mockRpc });
       assert.equal(pollTerminalOutput({ terminalId: 'term-live-1', afterSeq: 0, fetchFn: mockFetch }).title, 'pwsh-custom');
@@ -240,6 +240,15 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.deepEqual(await apis.get('/api/terminal/ls-rpc')({ method: 'GetSidecars' }), { sidecars: [] });
     assert.deepEqual(await apis.get('/api/terminal/ls-rpc')({ method: 'JetboxReadState' }), { appState: { agentOnboardingCompleted: 2 }, userConfig: { userSettings: { themeMode: 1 } } });
     assert.deepEqual(await apis.get('/api/terminal/ls-rpc')({ method: 'JetboxWriteState' }), {});
+    assert.deepEqual(await apis.get('/api/terminal/ls-rpc')({ method: 'RenameTerminal', body: { terminalId: 'term-proc-77', title: 'x' } }), {});
+    assert.ok(html.includes('"appVersion":"2.31.2"'));
+    const forwardedAuthRpcs = [];
+    const authApis = new Map();
+    registerTerminalRoutes({ page() {}, api: (p, fn) => authApis.set(p, fn) }, { rpcFn: async (m) => { forwardedAuthRpcs.push(m); return { ok: true }; } });
+    for (const m of ['SearchGcpProjects', 'SubmitLoginAuthCode', 'SwitchLoginToAuthCode']) {
+      assert.deepEqual(await authApis.get('/api/terminal/ls-rpc')({ method: m, body: {} }), { ok: true });
+    }
+    assert.deepEqual(forwardedAuthRpcs, ['SearchGcpProjects', 'SubmitLoginAuthCode', 'SwitchLoginToAuthCode']);
     assert.deepEqual(await apis.get('/api/terminal/ls-rpc')({ method: 'SendTerminalInput', body: { terminalId: 'term-proc-77', resize: { cols: 2, rows: 1 } } }), {});
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-focus' } });
     assert.equal(termActiveEl.__reactFiber$xyz.memoizedState.memoizedState.current.focused, true);

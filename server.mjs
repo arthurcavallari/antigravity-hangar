@@ -98,6 +98,7 @@ app.api('/api/store/self-update', guardApi(async (d) => selfUpdateHangar({
   deferRestart: true,
 })), 'POST');
 app.api('/api/sidechat/rename', guardApi(async (ctx) => hangarRpc('UpdateConversationAnnotations', {
+  cascadeIds: [String(ctx?.body?.cascadeId || ctx?.cascadeId || '')].filter(Boolean),
   cascadeId: String(ctx?.body?.cascadeId || ctx?.cascadeId || ''),
   annotations: { title: String(ctx?.body?.title || ctx?.title || '') },
   mergeAnnotations: true,

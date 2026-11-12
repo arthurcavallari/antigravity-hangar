@@ -121,7 +121,17 @@ describe('hangarRpc shared state reads', () => {
     await listPlugins();
     await hangarRpc('DeletePlugin', { pluginId: 'demo' }, options);
     await listPlugins();
-    assert.deepEqual(calls, { GetAllPlugins: 3, JetboxWriteState: 1, DeletePlugin: 1 });
+    await hangarRpc('InstallCustomization', { customizationId: 'demo' }, options);
+    await listPlugins();
+    await hangarRpc('UpdateCustomization', { customizationId: 'demo' }, options);
+    await listPlugins();
+    assert.deepEqual(calls, {
+      GetAllPlugins: 5,
+      JetboxWriteState: 1,
+      DeletePlugin: 1,
+      InstallCustomization: 1,
+      UpdateCustomization: 1,
+    });
   });
 
   it('caches ListTerminals without invalidating GetSidecars/GetAllPlugins, ignores SendTerminalInput for cache invalidation, and falls back to lastTrajectories on transient error', async () => {
