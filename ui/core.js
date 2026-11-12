@@ -5,6 +5,16 @@
   ns.TERMINAL_TAB_ID = '__terminal__';
   ns.SIDECHAT_TAB_ID = '__sidechat__';
   ns.SIDECHAT_TAB_PREFIX = 'sidechat__';
+  ns.SIDECAR_IFRAME_ALLOW = [
+    'clipboard-read',
+    'clipboard-write',
+    'microphone',
+    'fullscreen',
+    'bluetooth',
+    'autoplay',
+    'publickey-credentials-get *',
+    'publickey-credentials-create *',
+  ].join('; ');
   if (window.AgyShell) {
     Object.entries(window.AgyShell).forEach(([k, v]) => {
       if (ns[k] === undefined) ns[k] = v;

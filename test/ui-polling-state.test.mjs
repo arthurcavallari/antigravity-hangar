@@ -237,4 +237,21 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     await flush();
     assert.equal(requests.length, 3);
   });
+
+  it('SH-02: delegates Antigravity 2.31.0+ Permissions-Policy allow attributes on child, terminal, and sidechat iframes', () => {
+    const expected =
+      'clipboard-read; clipboard-write; microphone; fullscreen; bluetooth; autoplay; publickey-credentials-get *; publickey-credentials-create *';
+    const { ns, frames, els } = loadDeck();
+    assert.equal(ns.SIDECAR_IFRAME_ALLOW, expected);
+    ns.reconcileIframeDeck({
+      state: {
+        layout: { pinnedTopSidecarId: 'context-monitor', topSplitTabIds: ['context-monitor'] },
+        sidecars: [{ sidecarId: 'context-monitor', matchesWorkspace: true, isRunning: true, iframeUrl: 'http://127.0.0.1:51001/' }],
+      },
+      els,
+    });
+    assert.equal(frames[0].allow, expected);
+    assert.match(readFileSync(join(UI_DIR, 'components/terminal-pane.js'), 'utf8'), /SIDECAR_IFRAME_ALLOW/);
+    assert.match(readFileSync(join(UI_DIR, 'components/sidechat-pane.js'), 'utf8'), /SIDECAR_IFRAME_ALLOW/);
+  });
 });

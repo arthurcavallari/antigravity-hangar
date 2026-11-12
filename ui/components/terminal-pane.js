@@ -310,8 +310,10 @@
             className: 'term-jetbox-frame',
             src,
             title: frameTitle,
+            allow: ns.SIDECAR_IFRAME_ALLOW || '',
           });
           p.frame.setAttribute?.('title', frameTitle);
+          if (ns.SIDECAR_IFRAME_ALLOW) p.frame.setAttribute?.('allow', ns.SIDECAR_IFRAME_ALLOW);
           p.frame.dataset.loadedSrc = src;
           p.frame.addEventListener?.('load', () => {
             try {

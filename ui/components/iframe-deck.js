@@ -270,8 +270,10 @@
           className: 'child-sidecar-frame',
           src: sc.iframeUrl,
           title: frameTitle,
+          allow: ns.SIDECAR_IFRAME_ALLOW || '',
         });
         frame.setAttribute?.('title', frameTitle);
+        if (ns.SIDECAR_IFRAME_ALLOW) frame.setAttribute?.('allow', ns.SIDECAR_IFRAME_ALLOW);
         Object.assign(frame.dataset, { sidecarId: sc.sidecarId, baseKey, loadedUrl: sc.iframeUrl });
         frame.addEventListener('load', () => {
           if (latestThemeEvent) frame.contentWindow?.postMessage(latestThemeEvent, '*');

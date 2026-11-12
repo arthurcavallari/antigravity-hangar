@@ -393,10 +393,11 @@
       const f = mkEl(
         'iframe',
         `term-sidechat-frame${isInitial ? ' hidden' : ''}`,
-        { _isInitialFrame: isInitial, title: 'Docked Side Chat' },
+        { _isInitialFrame: isInitial, title: 'Docked Side Chat', allow: ns.SIDECAR_IFRAME_ALLOW || '' },
         { role: 'sidechat-frame', loadedCascadeId: '' }
       );
       f.setAttribute?.('title', 'Docked Side Chat');
+      if (ns.SIDECAR_IFRAME_ALLOW) f.setAttribute?.('allow', ns.SIDECAR_IFRAME_ALLOW);
       f.addEventListener?.('load', () => {
         try {
           if (ns.getLatestThemeEvent?.()) {
