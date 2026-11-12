@@ -628,7 +628,7 @@ describe('Hangar plugin installer', () => {
             updateError: { version: '1.3.0', message: 'disk full', at: '2026-11-09T00:00:00.000Z' },
           },
           'fresh-install': { dir: 'fresh-install', installedVersion: '0.1.0' },
-          gutted: { dir: 'gutted', installedVersion: '0.2.1' },
+          gutted: { dir: 'gutted', installedVersion: '0.2.1', installing: true },
           gone: { dir: 'gone' },
         },
       };
@@ -922,5 +922,62 @@ describe('Hangar plugin installer', () => {
     assert.equal(pluginInstSrc.includes('rmSync('), false, 'plugin-installer.mjs must use removeLinkOrDir instead of raw rmSync');
     assert.equal(pkgInstSrc.includes('rmSync('), false, 'package-installer.mjs must use removeLinkOrDir instead of raw rmSync');
     assert.equal(remoteSrc.includes('rmSync('), false, 'remote-source.mjs must use removeLinkOrDir instead of raw rmSync');
+  });
+
+  it('SH-14: prunes external DeletePlugin removals from hangar.json and import_manifest.json while preserving genuine staging incomplete cards', async () => {
+    const box = sandbox();
+    try {
+      const importManifestPath = join(dirname(box.pluginsDir), 'import_manifest.json');
+      mkdirSync(join(box.pluginsDir, 'deleted-natively'), { recursive: true });
+      mkdirSync(join(box.pluginsDir, 'interrupted-update'), { recursive: true });
+      writeTree(join(box.pluginsDir, 'uninstalled-via-hangar'), { 'plugin.json': '{"name":"uninstalled-via-hangar"}' });
+      writeTree(join(box.pluginsDir, 'keep-healthy'), { 'plugin.json': '{"name":"keep-healthy"}' });
+      writeJsonNoBom(importManifestPath, {
+        imports: [
+          { name: 'deleted-natively', source: 'antigravity', importedAt: '2026-11-10T00:00:00Z', components: ['skills'] },
+          { name: 'uninstalled-via-hangar', source: 'antigravity', importedAt: '2026-11-10T00:00:00Z', components: ['skills'] },
+          { name: 'keep-healthy', source: 'antigravity', importedAt: '2026-11-10T00:00:00Z', components: ['skills'] },
+        ],
+      });
+      writeJsonNoBom(box.configPath, {
+        schemaVersion: 1,
+        layout: {},
+        sidecars: {},
+        plugins: {
+          'deleted-natively': { dir: 'deleted-natively', installedVersion: '0.9.0' },
+          'interrupted-update': { dir: 'interrupted-update', installedVersion: '1.1.0', installing: true },
+          'uninstalled-via-hangar': { dir: 'uninstalled-via-hangar', installedVersion: '1.0.0' },
+          'keep-healthy': { dir: 'keep-healthy', installedVersion: '1.4.0' },
+        },
+        manuallyStopped: [],
+      });
+
+      await uninstallPlugin({
+        pluginId: 'uninstalled-via-hangar',
+        packagesDir: box.packagesDir,
+        pluginsDir: box.pluginsDir,
+        configPath: box.configPath,
+        rpcFn: async () => ({}),
+        execFn: fakeExec(box, {}),
+        pollMs: 1,
+        maxWaitMs: 5,
+      });
+
+      const cfgAfterUninstall = loadHangarConfig(box.configPath);
+      const listed = listInstalledPlugins(
+        { plugins: [{ name: 'keep-healthy', path: join(box.pluginsDir, 'keep-healthy'), skills: [] }] },
+        cfgAfterUninstall,
+        { pluginsDir: box.pluginsDir, configPath: box.configPath },
+      );
+
+      assert.deepEqual(listed.map((p) => p.dir), ['interrupted-update', 'keep-healthy']);
+      assert.equal(listed.find((p) => p.dir === 'interrupted-update')?.incomplete, true);
+      const savedCfg = loadHangarConfig(box.configPath);
+      assert.deepEqual(Object.keys(savedCfg.plugins).sort(), ['interrupted-update', 'keep-healthy']);
+      const savedManifest = JSON.parse(readFileSync(importManifestPath, 'utf8'));
+      assert.deepEqual(savedManifest.imports.map((x) => x.name), ['keep-healthy']);
+    } finally {
+      box.cleanup();
+    }
   });
 });
