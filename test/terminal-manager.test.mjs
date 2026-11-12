@@ -234,6 +234,10 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     while (true) { const { done, value } = await streamReader.read(); if (done) break; chunks.push(Buffer.from(value)); }
     const { frames } = parseConnectFrames(Buffer.concat(chunks));
     assert.ok(frames.some((f) => f.data?.output === 'aGk=') && frames.some((f) => f.data?.cwd === 'C:\\repo\\sub'));
+    const watchRes = await win.fetch('/exa.language_server_pb.LanguageServerService/WatchDirectory', { method: 'POST' });
+    const watchChunk = await watchRes.body.getReader().read();
+    const watchFrames = parseConnectFrames(Buffer.from(watchChunk.value)).frames;
+    assert.deepEqual(watchFrames[0]?.data, { ready: true });
     const pages = new Map(), apis = new Map();
     registerTerminalRoutes({ page: (p, fn) => pages.set(p, fn), api: (p, fn) => apis.set(p, fn) });
     assert.ok(apis.has('/api/terminal/rename') && pages.has('/jetbox-main.js') && pages.has('/audio_processor.js') && pages.has('/diff_worker.js'));

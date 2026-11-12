@@ -753,6 +753,9 @@
           headers: GRPC_WEB_HEADERS,
         });
       }
+      if (method === 'WatchDirectory') {
+        return makeGrpcStreamResponse([{ ready: true }]);
+      }
       if (
         method.startsWith('Stream') ||
         method.startsWith('Subscribe') ||
