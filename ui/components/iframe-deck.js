@@ -63,20 +63,34 @@
     broadcastToChildFrames(latestThemeEvent);
   };
 
-  const isFromChildFrame = (src) => Boolean(src && [...deckFrames.values()].some((f) => f.contentWindow === src));
+  const CHILD_HOST_RELAY_TYPES = new Set([
+    'toggle-aux-pane',
+    'toggle-conversation',
+    'add-artifact-comment',
+    'sidecar-key-event',
+  ]);
+
+  const isFromChildFrame = (src) => {
+    if (!src) return false;
+    if ([...deckFrames.values()].some((f) => f.contentWindow === src)) return true;
+    const extra = typeof document.querySelectorAll === 'function'
+      ? document.querySelectorAll('iframe.child-sidecar-frame, iframe.term-jetbox-frame, iframe.term-sidechat-frame')
+      : [];
+    return [...extra].some((f) => f.contentWindow === src);
+  };
 
   ns.initPostMessageRelayBridge = function initPostMessageRelayBridge() {
     window.addEventListener('message', (event) => {
       const type = event.data?.type;
       if (!type) return;
-      const isToggle = type === 'toggle-aux-pane' || type === 'toggle-conversation';
-      if (isToggle ? !isFromChildFrame(event.source) : !ns.isHostMessage(event.source)) return;
+      const isChildHostRelay = CHILD_HOST_RELAY_TYPES.has(type);
+      if (isChildHostRelay ? !isFromChildFrame(event.source) : !ns.isHostMessage(event.source)) return;
       if (type === 'theme-change' && event.data?.payload) {
         ns.applyThemePayload(event.data.payload, true);
       } else if (type === 'workspace-change') {
         latestWorkspaceEvent = event.data;
         broadcastToChildFrames(event.data);
-      } else if (isToggle && window.parent && window.parent !== window) {
+      } else if (isChildHostRelay && window.parent && window.parent !== window) {
         window.parent.postMessage(event.data, '*');
       }
     });

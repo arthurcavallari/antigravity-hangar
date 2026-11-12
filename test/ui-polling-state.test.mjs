@@ -254,4 +254,59 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     assert.match(readFileSync(join(UI_DIR, 'components/terminal-pane.js'), 'utf8'), /SIDECAR_IFRAME_ALLOW/);
     assert.match(readFileSync(join(UI_DIR, 'components/sidechat-pane.js'), 'utf8'), /SIDECAR_IFRAME_ALLOW/);
   });
+
+  it('SH-03: relays sidecar-key-event, add-artifact-comment, toggle-conversation { split }, and toggle-aux-pane from child and jetbox iframes', () => {
+    const parentPosted = [];
+    const msgListeners = [];
+    const jetboxWin = {};
+    const document = {
+      createElement() {
+        const f = { ...fakeElement(), contentWindow: {} };
+        return f;
+      },
+      querySelectorAll: () => [{ contentWindow: jetboxWin }],
+    };
+    const window = {
+      innerHeight: 800,
+      parent: { postMessage: (d) => parentPosted.push(d) },
+      addEventListener: (ev, fn) => {
+        if (ev === 'message') msgListeners.push(fn);
+      },
+    };
+    const ctx = vm.createContext({ window, document, URL });
+    for (const rel of ['core.js', 'components/tab-bar.js', 'components/iframe-deck.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+    window.Hangar.initPostMessageRelayBridge();
+    const childWin = {};
+    const els = {
+      mainViewport: fakeElement(),
+      splitDividerGroup: fakeElement(),
+      storeView: fakeElement(),
+      emptyTopState: fakeElement(),
+      emptyDeckState: fakeElement(),
+    };
+    document.createElement = () => ({ ...fakeElement(), contentWindow: childWin, addEventListener() {}, remove() {} });
+    window.Hangar.reconcileIframeDeck({
+      state: {
+        layout: { pinnedTopSidecarId: 'cm', topSplitTabIds: ['cm'] },
+        sidecars: [{ sidecarId: 'cm', matchesWorkspace: true, isRunning: true, iframeUrl: 'http://127.0.0.1:51001/' }],
+      },
+      els,
+    });
+
+    const emit = (source, data) => msgListeners.forEach((fn) => fn({ source, data }));
+    emit(childWin, { type: 'sidecar-key-event', payload: { key: 'b', ctrlKey: true } });
+    emit(childWin, { type: 'add-artifact-comment', payload: { filePath: '/plan.md', commentText: 'ok' } });
+    emit(jetboxWin, { type: 'sidecar-key-event', payload: { key: 'j', ctrlKey: true } });
+    emit(jetboxWin, { type: 'toggle-conversation', payload: { split: true } });
+    emit({}, { type: 'sidecar-key-event', payload: { key: 'p', ctrlKey: true } }); // untrusted source ignored
+
+    assert.deepEqual(parentPosted, [
+      { type: 'sidecar-key-event', payload: { key: 'b', ctrlKey: true } },
+      { type: 'add-artifact-comment', payload: { filePath: '/plan.md', commentText: 'ok' } },
+      { type: 'sidecar-key-event', payload: { key: 'j', ctrlKey: true } },
+      { type: 'toggle-conversation', payload: { split: true } },
+    ]);
+  });
 });
