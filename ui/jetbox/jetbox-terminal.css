@@ -36,7 +36,7 @@
   width: 100vw !important;
   height: 100vh !important;
   z-index: 99999 !important;
-  background: var(--background, #101010) !important;
+  background: var(--background, #070708) !important;
 }
 
 [data-testid="terminal-tab-connecting"] *,

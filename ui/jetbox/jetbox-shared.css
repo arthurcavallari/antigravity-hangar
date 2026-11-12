@@ -5,7 +5,7 @@ body,
   width: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--background, #101010);
+  background: var(--background, #070708);
 }
 
 .agy-shell,

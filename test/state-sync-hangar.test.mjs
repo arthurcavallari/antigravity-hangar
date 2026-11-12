@@ -209,4 +209,18 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('SH-16: aligns dark surface fallbacks with Onyx (#070708 / #131317 / #2f71e3) and 0.5px card hairline borders', () => {
+    const stylesCss = readFileSync(join(ROOT, 'ui', 'styles.css'), 'utf8');
+    const compCss = readFileSync(join(ROOT, 'ui', 'components.css'), 'utf8');
+    const jbSharedCss = readFileSync(join(ROOT, 'ui', 'jetbox', 'jetbox-shared.css'), 'utf8');
+    const jbTermCss = readFileSync(join(ROOT, 'ui', 'jetbox', 'jetbox-terminal.css'), 'utf8');
+    assert.match(stylesCss, /--hub-bg:\s*var\(--agy-canvas,\s*var\(--background,\s*#070708\)\)/i);
+    assert.match(stylesCss, /--hub-card:\s*var\(--agy-card,\s*var\(--card,\s*#131317\)\)/i);
+    assert.match(stylesCss, /--hub-primary:\s*var\(--agy-accent,\s*var\(--primary,\s*#2f71e3\)\)/i);
+    assert.match(compCss, /\.workspace-suggestions\s*\{[\s\S]*?border:\s*0\.5px solid var\(--hub-card-border\);/);
+    assert.match(compCss, /\.hub-shell \.agy-card:not\(\.agy-card-highlight\)\s*\{\s*border:\s*0\.5px solid var\(--hub-card-border\);\s*\}/);
+    assert.ok(jbSharedCss.includes('#070708'));
+    assert.ok(jbTermCss.includes('#070708'));
+  });
 });

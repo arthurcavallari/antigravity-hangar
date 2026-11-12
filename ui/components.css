@@ -146,11 +146,15 @@
   margin-bottom: 10px;
   padding: 8px;
   border-radius: var(--radius-xl, 0.75rem);
-  border: 1px solid var(--hub-border);
+  border: 0.5px solid var(--hub-card-border);
   background: var(--hub-card);
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.hub-shell .agy-card:not(.agy-card-highlight) {
+  border: 0.5px solid var(--hub-card-border);
 }
 
 .popover-sug-header {
