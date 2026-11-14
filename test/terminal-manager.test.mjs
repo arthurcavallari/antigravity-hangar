@@ -2346,4 +2346,85 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('flags non-/c/ foreign routes, posts hangar-jetbox-pane-focused in Side Chat, and routes Forked-from clicks via hangar-sidechat-open-parent [SC-08]', async () => {
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc08', hostTheme: 'dark', uiToken: 'tok-sc08' });
+    assert.ok(chatHtml.includes('div[title="Open side-by-side view"] button'));
+    assert.ok(chatHtml.includes('pointer-events: auto !important'));
+
+    const posted = [];
+    const winListeners = {};
+    const docAttrs = new Map();
+    const inlineMatch = chatHtml.match(/<script>([\s\S]*?)<\/script>/);
+    const win = {
+      location: { search: '?token=tok-sc08', pathname: '/jetbox-chat', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc08' },
+      history: {
+        replaceState(_s, _t, url) {
+          win.location.pathname = String(url).split('?')[0];
+        },
+        pushState(_s, _t, url) {
+          win.location.pathname = String(url).split('?')[0];
+        },
+      },
+      localStorage: { setItem() {} },
+      sessionStorage: { setItem() {}, getItem: () => null },
+      navigator: { clipboard: { writeText: async () => {} } },
+      parent: { postMessage(msg) { posted.push(msg); } },
+      addEventListener(ev, fn) { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+      removeEventListener() {},
+      document: {
+        documentElement: {
+          classList: { toggle() {} },
+          style: {},
+          setAttribute(k, v) { docAttrs.set(k, v); },
+          removeAttribute(k) { docAttrs.delete(k); },
+        },
+        addEventListener() {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      Response,
+      Headers,
+      ReadableStream,
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      DataView,
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      fetch: async () => new Response('{}', { status: 200 }),
+    };
+    win.window = win;
+    vm.runInNewContext(inlineMatch[1], win);
+
+    for (const fn of winListeners.pointerdown || []) fn({});
+    assert.ok(posted.some((m) => m.type === 'hangar-jetbox-pane-focused' && m.payload?.cascadeId === 'conv-sc08'));
+
+    win.history.pushState(null, '', '/customizations/marketplace');
+    assert.equal(docAttrs.get('data-hangar-foreign-nav'), 'true');
+    assert.ok(posted.some((m) => m.type === 'hangar-sidechat-foreign-nav' && m.payload?.active === true && m.payload?.expectedCascadeId === 'conv-sc08'));
+
+    win.history.pushState(null, '', '/c/conv-sc08');
+    assert.equal(docAttrs.has('data-hangar-foreign-nav'), false);
+    assert.equal(posted.filter((m) => m.type === 'hangar-sidechat-foreign-nav').at(-1)?.payload?.active, false);
+
+    const forkWrap = {
+      __reactFiber$1: {
+        return: { memoizedProps: { forkReference: { conversationId: 'conv-parent-08' } } },
+      },
+    };
+    const forkBtn = {
+      closest(sel) {
+        if (sel === 'button') return forkBtn;
+        if (sel === 'div[title="Open side-by-side view"]') return forkWrap;
+        return null;
+      },
+    };
+    for (const fn of winListeners.click || []) {
+      fn({ target: forkBtn, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+    }
+    assert.ok(posted.some((m) => m.type === 'hangar-sidechat-open-parent' && m.payload?.parentConversationId === 'conv-parent-08'));
+  });
 });

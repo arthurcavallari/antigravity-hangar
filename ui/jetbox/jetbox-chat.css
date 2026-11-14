@@ -31,7 +31,8 @@ div[title="Open side-by-side view"] {
 }
 
 div[title="Open side-by-side view"] button {
-  pointer-events: none !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
   text-decoration: none !important;
 }
 

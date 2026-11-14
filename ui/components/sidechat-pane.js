@@ -123,6 +123,17 @@
       ns.setActiveSideChatId(tabId, payload.cascadeId);
       sc.boxes.get(tabId)?._syncThreadsUi?.(payload.cascadeId, null);
       ns.notifySideChatState?.({ activateTab: true, targetTabId: tabId });
+    } else if (type === 'hangar-sidechat-open-parent') {
+      const parentId = String(payload.parentConversationId || '').trim();
+      if (!parentId) return;
+      if (sc.threads.some((t) => t.cascadeId === parentId)) {
+        const targetTab = ns._resolveSideChatTabId?.(parentId) || tabId;
+        ns.setActiveSideChatId(targetTab, parentId);
+        sc.boxes.get(targetTab)?._syncThreadsUi?.(parentId, null);
+        ns.notifySideChatState?.({ activateTab: true, targetTabId: targetTab });
+      } else {
+        window.sidecar?.toggleConversation?.(parentId);
+      }
     }
   });
 

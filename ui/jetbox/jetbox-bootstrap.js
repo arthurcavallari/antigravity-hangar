@@ -1164,9 +1164,18 @@
 
   function syncChatRouteState(customUrl) {
     if (mode !== 'chat') return;
+    let rawPathname = String(window.location?.pathname || '');
+    if (typeof customUrl === 'string' && customUrl) {
+      try {
+        rawPathname = new URL(customUrl, window.location?.origin || 'http://127.0.0.1').pathname;
+      } catch {
+        rawPathname = customUrl.split('?')[0];
+      }
+    }
     const pathCid = getPathnameCascadeId(customUrl);
-    if (!pathCid) return;
-    const isForeign = pathCid !== effectiveCascadeId;
+    if (!pathCid && rawPathname === '/jetbox-chat') return;
+    const isForeign = pathCid ? pathCid !== effectiveCascadeId : true;
+    const foreignTarget = pathCid || rawPathname || '/';
     if (document.documentElement) {
       if (isForeign) {
         document.documentElement.setAttribute('data-hangar-foreign-nav', 'true');
@@ -1174,11 +1183,11 @@
         document.documentElement.removeAttribute('data-hangar-foreign-nav');
       }
     }
-    if (isForeign !== lastForeignState || (isForeign && pathCid !== lastForeignCid)) {
+    if (isForeign !== lastForeignState || (isForeign && foreignTarget !== lastForeignCid)) {
       lastForeignState = isForeign;
-      lastForeignCid = isForeign ? pathCid : '';
+      lastForeignCid = isForeign ? foreignTarget : '';
       postToParent('hangar-sidechat-foreign-nav', {
-        cascadeId: isForeign ? pathCid : effectiveCascadeId,
+        cascadeId: isForeign ? foreignTarget : effectiveCascadeId,
         expectedCascadeId: effectiveCascadeId,
         active: isForeign,
       });
@@ -1394,8 +1403,35 @@
   }
 
   if (mode === 'chat') {
+    ['pointerdown', 'focusin'].forEach((ev) => {
+      window.addEventListener?.(ev, () => {
+        postToParent('hangar-jetbox-pane-focused', { terminalId, cascadeId: effectiveCascadeId });
+      }, true);
+    });
     window.addEventListener?.('click', (e) => {
       const tgt = e.target?.closest ? e.target : e.target?.parentElement;
+      const forkWrap = tgt?.closest?.('div[title="Open side-by-side view"]');
+      if (forkWrap) {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+        if (tgt?.closest?.('button')) {
+          let parentConversationId = '';
+          const fk = Object.keys(forkWrap).find((k) => k.startsWith('__reactFiber$'));
+          for (let f = fk ? forkWrap[fk] : null, d = 0; f && d < 12; d++, f = f.return) {
+            const cid = f.memoizedProps?.forkReference?.conversationId;
+            if (cid) {
+              parentConversationId = String(cid);
+              break;
+            }
+          }
+          postToParent('hangar-sidechat-open-parent', {
+            cascadeId: effectiveCascadeId,
+            parentConversationId,
+          });
+        }
+        return;
+      }
       if (tgt?.getAttribute?.('data-testid') === 'overview-panel-overlay-backdrop') {
         setOverviewPanelOpen(false);
         return;
@@ -1682,11 +1718,6 @@
   }, true);
 
   window.addEventListener('click', (e) => {
-    if (mode === 'chat' && e.target?.closest?.('div[title="Open side-by-side view"]')) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
     const btn = getPopupBtn(e.target);
     if (btn) {
       e.preventDefault();
