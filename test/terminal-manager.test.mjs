@@ -1978,4 +1978,29 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(chatHtml.includes('.right-0.top-0.z-50'), false);
     assert.equal(termHtml.includes('.right-0.top-0.z-50'), false);
   });
+
+  it('allows DeleteAgentMessage and SendAgentMessage and strictly propagates queued-message mutation failures [SC-02]', async () => {
+    const forwarded = [];
+    const apis = new Map();
+    registerTerminalRoutes(
+      { page() {}, api: (p, fn) => apis.set(p, fn) },
+      {
+        rpcFn: async (method, body) => {
+          forwarded.push({ method, body });
+          if (body?.shouldFail) throw new Error(`${method} upstream error`);
+          return { ok: true, method };
+        },
+      },
+    );
+    const lsRpc = apis.get('/api/terminal/ls-rpc');
+    for (const method of ['DeleteAgentMessage', 'SendAgentMessage', 'DeleteQueuedUserInputStep', 'SendAllQueuedMessages']) {
+      const okRes = await lsRpc({ method, body: { conversationId: 'conv-sc02', messageId: 'msg-1' } });
+      assert.deepEqual(okRes, { ok: true, method });
+      await assert.rejects(
+        () => lsRpc({ method, body: { conversationId: 'conv-sc02', shouldFail: true } }),
+        new RegExp(`${method} upstream error`),
+      );
+    }
+    assert.equal(forwarded.length, 8);
+  });
 });
