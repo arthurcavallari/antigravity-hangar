@@ -211,6 +211,35 @@
     }
   }
 
+  if (uiToken) {
+    const decorateArtifactSrc = (val) => {
+      const s = typeof val === 'string' ? val : '';
+      if (!s.startsWith('/static/artifacts/') || /[?&]token=/.test(s)) return val;
+      const sep = s.includes('?') ? '&' : '?';
+      return s + sep + 'token=' + encodeURIComponent(uiToken);
+    };
+    if (window.Element?.prototype?.setAttribute) {
+      const origSetAttr = window.Element.prototype.setAttribute;
+      window.Element.prototype.setAttribute = function patchedSetAttr(name, val) {
+        const nextVal = String(name || '').toLowerCase() === 'src' ? decorateArtifactSrc(val) : val;
+        return origSetAttr.call(this, name, nextVal);
+      };
+    }
+    if (window.HTMLImageElement?.prototype) {
+      const desc = Object.getOwnPropertyDescriptor(window.HTMLImageElement.prototype, 'src');
+      if (desc?.set && desc?.get) {
+        Object.defineProperty(window.HTMLImageElement.prototype, 'src', {
+          configurable: true,
+          enumerable: desc.enumerable,
+          get: desc.get,
+          set(val) {
+            desc.set.call(this, decorateArtifactSrc(val));
+          },
+        });
+      }
+    }
+  }
+
   if (window.customElements) {
     const origDefine = window.customElements.define;
     window.customElements.define = (n, c, o) => {
@@ -890,6 +919,9 @@
         };
       }
       return makeGrpcUnaryResponse(rpcPayload);
+    }
+    if (pathname.startsWith('/static/artifacts/')) {
+      return sidecarFetch()(rawUrl, init);
     }
     return nativeFetch(input, init);
   };

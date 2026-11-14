@@ -1082,9 +1082,12 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     // HUB-10: setup.mjs requiredFiles includes jetbox-proxy, plugin-diagnostics, terminal-manager, and terminal UI files
     const setupSrc = readFileSync(join(REPO_ROOT, 'setup.mjs'), 'utf8');
     for (const reqFile of [
+      'lib/jetbox-audio.mjs',
       'lib/jetbox-proxy.mjs',
+      'lib/jetbox-rpc-policy.mjs',
       'lib/plugin-diagnostics.mjs',
       'lib/terminal-manager.mjs',
+      'lib/terminal-uris.mjs',
       'ui/components/terminal-emulator.js',
       'ui/components/terminal-quote.js',
       'ui/components/terminal-groups.js',
@@ -2206,6 +2209,64 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
       if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
       else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+  });
+
+  it('proxies /static/artifacts/* with checkJetboxAuth, HttpOnly session cookie, and path-traversal rejection [SC-06]', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    const prevUiTok = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59987';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'csrf-sc06';
+    process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = 'ui-tok-sc06';
+    process.env.ANTIGRAVITY_SIDECAR_ID = 'hangar';
+    try {
+      let upstreamUrl = '';
+      const pages = new Map();
+      const apis = new Map();
+      registerTerminalRoutes(
+        { page: (p, fn) => pages.set(p, fn), api: (p, fn) => apis.set(p, fn) },
+        {
+          fetchFn: async (url) => {
+            upstreamUrl = String(url);
+            return {
+              ok: true,
+              status: 200,
+              headers: new Headers({ 'content-type': 'image/png' }),
+              arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer,
+            };
+          },
+        },
+      );
+      const chatRes = await apis.get('/jetbox-chat')({ cascadeId: 'conv-sc06', token: 'ui-tok-sc06' }, {});
+      assert.match(String(chatRes.headers?.['Set-Cookie'] || ''), /hangar_jetbox_tok=ui-tok-sc06/);
+
+      const artifactPage = pages.get('/static/artifacts/*');
+      const unauth = await artifactPage('/static/artifacts/conv-sc06/diagram.png', { req: { url: '/static/artifacts/conv-sc06/diagram.png', headers: {} } });
+      assert.equal(unauth.status, 401);
+
+      const traversal = await artifactPage('/static/artifacts/..%2Fsecret.png', { req: { url: '/static/artifacts/..%2Fsecret.png?token=ui-tok-sc06', headers: {} } });
+      assert.equal(traversal.status, 400);
+
+      const cookieAuthed = await artifactPage('/static/artifacts/conv-sc06/diagram.png', {
+        req: {
+          url: '/static/artifacts/conv-sc06/diagram.png',
+          headers: { cookie: 'hangar_jetbox_tok=ui-tok-sc06' },
+        },
+      });
+      assert.equal(cookieAuthed.status, 200);
+      assert.equal(cookieAuthed.contentType, 'image/png');
+      assert.equal(upstreamUrl, 'http://127.0.0.1:59987/static/artifacts/conv-sc06/diagram.png?csrf=csrf-sc06');
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+      if (prevUiTok === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+      else process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = prevUiTok;
+      if (prevSid === undefined) delete process.env.ANTIGRAVITY_SIDECAR_ID;
+      else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
 });
