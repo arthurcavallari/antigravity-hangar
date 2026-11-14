@@ -697,6 +697,68 @@
     });
   }
 
+  function createAudioConnectStream(reqBody) {
+    let cancelled = false;
+    let afterSeq = 0;
+    const streamKey = 'aud-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    return new window.ReadableStream({
+      async start(controller) {
+        while (!cancelled) {
+          let closed = false;
+          let errorCode = 0;
+          try {
+            const res = await sidecarFetch()('/api/terminal/audio-poll', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                streamKey,
+                body: afterSeq === 0 ? reqBody : undefined,
+                afterSeq,
+              }),
+            });
+            if (res.ok === false) {
+              closed = true;
+              errorCode = 2;
+            } else {
+              const data = await res.json();
+              for (const c of data?.chunks || []) {
+                if (!c || c.seq <= afterSeq) continue;
+                afterSeq = c.seq;
+                if (c.data && typeof c.data === 'object') {
+                  controller.enqueue(encodeConnectFrame(c.data, 0));
+                }
+              }
+              if (data?.closed) {
+                closed = true;
+                errorCode = Number(data?.errorCode) || 0;
+              }
+            }
+          } catch {
+            closed = true;
+            errorCode = 2;
+          }
+          if (cancelled) break;
+          if (closed) {
+            try {
+              controller.enqueue(encodeGrpcTrailer(errorCode));
+              controller.close();
+            } catch {}
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 25));
+        }
+      },
+      cancel() {
+        cancelled = true;
+        sidecarFetch()('/api/terminal/audio-poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ streamKey, action: 'close' }),
+        }).catch(() => {});
+      },
+    });
+  }
+
   window.fetch = async function patchedFetch(input, init = {}) {
     const rawUrl = typeof input === 'string' ? input : input?.url || '';
     let pathname = rawUrl;
@@ -778,6 +840,12 @@
           : {};
         return makeGrpcStreamResponse([subPayload && typeof subPayload === 'object' ? subPayload : {}]);
       }
+      if (method === 'StreamAudioTranscription') {
+        return new window.Response(createAudioConnectStream(decodeConnectRequest(init.body)), {
+          status: 200,
+          headers: GRPC_WEB_HEADERS,
+        });
+      }
       if (
         method.startsWith('Stream') ||
         method.startsWith('Subscribe') ||
@@ -810,6 +878,7 @@
           'enable-plugins',
           'enable-plugin-auth',
           'enable-marketplace-card-status',
+          'enable-audio-transcription',
         ]) {
           if (!exps.some((x) => x?.keyString === flagKey)) {
             exps.push({ keyString: flagKey, disabled: false });

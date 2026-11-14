@@ -2099,4 +2099,113 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.ok(Array.isArray(frames[0]?.data?.[expectedKey]), `${subMethod} must emit ${expectedKey} snapshot frame`);
     }
   });
+
+  it('streams StreamAudioTranscription ready/transcription frames and forwards SendAudioChunk and EndAudioSession [SC-05]', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59988';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'csrf-sc05';
+    try {
+      let audioCtrl = null;
+      const seenUnary = [];
+      const apis = new Map();
+      registerTerminalRoutes(
+        { page() {}, api: (p, fn) => apis.set(p, fn) },
+        {
+          rpcFn: async (method, body) => {
+            seenUnary.push({ method, body });
+            if (method === 'SendAudioChunk') {
+              audioCtrl?.enqueue(encodeConnectFrame({ transcription: { text: 'hello from mic', isFinal: true } }, 0));
+            }
+            if (method === 'EndAudioSession') {
+              audioCtrl?.close();
+            }
+            return {};
+          },
+          fetchFn: async (url) => {
+            assert.ok(String(url).endsWith('/StreamAudioTranscription'));
+            return {
+              ok: true,
+              body: new ReadableStream({
+                start(c) {
+                  audioCtrl = c;
+                  c.enqueue(encodeConnectFrame({ ready: { sessionId: 'aud-sess-1' } }, 0));
+                },
+              }),
+            };
+          },
+        },
+      );
+      const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc05', hostTheme: 'dark', uiToken: 'tok-sc05' });
+      const inlineMatch = chatHtml.match(/<script>([\s\S]*?)<\/script>/);
+      const win = {
+        location: { search: '?token=tok-sc05', pathname: '/jetbox-chat', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc05' },
+        history: { replaceState() {}, pushState() {} },
+        localStorage: { setItem() {} },
+        sessionStorage: { setItem() {}, getItem: () => null },
+        navigator: { clipboard: { writeText: async () => {} } },
+        parent: { postMessage() {} },
+        addEventListener() {},
+        removeEventListener() {},
+        document: {
+          documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+          addEventListener() {},
+          querySelector: () => null,
+          querySelectorAll: () => [],
+        },
+        Response,
+        Headers,
+        ReadableStream,
+        TextEncoder,
+        TextDecoder,
+        Uint8Array,
+        DataView,
+        URL,
+        URLSearchParams,
+        setTimeout,
+        clearTimeout,
+        fetch: async (url, init) => {
+          const handler = apis.get(String(url));
+          if (handler) {
+            const out = await handler(JSON.parse(init.body));
+            return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          return new Response('{}', { status: 200 });
+        },
+      };
+      win.window = win;
+      vm.runInNewContext(inlineMatch[1], win);
+
+      const streamRes = await win.fetch('/exa.language_server_pb.LanguageServerService/StreamAudioTranscription', {
+        method: 'POST',
+        body: encodeConnectFrame({ mimeType: 'audio/pcm;rate=16000', cascadeId: 'conv-sc05' }),
+      });
+      const reader = streamRes.body.getReader();
+      const firstRead = await reader.read();
+      const firstFrames = parseConnectFrames(Buffer.from(firstRead.value)).frames;
+      assert.equal(firstFrames[0]?.data?.ready?.sessionId, 'aud-sess-1');
+
+      const chunkRes = await win.fetch('/exa.language_server_pb.LanguageServerService/SendAudioChunk', {
+        method: 'POST',
+        body: encodeConnectFrame({ sessionId: 'aud-sess-1', data: 'AAAA', sequenceNumber: 0 }),
+      });
+      assert.equal(chunkRes.status, 200);
+
+      const secondRead = await reader.read();
+      const secondFrames = parseConnectFrames(Buffer.from(secondRead.value)).frames;
+      assert.equal(secondFrames[0]?.data?.transcription?.text, 'hello from mic');
+
+      await win.fetch('/exa.language_server_pb.LanguageServerService/EndAudioSession', {
+        method: 'POST',
+        body: encodeConnectFrame({ sessionId: 'aud-sess-1', lastSequenceNumber: 0 }),
+      });
+      assert.deepEqual(seenUnary.map((u) => u.method), ['SendAudioChunk', 'EndAudioSession']);
+      await reader.cancel();
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    }
+  });
 });
