@@ -316,4 +316,60 @@ describe('hangarRpc shared state reads', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('SC-03: gives GetAuthStatus a 10s cold-boot budget, caches positive auth for 15s, never caches unauthenticated/errors, and propagates strict GetAuthStatus/GetUserStatus errors', async () => {
+    const { registerJetboxProxyRoutes } = await import('../lib/jetbox-proxy.mjs');
+    invalidateStateReads();
+    let calls = 0;
+    let mode = 'unauthed';
+    const baseOpts = {
+      lsAddress: '127.0.0.1:59995',
+      csrfToken: 'tok',
+      fetchFn: async (_url, init) => {
+        calls += 1;
+        assert.ok(init?.signal, 'GetAuthStatus should pass an AbortSignal with extended timeout');
+        if (mode === 'error') {
+          return { ok: false, status: 503, text: async () => 'upstream transient timeout' };
+        }
+        if (mode === 'unauthed') {
+          return { ok: true, status: 200, text: async () => JSON.stringify({ authResult: { hasValidAuth: false } }) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ authResult: { hasValidAuth: true, email: 'user@example.com' } }),
+        };
+      },
+    };
+
+    const neg1 = await hangarRpc('GetAuthStatus', {}, baseOpts);
+    const neg2 = await hangarRpc('GetAuthStatus', {}, baseOpts);
+    assert.equal(neg1.authResult.hasValidAuth, false);
+    assert.equal(neg2.authResult.hasValidAuth, false);
+    assert.equal(calls, 2, 'negative auth responses must never be cached');
+
+    mode = 'error';
+    await assert.rejects(() => hangarRpc('GetAuthStatus', {}, baseOpts), /503/);
+    assert.equal(calls, 3);
+
+    mode = 'authed';
+    const [pos1, pos2] = await Promise.all([
+      hangarRpc('GetAuthStatus', {}, baseOpts),
+      hangarRpc('GetAuthStatus', {}, baseOpts),
+    ]);
+    const pos3 = await hangarRpc('GetAuthStatus', {}, baseOpts);
+    assert.equal(pos1.authResult.hasValidAuth, true);
+    assert.equal(pos2.authResult.hasValidAuth, true);
+    assert.equal(pos3.authResult.hasValidAuth, true);
+    assert.equal(calls, 4, 'positive auth responses must share in-flight and cache for 15s');
+
+    const apis = new Map();
+    registerJetboxProxyRoutes(
+      { page() {}, api: (p, fn) => apis.set(p, fn) },
+      { rpcFn: async (m) => { throw new Error(`${m} transient timeout`); } },
+    );
+    const lsRpc = apis.get('/api/terminal/ls-rpc');
+    await assert.rejects(() => lsRpc({ method: 'GetAuthStatus', body: {} }), /GetAuthStatus transient timeout/);
+    await assert.rejects(() => lsRpc({ method: 'GetUserStatus', body: {} }), /GetUserStatus transient timeout/);
+  });
 });
