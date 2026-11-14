@@ -1,4 +1,13 @@
-.agy-shell:not(:has([data-aux-pane-open="true"])) > div.flex-1.relative > div.absolute.right-0.top-0.z-50 {
+.agy-shell:not(:has([data-aux-pane-open="true"])),
+.agy-shell:not(:has([data-aux-pane-open="true"])) .agy-layout-vars {
+  --right-cluster-width: 0px !important;
+}
+
+.agy-shell:not(:has([data-aux-pane-open="true"])) > div.flex-1.relative > div.absolute.right-0.z-50,
+.agy-shell:not(:has([data-aux-pane-open="true"])) :is(
+  [data-testid="toggle-aux-sidebar"],
+  [data-testid="toggle-maximize-pane"]
+) {
   display: none !important;
 }
 

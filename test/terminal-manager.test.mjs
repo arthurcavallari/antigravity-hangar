@@ -1956,4 +1956,26 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('collapses 2.31.2 sidebar-split column, sash, inset-shell card, and aux-sidebar toggle in Side Chat [SC-01]', () => {
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc01', hostTheme: 'dark', uiToken: 'tok-sc01' });
+    const termHtml = buildJetboxTerminalHtml({ cascadeId: 'conv-sc01', terminalId: 'term-sc01', hostTheme: 'dark', uiToken: 'tok-sc01' });
+    for (const sel of [
+      'div.absolute.left-0.z-50',
+      '[data-testid="sidebar-split"] > div:first-child',
+      '[data-testid="sidebar-split"] > [data-split-sash="true"]',
+      '[data-testid="sidebar-peek-hot-zone"]',
+      '[data-testid="sidebar-split"] > div:last-child',
+      '.agy-sheet[data-sheet-inset] [data-main-content-body]',
+      'div.absolute.right-0.z-50',
+      '[data-testid="toggle-aux-sidebar"]',
+      '--right-cluster-width: 0px !important',
+    ]) {
+      assert.ok(chatHtml.includes(sel), `chatHtml missing SC-01 selector: ${sel}`);
+    }
+    assert.ok(termHtml.includes('div.absolute.right-0.z-50'));
+    assert.equal(chatHtml.includes('.left-0.top-0.z-50'), false);
+    assert.equal(chatHtml.includes('.right-0.top-0.z-50'), false);
+    assert.equal(termHtml.includes('.right-0.top-0.z-50'), false);
+  });
 });

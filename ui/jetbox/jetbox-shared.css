@@ -16,7 +16,10 @@ body,
 
 .agy-shell > div:has(> [data-testid="title-menu-bar"]),
 .agy-shell > [data-testid="layout-status-bar"],
-.agy-shell > div.flex-1.relative > div.absolute.left-0.top-0.z-50,
+.agy-shell > div.flex-1.relative > div.absolute.left-0.z-50,
+[data-testid="sidebar-split"] > div:first-child,
+[data-testid="sidebar-split"] > [data-split-sash="true"],
+[data-testid="sidebar-peek-hot-zone"],
 [role="navigation"][aria-label="Sidebar"],
 div:has(> [role="navigation"][aria-label="Sidebar"]),
 div:has(> div > [role="navigation"][aria-label="Sidebar"]),
@@ -37,4 +40,25 @@ html:not([data-hangar-foreign-nav="true"]) .agy-sheet > div.h-10.shrink-0:has(.\
   min-width: 0 !important;
   height: 0 !important;
   min-height: 0 !important;
+}
+
+[data-testid="sidebar-split"] > div:last-child {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 1 1 100% !important;
+  margin-left: 0 !important;
+}
+
+.agy-inset-shell {
+  background: var(--background, #070708) !important;
+}
+
+.agy-sheet[data-sheet-inset] [data-main-content-body] {
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+.agy-sheet[data-sheet-inset] [data-main-content-body]::after {
+  display: none !important;
+  box-shadow: none !important;
 }
