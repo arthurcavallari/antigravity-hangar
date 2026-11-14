@@ -2697,4 +2697,37 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('SC-12: proxies /workers/pdf.min.mjs and /workers/shiki_worker.js static worker assets', async () => {
+    const prevLs = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59990';
+    process.env.ANTIGRAVITY_SIDECAR_ID = 'hangar';
+    try {
+      const pages = new Map();
+      registerJetboxProxyRoutes(
+        { page: (p, fn) => pages.set(p, fn), api() {} },
+        {
+          fetchFn: async (url) => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode(`/* ${url} */`).buffer,
+          }),
+        }
+      );
+      assert.ok(pages.has('/workers/pdf.min.mjs'));
+      assert.ok(pages.has('/workers/shiki_worker.js'));
+      const pdfRes = await pages.get('/workers/pdf.min.mjs')();
+      const shikiRes = await pages.get('/workers/shiki_worker.js')();
+      assert.equal(pdfRes.status, 200);
+      assert.equal(pdfRes.contentType, 'text/javascript; charset=utf-8');
+      assert.equal(shikiRes.status, 200);
+      assert.equal(shikiRes.contentType, 'text/javascript; charset=utf-8');
+    } finally {
+      if (prevLs === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevLs;
+      if (prevSid === undefined) delete process.env.ANTIGRAVITY_SIDECAR_ID;
+      else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
+    }
+  });
 });
