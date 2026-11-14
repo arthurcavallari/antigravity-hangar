@@ -81,7 +81,8 @@
   let effectiveCascadeId = mode === 'chat'
     ? (cascadeId || 'hangar-sidechat')
     : (terminalId || ((cascadeId && cascadeId !== '_new') ? cascadeId : 'hangar-terminal'));
-  const tabId = terminalId ? 'terminal__' + terminalId : 'terminal';
+  const primaryTermId = terminalId ? terminalId.split(',')[0].trim() : '';
+  const tabId = primaryTermId ? 'terminal__' + primaryTermId : 'terminal';
 
   const JETBOX_STATE_OVERLAY_KEY = 'hangar.jetboxStateOverlay.v1';
   let hostLocalStorage = null;
@@ -128,6 +129,34 @@
       },
     };
     Object.defineProperty(window, 'localStorage', { value: isoLs, configurable: true });
+    window.localStorage.setItem(
+      'jetski.developer.customFlagOverrides',
+      JSON.stringify(
+        mode === 'chat'
+          ? {
+              'enable-aux-pane-redesign': true,
+              'enable-split-view': true,
+              'enable-conversation-selection-quoting': true,
+              'enable-conversation-forking': true,
+              'enable-new-themes': true,
+              'enable-plugins': true,
+              'enable-plugin-auth': true,
+              'enable-marketplace-card-status': true,
+              'enable-audio-transcription': true,
+              'enable-sidecars': true,
+              'enable-ui-sidecars': true,
+              'markdown-table-v2': true,
+              'enable-notebook-rendering': true,
+            }
+          : {
+              'enable-jetbox-terminal-v2': true,
+              'enable-aux-pane-redesign': true,
+              'enable-bottom-terminal-panel': false,
+              'enable-split-view': true,
+              'enable-new-themes': true,
+            }
+      )
+    );
     if (mode === 'chat') {
       const v1Chat = {
         isPaneOpen: false,
@@ -160,7 +189,7 @@
         persistentTabState: {
           terminal: {
             conversationId: effectiveCascadeId,
-            activeTerminalUuid: terminalId,
+            activeTerminalUuid: primaryTermId || terminalId,
           },
         },
       };
@@ -985,7 +1014,7 @@
           headers: GRPC_WEB_HEADERS,
         });
       }
-      if (mode === 'chat' && method === 'JetboxSubscribeToSummaries') {
+      if (method === 'JetboxSubscribeToSummaries') {
         const reqBody = decodeConnectRequest(init.body);
         if (
           reqBody?.backend &&
@@ -993,6 +1022,9 @@
           reqBody.backend !== 'TRAJECTORY_BACKEND_LOCAL'
         ) {
           return makeGrpcStreamResponse([]);
+        }
+        if (mode !== 'chat') {
+          return makeGrpcStreamResponse([{ updates: {}, deletes: [] }]);
         }
         return new window.Response(createSummariesConnectStream(), {
           status: 200,
@@ -1049,18 +1081,38 @@
         return new window.Response(encodeGrpcTrailer(2), { status: 200, headers: GRPC_WEB_HEADERS });
       }
       if (method === 'GetMendelFlags') {
-        const exps = Array.isArray(rpcPayload?.experimentConfig?.experiments)
-          ? [...rpcPayload.experimentConfig.experiments]
+        const rawExps = Array.isArray(rpcPayload?.experimentConfig?.experiments)
+          ? rpcPayload.experimentConfig.experiments
           : [];
-        for (const flagKey of [
-          'enable-new-themes',
-          'enable-plugins',
-          'enable-plugin-auth',
-          'enable-marketplace-card-status',
-          'enable-audio-transcription',
-          'enable-sidecars',
-          'enable-ui-sidecars',
-        ]) {
+        const exps = rawExps.filter(
+          (x) => !(mode !== 'chat' && x?.keyString === 'enable-bottom-terminal-panel')
+        );
+        if (mode !== 'chat') {
+          exps.push({ keyString: 'enable-bottom-terminal-panel', disabled: true });
+        }
+        const enabledFlags = mode === 'chat'
+          ? [
+              'enable-aux-pane-redesign',
+              'enable-split-view',
+              'enable-conversation-selection-quoting',
+              'enable-conversation-forking',
+              'enable-new-themes',
+              'enable-plugins',
+              'enable-plugin-auth',
+              'enable-marketplace-card-status',
+              'enable-audio-transcription',
+              'enable-sidecars',
+              'enable-ui-sidecars',
+              'markdown-table-v2',
+              'enable-notebook-rendering',
+            ]
+          : [
+              'enable-jetbox-terminal-v2',
+              'enable-aux-pane-redesign',
+              'enable-split-view',
+              'enable-new-themes',
+            ];
+        for (const flagKey of enabledFlags) {
           if (!exps.some((x) => x?.keyString === flagKey)) {
             exps.push({ keyString: flagKey, disabled: false });
           }

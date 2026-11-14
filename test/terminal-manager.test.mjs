@@ -2730,4 +2730,90 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('SC-13: sets __APP_CONFIG__.devMode to false and disables enable-bottom-terminal-panel in terminal mode while keeping split-view and aux-pane-redesign active', async () => {
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc13', hostTheme: 'dark', uiToken: 'tok-sc13' });
+    const termHtml = buildJetboxTerminalHtml({ cascadeId: 'conv-sc13', terminalId: 'term-sc13', hostTheme: 'dark', uiToken: 'tok-sc13' });
+    assert.ok(chatHtml.includes('"devMode":false'));
+    assert.ok(termHtml.includes('"devMode":false'));
+    assert.equal(chatHtml.includes('"devMode":true'), false);
+    assert.equal(termHtml.includes('"devMode":true'), false);
+
+    const inlineMatch = termHtml.match(/<script>([\s\S]*?)<\/script>/);
+    const win = {
+      location: { search: '?token=tok-sc13', pathname: '/jetbox-terminal', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/jetbox-terminal?token=tok-sc13' },
+      history: { replaceState() {}, pushState() {} },
+      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+      sessionStorage: { setItem() {}, getItem: () => null },
+      navigator: { clipboard: { writeText: async () => {} } },
+      parent: { postMessage() {} },
+      addEventListener() {},
+      removeEventListener() {},
+      document: {
+        documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+        addEventListener() {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      Response,
+      Headers,
+      ReadableStream,
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      DataView,
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            experimentConfig: {
+              experiments: [{ keyString: 'enable-bottom-terminal-panel', disabled: false }],
+            },
+          }),
+          { status: 200 }
+        ),
+    };
+    win.window = win;
+    vm.runInNewContext(inlineMatch[1], win);
+
+    const overrides = JSON.parse(win.localStorage.getItem('jetski.developer.customFlagOverrides'));
+    assert.equal(overrides['enable-jetbox-terminal-v2'], true);
+    assert.equal(overrides['enable-aux-pane-redesign'], true);
+    assert.equal(overrides['enable-bottom-terminal-panel'], false);
+    assert.equal(overrides['enable-split-view'], true);
+
+    const mendelRes = await win.fetch('/exa.language_server_pb.LanguageServerService/GetMendelFlags', { method: 'POST' });
+    const mendelData = parseConnectFrames(Buffer.from(await mendelRes.arrayBuffer())).frames[0].data;
+    const exps = mendelData.experimentConfig.experiments;
+    assert.equal(exps.find((x) => x.keyString === 'enable-bottom-terminal-panel')?.disabled, true);
+    assert.equal(exps.find((x) => x.keyString === 'enable-jetbox-terminal-v2')?.disabled, false);
+    assert.equal(exps.find((x) => x.keyString === 'enable-aux-pane-redesign')?.disabled, false);
+    assert.equal(exps.find((x) => x.keyString === 'enable-split-view')?.disabled, false);
+
+    const sumRes = await win.fetch('/exa.language_server_pb.LanguageServerService/JetboxSubscribeToSummaries', { method: 'POST' });
+    const sumReader = sumRes.body.getReader();
+    const { value: sumChunk } = await sumReader.read();
+    await sumReader.cancel();
+    const sumFrames = parseConnectFrames(Buffer.from(sumChunk)).frames;
+    assert.deepEqual(sumFrames[0]?.data, { updates: {}, deletes: [] });
+
+    const chatInlineMatch = chatHtml.match(/<script>([\s\S]*?)<\/script>/);
+    const chatWin = {
+      ...win,
+      location: { search: '?token=tok-sc13', pathname: '/jetbox-chat', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc13' },
+      localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    };
+    chatWin.window = chatWin;
+    vm.runInNewContext(chatInlineMatch[1], chatWin);
+    const chatOverrides = JSON.parse(chatWin.localStorage.getItem('jetski.developer.customFlagOverrides'));
+    assert.equal(chatOverrides['markdown-table-v2'], true);
+    assert.equal(chatOverrides['enable-notebook-rendering'], true);
+    const chatMendelRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/GetMendelFlags', { method: 'POST' });
+    const chatMendelExps = parseConnectFrames(Buffer.from(await chatMendelRes.arrayBuffer())).frames[0].data.experimentConfig.experiments;
+    assert.equal(chatMendelExps.find((x) => x.keyString === 'markdown-table-v2')?.disabled, false);
+    assert.equal(chatMendelExps.find((x) => x.keyString === 'enable-notebook-rendering')?.disabled, false);
+  });
 });
