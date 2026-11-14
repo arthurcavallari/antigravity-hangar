@@ -2003,4 +2003,100 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     }
     assert.equal(forwarded.length, 8);
   });
+
+  it('allows 2.31.2 Side Chat RPCs, bridges SubscribeToMcpServerStates/SubscribeToPlugins, no-ops telemetry, and strictly surfaces mutation failures [SC-04]', async () => {
+    const forwarded = [];
+    const apis = new Map();
+    registerTerminalRoutes(
+      { page() {}, api: (p, fn) => apis.set(p, fn) },
+      {
+        rpcFn: async (method, body) => {
+          forwarded.push(method);
+          if (body?.shouldFail) throw new Error(`${method} failed`);
+          if (method === 'GetMcpServerStates') return { states: [{ serverName: 'demo-mcp', status: 1 }] };
+          if (method === 'GetAllPlugins') return { plugins: [{ id: 'demo-plugin' }] };
+          return { forwardedMethod: method };
+        },
+      },
+    );
+    const lsRpc = apis.get('/api/terminal/ls-rpc');
+    for (const m of [
+      'RetrieveUserQuotaSummary',
+      'GetAvailableModels',
+      'GetMarketplaceCustomization',
+      'ListBackgroundTasks',
+      'ListMcpResources',
+      'GetAgentTeamMetadata',
+      'AcknowledgeCascadeCodeEdit',
+      'InstallCustomization',
+    ]) {
+      assert.deepEqual(await lsRpc({ method: m, body: {} }), { forwardedMethod: m });
+    }
+    for (const noop of [
+      'RecordObservabilityData',
+      'RecordChatFeedback',
+      'RecordInteractiveCascadeFeedback',
+      'RecordUserStepSnapshot',
+      'SendInputCompletionFeedback',
+    ]) {
+      assert.deepEqual(await lsRpc({ method: noop, body: {} }), {});
+      assert.equal(forwarded.includes(noop), false);
+    }
+    for (const strictMethod of ['ForkConversation', 'RevertToCascadeStep', 'AcknowledgeCascadeCodeEdit', 'InstallCustomization']) {
+      await assert.rejects(() => lsRpc({ method: strictMethod, body: { shouldFail: true } }), new RegExp(`${strictMethod} failed`));
+    }
+    await assert.rejects(() => lsRpc({ method: 'DeletePlugin', body: {} }), /Disallowed Jetbox RPC/);
+
+    const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc04', hostTheme: 'dark', uiToken: 'tok-sc04' });
+    const inlineMatch = chatHtml.match(/<script>([\s\S]*?)<\/script>/);
+    const win = {
+      location: { search: '?token=tok-sc04', pathname: '/jetbox-chat', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc04' },
+      history: { replaceState() {}, pushState() {} },
+      localStorage: { setItem() {} },
+      sessionStorage: { setItem() {}, getItem: () => null },
+      navigator: { clipboard: { writeText: async () => {} } },
+      parent: { postMessage() {} },
+      addEventListener() {},
+      removeEventListener() {},
+      document: {
+        documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+        addEventListener() {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      Response,
+      Headers,
+      ReadableStream,
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      DataView,
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      fetch: async (url, init) => {
+        if (String(url).startsWith('/api/terminal/ls-rpc')) {
+          const out = await lsRpc(JSON.parse(init.body));
+          return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response('{}', { status: 200 });
+      },
+    };
+    win.window = win;
+    vm.runInNewContext(inlineMatch[1], win);
+
+    for (const [subMethod, expectedKey] of [
+      ['SubscribeToMcpServerStates', 'states'],
+      ['SubscribeToPlugins', 'plugins'],
+    ]) {
+      const subRes = await win.fetch(`/exa.language_server_pb.LanguageServerService/${subMethod}`, {
+        method: 'POST',
+        body: encodeConnectFrame({}),
+      });
+      const chunk = await subRes.body.getReader().read();
+      const { frames } = parseConnectFrames(Buffer.from(chunk.value));
+      assert.ok(Array.isArray(frames[0]?.data?.[expectedKey]), `${subMethod} must emit ${expectedKey} snapshot frame`);
+    }
+  });
 });

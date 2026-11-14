@@ -761,6 +761,23 @@
       if (method === 'WatchDirectory') {
         return makeGrpcStreamResponse([{ ready: true }]);
       }
+      if (method === 'SubscribeToMcpServerStates' || method === 'SubscribeToPlugins') {
+        const unaryMethod = method === 'SubscribeToMcpServerStates' ? 'GetMcpServerStates' : 'GetAllPlugins';
+        const subRes = await sidecarFetch()('/api/terminal/ls-rpc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            method: unaryMethod,
+            body: decodeConnectRequest(init.body),
+            targetTerminalId: terminalId,
+            targetConversationId: effectiveCascadeId,
+          }),
+        }).catch(() => null);
+        const subPayload = subRes && subRes.ok !== false
+          ? await subRes.json().catch(() => ({}))
+          : {};
+        return makeGrpcStreamResponse([subPayload && typeof subPayload === 'object' ? subPayload : {}]);
+      }
       if (
         method.startsWith('Stream') ||
         method.startsWith('Subscribe') ||
@@ -788,8 +805,15 @@
         const exps = Array.isArray(rpcPayload?.experimentConfig?.experiments)
           ? [...rpcPayload.experimentConfig.experiments]
           : [];
-        if (!exps.some((x) => x?.keyString === 'enable-new-themes')) {
-          exps.push({ keyString: 'enable-new-themes', disabled: false });
+        for (const flagKey of [
+          'enable-new-themes',
+          'enable-plugins',
+          'enable-plugin-auth',
+          'enable-marketplace-card-status',
+        ]) {
+          if (!exps.some((x) => x?.keyString === flagKey)) {
+            exps.push({ keyString: flagKey, disabled: false });
+          }
         }
         rpcPayload = {
           ...rpcPayload,
