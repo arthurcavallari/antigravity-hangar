@@ -2269,4 +2269,81 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('signals closed:true on pollChatStream after idle eviction with afterSeq>0, ring-buffer burst gap, or upstream EOF [SC-07]', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59986';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'csrf-sc07';
+    process.env.ANTIGRAVITY_SIDECAR_ID = 'hangar';
+    try {
+      const evictedRes = pollChatStream({
+        conversationId: 'conv-sc07-evicted',
+        subscriberId: 'sub-evict',
+        afterSeq: 5,
+        fetchFn: async () => new Promise(() => {}),
+      });
+      assert.equal(evictedRes.closed, true);
+      assert.deepEqual(evictedRes.chunks, []);
+      evictStaleChatStreams(Date.now() + 999_999, 1);
+
+      let burstCtrl = null;
+      pollChatStream({
+        conversationId: 'conv-sc07-burst',
+        subscriberId: 'sub-burst',
+        afterSeq: 0,
+        fetchFn: async () => ({
+          ok: true,
+          body: new ReadableStream({
+            start(c) {
+              burstCtrl = c;
+              for (let i = 1; i <= 255; i++) {
+                c.enqueue(encodeConnectFrame({ step: i }, 0));
+              }
+            },
+          }),
+        }),
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      const burstGap = pollChatStream({
+        conversationId: 'conv-sc07-burst',
+        subscriberId: 'sub-burst',
+        afterSeq: 1,
+      });
+      assert.equal(burstGap.closed, true);
+      assert.deepEqual(burstGap.chunks, []);
+      try { burstCtrl?.close(); } catch {}
+
+      pollChatStream({
+        conversationId: 'conv-sc07-eof',
+        subscriberId: 'sub-eof',
+        afterSeq: 0,
+        fetchFn: async () => ({
+          ok: true,
+          body: new ReadableStream({
+            start(c) {
+              c.enqueue(encodeConnectFrame({ step: 1 }, 0));
+              c.close();
+            },
+          }),
+        }),
+      });
+      await new Promise((r) => setTimeout(r, 25));
+      const eof1 = pollChatStream({ conversationId: 'conv-sc07-eof', subscriberId: 'sub-eof', afterSeq: 0 });
+      assert.equal(eof1.closed, true);
+      assert.equal(eof1.chunks.length, 1);
+      const eof2 = pollChatStream({ conversationId: 'conv-sc07-eof', subscriberId: 'sub-eof', afterSeq: 1 });
+      assert.equal(eof2.closed, true);
+      assert.deepEqual(eof2.chunks, []);
+    } finally {
+      evictStaleChatStreams(Date.now() + 999_999, 1);
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+      if (prevSid === undefined) delete process.env.ANTIGRAVITY_SIDECAR_ID;
+      else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
+    }
+  });
 });
