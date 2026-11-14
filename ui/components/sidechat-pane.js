@@ -731,6 +731,30 @@
       if (cf) {
         cf.src = 'about:blank';
       }
+    } else {
+      const drawerCids = sc.threads
+        .filter((t) => t?.cascadeId && !t.rootId && !sc.poppedIds?.has?.(t.cascadeId))
+        .map((t) => t.cascadeId);
+      for (const cid of drawerCids) {
+        const frame = sc.frames?.get?.(cid);
+        if (frame?.dataset) {
+          frame.dataset.loadedCascadeId = '';
+        }
+        if (frame) {
+          frame.src = 'about:blank';
+        }
+      }
+      const cf = ns._sideChatBox?._els?.chatFrame;
+      if (cf?.dataset) {
+        cf.dataset.loadedCascadeId = '';
+      }
+      if (cf) {
+        cf.src = 'about:blank';
+      }
+      ns.apiCall?.('/api/terminal/sidechat/close-stream', {
+        cascadeIds: drawerCids,
+        all: (sc.poppedIds?.size || 0) === 0,
+      })?.catch?.(() => {});
     }
     sc.isOpen = false;
     ns._sideChatBox?.classList?.add?.('hidden');

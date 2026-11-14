@@ -8,7 +8,7 @@ import { closeWorkspaceTerminal, createWorkspaceTerminal, DEFAULT_MAX_SCROLLBACK
 import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
-import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
+import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, closeTerminalSideChatStreams, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
@@ -2615,5 +2615,86 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(f2.appState.lastSelectedAgentModel, 'MODEL_CLAUDE_4_SONNET');
     assert.equal(f2.userConfig.userSettings.conversationWidth, 4);
     assert.deepEqual(Object.keys(f2.appState.customModelsConfig.customModels), ['Claude 4.5 Custom (BYOM)']);
+  });
+
+  it('SC-11: aborts orphaned StreamAgentStateUpdates streams via close-stream endpoint and non-deleting closeSideChatDrawer', async () => {
+    const prevLs = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59991';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'csrf-sc11';
+    process.env.ANTIGRAVITY_SIDECAR_ID = 'hangar';
+    try {
+      let aborted = false;
+      pollChatStream({
+        conversationId: 'conv-sc11',
+        subscriberId: 'sub-sc11',
+        afterSeq: 0,
+        fetchFn: async (_url, init) => {
+          init.signal.addEventListener('abort', () => { aborted = true; });
+          return new Promise(() => {});
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+
+      const apis = new Map();
+      registerJetboxProxyRoutes({ page() {}, api: (p, fn) => apis.set(p, fn) });
+      const apiCalls = [];
+      const coreSrc = readFileSync(join(REPO_ROOT, 'ui/core.js'), 'utf8');
+      const storeSrc = readFileSync(join(REPO_ROOT, 'ui/components/sidechat-store.js'), 'utf8');
+      const paneSrc = readFileSync(join(REPO_ROOT, 'ui/components/sidechat-pane.js'), 'utf8');
+      const win = {
+        location: { search: '', origin: 'http://127.0.0.1' },
+        localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+        sessionStorage: { getItem: () => null, setItem() {} },
+        addEventListener() {},
+        document: {
+          body: { classList: { contains: () => false } },
+          createElement: (tag) => ({
+            tagName: tag.toUpperCase(),
+            dataset: {},
+            style: {},
+            classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+            setAttribute() {},
+            addEventListener() {},
+            appendChild() {},
+          }),
+          querySelectorAll: () => [],
+        },
+        URLSearchParams,
+        Set,
+        Map,
+        Object,
+        Array,
+        String,
+        Boolean,
+        Number,
+        Promise,
+        setTimeout,
+        clearTimeout,
+      };
+      win.window = win;
+      vm.runInNewContext(`${coreSrc}\n${storeSrc}\n${paneSrc}`, win);
+      win.Hangar.apiCall = async (path, payload) => {
+        apiCalls.push({ path, payload });
+        return apis.get(path)?.(payload);
+      };
+      win.Hangar._sc.threads = [{ cascadeId: 'conv-sc11', title: 'Test' }];
+      win.Hangar._sc.isOpen = true;
+      win.Hangar.closeSideChatDrawer({ deleteAll: false, notify: false });
+      await new Promise((r) => setImmediate(r));
+
+      assert.equal(aborted, true, 'non-deleting closeSideChatDrawer must abort open StreamAgentStateUpdates stream');
+      assert.ok(apiCalls.some((c) => c.path === '/api/terminal/sidechat/close-stream'));
+      const res = await closeTerminalSideChatStreams({ all: true });
+      assert.equal(res.ok, true);
+    } finally {
+      if (prevLs === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevLs;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+      if (prevSid === undefined) delete process.env.ANTIGRAVITY_SIDECAR_ID;
+      else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
+    }
   });
 });
