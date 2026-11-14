@@ -83,8 +83,12 @@
     : (terminalId || ((cascadeId && cascadeId !== '_new') ? cascadeId : 'hangar-terminal'));
   const tabId = terminalId ? 'terminal__' + terminalId : 'terminal';
 
+  const JETBOX_STATE_OVERLAY_KEY = 'hangar.jetboxStateOverlay.v1';
+  let hostLocalStorage = null;
+
   try {
     const rawLs = window.localStorage;
+    hostLocalStorage = rawLs;
     const mem = new Map();
     if (params.hostStorage && typeof params.hostStorage === 'object') {
       for (const [k, v] of Object.entries(params.hostStorage)) {
@@ -101,10 +105,23 @@
     const isoLs = {
       getItem: (k) => (mem.has(String(k)) ? mem.get(String(k)) : (rawLs?.getItem?.(k) ?? null)),
       setItem: (k, v) => {
-        mem.set(String(k), String(v));
+        const sk = String(k);
+        const sv = String(v);
+        mem.set(sk, sv);
+        if (sk === JETBOX_STATE_OVERLAY_KEY) {
+          try {
+            rawLs?.setItem?.(sk, sv);
+          } catch {}
+        }
       },
       removeItem: (k) => {
-        mem.delete(String(k));
+        const sk = String(k);
+        mem.delete(sk);
+        if (sk === JETBOX_STATE_OVERLAY_KEY) {
+          try {
+            rawLs?.removeItem?.(sk);
+          } catch {}
+        }
       },
       clear: () => {
         mem.clear();
@@ -836,6 +853,79 @@
     };
   }
 
+  function isPlainObj(v) {
+    return Boolean(v && typeof v === 'object' && !Array.isArray(v));
+  }
+
+  function mergePlainObjects(base, patch) {
+    const out = isPlainObj(base) ? { ...base } : {};
+    if (!isPlainObj(patch)) return out;
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
+      out[k] = isPlainObj(v) && isPlainObj(out[k]) ? mergePlainObjects(out[k], v) : v;
+    }
+    return out;
+  }
+
+  function readJetboxStateOverlay() {
+    try {
+      const raw =
+        window.localStorage?.getItem?.(JETBOX_STATE_OVERLAY_KEY) ??
+        hostLocalStorage?.getItem?.(JETBOX_STATE_OVERLAY_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return isPlainObj(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeJetboxStateOverlay(patch) {
+    if (!isPlainObj(patch)) return;
+    const filtered = {};
+    if (isPlainObj(patch.appState)) {
+      filtered.appState = patch.appState;
+    }
+    if (isPlainObj(patch.userConfig)) {
+      filtered.userConfig = patch.userConfig;
+    }
+    if (!Object.keys(filtered).length) return;
+    const merged = mergePlainObjects(readJetboxStateOverlay(), filtered);
+    try {
+      window.localStorage?.setItem?.(JETBOX_STATE_OVERLAY_KEY, JSON.stringify(merged));
+    } catch {}
+  }
+
+  async function buildHydratedJetboxState() {
+    if (mode !== 'chat') return STATE_STUB;
+    let upstream = {};
+    try {
+      const res = await sidecarFetch()('/api/terminal/ls-rpc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'ReadJetboxStateSnapshot', body: {} }),
+      });
+      if (res && res.ok !== false) {
+        const data = await res.json().catch(() => ({}));
+        if (isPlainObj(data?.state)) {
+          upstream = data.state;
+        }
+      }
+    } catch {}
+    const withStub = mergePlainObjects(STATE_STUB, upstream);
+    const withHostTheme = mergePlainObjects(withStub, {
+      appState: {
+        agentOnboardingCompleted: 2,
+        migrateConvosIntoProjects: 2,
+      },
+      userConfig: {
+        userSettings: {
+          themeMode: safeTheme === 'light' ? 2 : 1,
+        },
+      },
+    });
+    return mergePlainObjects(withHostTheme, readJetboxStateOverlay());
+  }
+
   window.fetch = async function patchedFetch(input, init = {}) {
     const rawUrl = typeof input === 'string' ? input : input?.url || '';
     let pathname = rawUrl;
@@ -851,11 +941,19 @@
       if (method === 'SubscribeToSidecars') {
         return makeGrpcStreamResponse([mode === 'chat' ? await fetchSanitizedChatSidecars() : { sidecars: [] }]);
       }
+      if (method === 'JetboxWriteState') {
+        if (mode === 'chat') {
+          writeJetboxStateOverlay(decodeConnectRequest(init.body));
+        }
+        return makeGrpcUnaryResponse({});
+      }
       if (method === 'JetboxReadState') {
         setTimeout(applySavedTheme, 50);
-        return makeGrpcUnaryResponse(STATE_STUB);
+        return makeGrpcUnaryResponse(await buildHydratedJetboxState());
       }
-      if (method === 'JetboxSubscribeToState') return makeGrpcStreamResponse([STATE_STUB]);
+      if (method === 'JetboxSubscribeToState') {
+        return makeGrpcStreamResponse([await buildHydratedJetboxState()]);
+      }
       if (method === 'StreamTerminalOutput') {
         const reqTermId = decodeConnectRequest(init.body).terminalId || terminalId;
         return new window.Response(createTerminalConnectStream(reqTermId), {

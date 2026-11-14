@@ -7,6 +7,7 @@ import {
   fetchMergedCascadeTrajectories,
   hangarRpc,
   invalidateStateReads,
+  readJetboxStateSnapshot,
 } from '../lib/ls-rpc.mjs';
 import { fetchHangarState } from '../lib/state-orchestrator.mjs';
 
@@ -371,5 +372,47 @@ describe('hangarRpc shared state reads', () => {
     const lsRpc = apis.get('/api/terminal/ls-rpc');
     await assert.rejects(() => lsRpc({ method: 'GetAuthStatus', body: {} }), /GetAuthStatus transient timeout/);
     await assert.rejects(() => lsRpc({ method: 'GetUserStatus', body: {} }), /GetUserStatus transient timeout/);
+  });
+
+  it('SC-10: readJetboxStateSnapshot reads Frame 1 of JetboxSubscribeToState, aborts immediately, and caches for 10s', async () => {
+    invalidateStateReads('JetboxSubscribeToState');
+    let calls = 0;
+    let streamAborted = false;
+    const fetchFn = async (_url, init) => {
+      calls += 1;
+      init.signal.addEventListener('abort', () => {
+        streamAborted = true;
+      });
+      const frame1 = encodeConnectFrame({
+        appState: {
+          customModelsConfig: {
+            customModels: {
+              'Claude 4.5 Custom (BYOM)': { modelId: 'MODEL_CLAUDE_4_SONNET' },
+            },
+          },
+        },
+      });
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(frame1);
+        },
+      });
+      return { ok: true, status: 200, body: stream };
+    };
+    const snap1 = await readJetboxStateSnapshot({
+      lsAddress: '127.0.0.1:59992',
+      csrfToken: 'tok',
+      fetchFn,
+    });
+    const snap2 = await readJetboxStateSnapshot({
+      lsAddress: '127.0.0.1:59992',
+      csrfToken: 'tok',
+      fetchFn,
+    });
+    assert.equal(snap1.ok, true);
+    assert.equal(streamAborted, true);
+    assert.deepEqual(Object.keys(snap1.state.appState.customModelsConfig.customModels), ['Claude 4.5 Custom (BYOM)']);
+    assert.equal(snap2.ok, true);
+    assert.equal(calls, 1, 'second snapshot read within 10s must serve cached result');
   });
 });

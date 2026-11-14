@@ -2527,4 +2527,93 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(openMsg.payload.candidateIds.includes('swarm--swarm_board'));
     assert.ok(openMsg.payload.candidateIds.includes('swarm'));
   });
+
+  it('SC-10: hydrates BYOM customModelsConfig from ReadJetboxStateSnapshot and overlays JetboxWriteState across reloads', async () => {
+    const sharedStorage = new Map();
+    const makeHostLocalStorage = () => ({
+      getItem: (k) => (sharedStorage.has(String(k)) ? sharedStorage.get(String(k)) : null),
+      setItem: (k, v) => { sharedStorage.set(String(k), String(v)); },
+      removeItem: (k) => { sharedStorage.delete(String(k)); },
+    });
+    const runBoot = () => {
+      const html = buildJetboxChatHtml({ cascadeId: 'conv-sc10', hostTheme: 'dark', uiToken: 'tok-sc10' });
+      const inlineMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+      const win = {
+        location: { search: '?token=tok-sc10', pathname: '/jetbox-chat', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc10' },
+        history: { replaceState() {}, pushState() {} },
+        localStorage: makeHostLocalStorage(),
+        sessionStorage: { setItem() {}, getItem: () => null },
+        navigator: { clipboard: { writeText: async () => {} } },
+        parent: { postMessage() {} },
+        addEventListener() {},
+        removeEventListener() {},
+        document: {
+          documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+          addEventListener() {},
+          querySelector: () => null,
+          querySelectorAll: () => [],
+        },
+        Response,
+        Headers,
+        ReadableStream,
+        TextEncoder,
+        TextDecoder,
+        Uint8Array,
+        DataView,
+        URL,
+        URLSearchParams,
+        setTimeout,
+        clearTimeout,
+        fetch: async (_url, init) => {
+          const req = JSON.parse(String(init?.body || '{}'));
+          if (req.method === 'ReadJetboxStateSnapshot') {
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                state: {
+                  appState: {
+                    lastSelectedAgentModel: 'MODEL_PLACEHOLDER_M37',
+                    customModelsConfig: {
+                      customModels: {
+                        'Claude 4.5 Custom (BYOM)': { modelId: 'MODEL_CLAUDE_4_SONNET' },
+                      },
+                    },
+                  },
+                  userConfig: { userSettings: { conversationWidth: 3 } },
+                },
+              }),
+              { status: 200 }
+            );
+          }
+          return new Response('{}', { status: 200 });
+        },
+      };
+      win.window = win;
+      vm.runInNewContext(inlineMatch[1], win);
+      return win;
+    };
+
+    const win1 = runBoot();
+    const sub1 = await win1.fetch('/exa.language_server_pb.LanguageServerService/JetboxSubscribeToState', { method: 'POST' });
+    const r1 = sub1.body.getReader();
+    const f1 = parseConnectFrames(Buffer.from((await r1.read()).value)).frames[0].data;
+    assert.deepEqual(Object.keys(f1.appState.customModelsConfig.customModels), ['Claude 4.5 Custom (BYOM)']);
+    assert.equal(f1.userConfig.userSettings.conversationWidth, 3);
+
+    await win1.fetch('/exa.language_server_pb.LanguageServerService/JetboxWriteState', {
+      method: 'POST',
+      body: encodeConnectFrame({
+        appState: { lastSelectedAgentModel: 'MODEL_CLAUDE_4_SONNET' },
+        userConfig: { userSettings: { conversationWidth: 4 } },
+      }),
+    });
+
+    const win2 = runBoot();
+    const sub2 = await win2.fetch('/exa.language_server_pb.LanguageServerService/JetboxSubscribeToState', { method: 'POST' });
+    const r2 = sub2.body.getReader();
+    const f2 = parseConnectFrames(Buffer.from((await r2.read()).value)).frames[0].data;
+    assert.equal(f2.appState.lastSelectedAgentModel, 'MODEL_CLAUDE_4_SONNET');
+    assert.equal(f2.userConfig.userSettings.conversationWidth, 4);
+    assert.deepEqual(Object.keys(f2.appState.customModelsConfig.customModels), ['Claude 4.5 Custom (BYOM)']);
+  });
 });
