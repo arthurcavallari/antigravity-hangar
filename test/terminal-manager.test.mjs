@@ -8,7 +8,7 @@ import { closeWorkspaceTerminal, createWorkspaceTerminal, DEFAULT_MAX_SCROLLBACK
 import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
-import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
+import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
@@ -2426,5 +2426,105 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       fn({ target: forkBtn, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
     }
     assert.ok(posted.some((m) => m.type === 'hangar-sidechat-open-parent' && m.payload?.parentConversationId === 'conv-parent-08'));
+  });
+
+  it('SC-09: exposes sanitized GetSidecars metadata in chat mode and routes sidecar:// pill clicks to hangar-sidechat-open-sidecar', async () => {
+    const apis = new Map();
+    const app = {
+      page() {},
+      api(path, fn) { apis.set(path, fn); },
+    };
+    registerJetboxProxyRoutes(app, {
+      rpcFn: async (method) => {
+        if (method === 'GetSidecars') {
+          return {
+            sidecars: [
+              {
+                sidecarId: 'swarm',
+                status: 'SIDECAR_STATUS_RUNNING',
+                webPort: 59123,
+                baseUrl: 'http://127.0.0.1:59123',
+                config: { uiConfig: { views: [{ path: '/swarm_board/', title: 'Swarm Board' }] } },
+              },
+            ],
+          };
+        }
+        return {};
+      },
+    });
+    const lsRpc = apis.get('/api/terminal/ls-rpc');
+    assert.deepEqual(await lsRpc({ method: 'GetSidecars' }), { sidecars: [] });
+    const chatSidecars = await lsRpc({ method: 'GetSidecars', mode: 'chat' });
+    assert.equal(chatSidecars.sidecars.length, 1);
+    assert.equal(chatSidecars.sidecars[0].sidecarId, 'swarm');
+    assert.equal(chatSidecars.sidecars[0].webPort, 0);
+    assert.equal(chatSidecars.sidecars[0].baseUrl, 'http://hangar-sidecar.invalid');
+
+    const html = buildJetboxChatHtml({ cascadeId: 'conv-sc09', hostTheme: 'dark', uiToken: 'tok-sc09' });
+    const inlineMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+    const posted = [];
+    const winListeners = {};
+    const win = {
+      location: { search: '?token=tok-sc09', pathname: '/jetbox-chat', origin: 'http://127.0.0.1', href: 'http://127.0.0.1/jetbox-chat?token=tok-sc09' },
+      history: { replaceState() {}, pushState() {} },
+      localStorage: { setItem() {} },
+      sessionStorage: { setItem() {}, getItem: () => null },
+      navigator: { clipboard: { writeText: async () => {} } },
+      parent: { postMessage(msg) { posted.push(msg); } },
+      addEventListener(ev, fn) { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+      removeEventListener() {},
+      document: {
+        documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+        addEventListener() {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      Response,
+      Headers,
+      ReadableStream,
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      DataView,
+      URL,
+      URLSearchParams,
+      setTimeout,
+      clearTimeout,
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        const out = await lsRpc(body);
+        return new Response(JSON.stringify(out), { status: 200 });
+      },
+    };
+    win.window = win;
+    vm.runInNewContext(inlineMatch[1], win);
+
+    const getRes = await win.fetch('/exa.language_server_pb.LanguageServerService/GetSidecars', { method: 'POST' });
+    const getFrames = parseConnectFrames(Buffer.from(await getRes.arrayBuffer())).frames;
+    assert.equal(getFrames[0].data.sidecars[0].baseUrl, 'http://hangar-sidecar.invalid');
+
+    const pillBtn = {
+      disabled: false,
+      getAttribute: () => null,
+      __reactFiber$xyz: {
+        return: {
+          return: { memoizedProps: { href: 'sidecar://swarm/swarm_board/' } },
+        },
+      },
+      closest(sel) {
+        return sel.includes('button.inline-pill') ? pillBtn : null;
+      },
+    };
+    for (const fn of winListeners.click || []) {
+      fn({ target: pillBtn, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+    }
+    const openMsg = posted.find((m) => m.type === 'hangar-sidechat-open-sidecar');
+    assert.ok(openMsg);
+    assert.equal(openMsg.payload.href, 'sidecar://swarm/swarm_board/');
+    assert.equal(openMsg.payload.pluginName, 'swarm');
+    assert.equal(openMsg.payload.subSidecarName, 'swarm_board');
+    assert.equal(openMsg.payload.viewPath, '/swarm_board/');
+    assert.ok(openMsg.payload.candidateIds.includes('swarm--swarm_board'));
+    assert.ok(openMsg.payload.candidateIds.includes('swarm'));
   });
 });

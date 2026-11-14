@@ -134,6 +134,27 @@
       } else {
         window.sidecar?.toggleConversation?.(parentId);
       }
+    } else if (type === 'hangar-sidechat-open-sidecar') {
+      const cands = Array.isArray(payload.candidateIds) ? payload.candidateIds : [];
+      const rawId = String(payload.sidecarId || cands[0] || '').trim();
+      if (!rawId) return;
+      let targetTabId = rawId === 'dashboard' ? (ns.EXTENSIONS_TAB_ID || '__extensions__') : rawId;
+      if (rawId !== 'dashboard' && typeof document.querySelectorAll === 'function') {
+        const known = Array.from(document.querySelectorAll('[data-sidecar-id]'))
+          .map((el) => el.dataset?.sidecarId || el.getAttribute?.('data-sidecar-id') || '')
+          .filter(Boolean);
+        const hit = cands.find((id) => known.includes(id)) ||
+          known.find((id) => cands.some((c) => id === c || id.endsWith('/' + c) || id.endsWith('--' + c)));
+        if (hit) {
+          targetTabId = hit;
+        }
+      }
+      const box = sc.boxes.get(tabId);
+      ns.notifySideChatState?.({
+        activateTab: true,
+        targetTabId,
+        pane: box?.dataset?.slot === 'bottom' ? 'bottom' : 'top',
+      });
     }
   });
 

@@ -788,6 +788,54 @@
     });
   }
 
+  async function fetchSanitizedChatSidecars() {
+    try {
+      const res = await sidecarFetch()('/api/terminal/ls-rpc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: 'GetSidecars',
+          mode: 'chat',
+          targetConversationId: effectiveCascadeId,
+        }),
+      });
+      if (res && res.ok !== false) {
+        const payload = await res.json().catch(() => ({}));
+        if (Array.isArray(payload?.sidecars)) {
+          return { sidecars: payload.sidecars };
+        }
+      }
+    } catch {}
+    return { sidecars: [] };
+  }
+
+  function parseSidecarLinkHref(href) {
+    const raw = String(href || '').trim();
+    if (!/^sidecar:\/\//i.test(raw)) return null;
+    const rest = raw.replace(/^sidecar:\/\/\/?/i, '');
+    const qIdx = rest.indexOf('?');
+    const pathPart = qIdx >= 0 ? rest.slice(0, qIdx) : rest;
+    const segs = pathPart.split('/').filter(Boolean);
+    const pluginName = segs[0] || '';
+    const subSidecarName = segs[1] || '';
+    const isDashboard = pluginName === 'dashboard';
+    const compoundId = segs.length >= 2 ? `${pluginName}--${subSidecarName}` : pluginName;
+    const slashId = segs.length >= 2 ? `${pluginName}/${subSidecarName}` : pluginName;
+    const candidateIds = isDashboard
+      ? ['dashboard']
+      : [...new Set([compoundId, slashId, pluginName, subSidecarName].filter(Boolean))];
+    const tail = segs.slice(1).join('/');
+    const viewPath = '/' + tail + (tail && pathPart.endsWith('/') ? '/' : '');
+    return {
+      href: raw,
+      sidecarId: isDashboard ? 'dashboard' : (compoundId || pluginName),
+      candidateIds,
+      pluginName,
+      subSidecarName,
+      viewPath,
+    };
+  }
+
   window.fetch = async function patchedFetch(input, init = {}) {
     const rawUrl = typeof input === 'string' ? input : input?.url || '';
     let pathname = rawUrl;
@@ -796,9 +844,13 @@
     } catch {}
     if (pathname.startsWith(LS_PREFIX)) {
       const method = pathname.slice(LS_PREFIX.length);
-      if (method === 'GetSidecars') return makeGrpcUnaryResponse({ sidecars: [] });
+      if (method === 'GetSidecars') {
+        return makeGrpcUnaryResponse(mode === 'chat' ? await fetchSanitizedChatSidecars() : { sidecars: [] });
+      }
       if (method === 'HasAuthToken') return makeGrpcUnaryResponse({ hasToken: true });
-      if (method === 'SubscribeToSidecars') return makeGrpcStreamResponse([{ sidecars: [] }]);
+      if (method === 'SubscribeToSidecars') {
+        return makeGrpcStreamResponse([mode === 'chat' ? await fetchSanitizedChatSidecars() : { sidecars: [] }]);
+      }
       if (method === 'JetboxReadState') {
         setTimeout(applySavedTheme, 50);
         return makeGrpcUnaryResponse(STATE_STUB);
@@ -908,6 +960,8 @@
           'enable-plugin-auth',
           'enable-marketplace-card-status',
           'enable-audio-transcription',
+          'enable-sidecars',
+          'enable-ui-sidecars',
         ]) {
           if (!exps.some((x) => x?.keyString === flagKey)) {
             exps.push({ keyString: flagKey, disabled: false });
@@ -1410,6 +1464,33 @@
     });
     window.addEventListener?.('click', (e) => {
       const tgt = e.target?.closest ? e.target : e.target?.parentElement;
+      const pillEl = tgt?.closest?.('button.inline-pill, a[href^="sidecar://"], a[href^="SIDECAR://"]');
+      if (pillEl) {
+        let sidecarHref = pillEl.getAttribute?.('href') || '';
+        if (!/^sidecar:\/\//i.test(sidecarHref)) {
+          const fk = Object.keys(pillEl).find((k) => k.startsWith('__reactFiber$'));
+          for (let f = fk ? pillEl[fk] : null, d = 0; f && d < 12; d++, f = f.return) {
+            const h = f.memoizedProps?.href;
+            if (typeof h === 'string' && /^sidecar:\/\//i.test(h)) {
+              sidecarHref = h;
+              break;
+            }
+          }
+        }
+        const parsedSidecar = parseSidecarLinkHref(sidecarHref);
+        if (parsedSidecar) {
+          e.preventDefault?.();
+          e.stopPropagation?.();
+          e.stopImmediatePropagation?.();
+          if (!pillEl.disabled) {
+            postToParent('hangar-sidechat-open-sidecar', {
+              ...parsedSidecar,
+              cascadeId: effectiveCascadeId,
+            });
+          }
+          return;
+        }
+      }
       const forkWrap = tgt?.closest?.('div[title="Open side-by-side view"]');
       if (forkWrap) {
         e.preventDefault?.();
