@@ -917,4 +917,29 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(rootStyles.get('--secondary-foreground'), '#EAEBF1');
     assert.equal(jbDoc.body.style.fontFamily, '');
   });
+
+  it('TB-03: renders Tier-2 36px recessed chrome bars and Tier-3 30px agy-tab-strip-sub session strips', () => {
+    const stylesCss = readFileSync(join(UI_DIR, 'styles.css'), 'utf8');
+    const componentsCss = readFileSync(join(UI_DIR, 'components.css'), 'utf8');
+    const sidechatPaneJs = readFileSync(join(UI_DIR, 'components', 'sidechat-pane.js'), 'utf8');
+    const sidechatStripJs = readFileSync(join(UI_DIR, 'components', 'sidechat-strip.js'), 'utf8');
+    const terminalTabJs = readFileSync(join(UI_DIR, 'components', 'terminal-tab.js'), 'utf8');
+
+    assert.match(
+      stylesCss,
+      /\.bottom-tab-bar\s*\{[^}]*height:\s*36px;[^}]*background:\s*color-mix\(in srgb,\s*var\(--hub-fg\)\s*3%,\s*var\(--hub-bg\)\);[^}]*inset 0 0\.5px 0 0/s
+    );
+    assert.match(
+      componentsCss,
+      /\.term-toolbar\s*\{[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*inset 0 -0\.5px 0 0/s
+    );
+    assert.match(
+      componentsCss,
+      /\.term-quote-composer-hdr\s*\{[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*inset 0 -0\.5px 0 0/s
+    );
+    assert.ok(sidechatPaneJs.includes("'agy-tab-strip agy-tab-strip-sub'"));
+    assert.ok(terminalTabJs.includes('class="agy-tab-strip agy-tab-strip-sub" data-role="sessions"'));
+    assert.ok(sidechatStripJs.includes('iconSize: 14'));
+    assert.ok(terminalTabJs.includes('iconSize: 14'));
+  });
 });

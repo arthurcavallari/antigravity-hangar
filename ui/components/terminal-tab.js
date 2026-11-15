@@ -26,7 +26,7 @@
       rootEl,
       ns.html`
         <div class="term-toolbar">
-          <agy-tab-strip class="agy-tab-strip" data-role="sessions" aria-label="Terminal sessions"></agy-tab-strip>
+          <agy-tab-strip class="agy-tab-strip agy-tab-strip-sub" data-role="sessions" aria-label="Terminal sessions"></agy-tab-strip>
           <div class="term-toolbar-actions">
             <button
               type="button"
@@ -36,7 +36,7 @@
               aria-label="Split Terminal"
               aria-pressed="false"
               title="Split Terminal"
-            >${ns.iconSvg('splitscreen_vertical_add', 16)}</button>
+            >${ns.iconSvg('splitscreen_vertical_add', 15)}</button>
             <button
               type="button"
               class="agy-icon-btn"
@@ -44,7 +44,7 @@
               aria-label="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
               aria-pressed="${rootId ? 'true' : 'false'}"
               title="${rootId ? 'Merge back into main Terminal tab' : 'Pin Terminal Tab to Top Bar'}"
-            >${ns.iconSvg('dock_to_right', 16)}</button>
+            >${ns.iconSvg('dock_to_right', 15)}</button>
           </div>
         </div>
         <div class="term-stage" data-role="stage"></div>
@@ -263,7 +263,7 @@
           gIdx,
           label: cleanTitle,
           icon: 'terminal',
-          iconSize: 16,
+          iconSize: 14,
           active: grp.groupId === activeGrp?.groupId,
           pinned: isPinned,
           closable: !isPinned,

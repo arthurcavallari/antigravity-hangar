@@ -389,7 +389,7 @@
         idx,
         label: ns.resolveSideChatTitle(t),
         icon: 'chat',
-        iconSize: 15,
+        iconSize: 14,
         active: t.cascadeId === actCid,
         pinned: Boolean(t.pinned),
         closable: !t.pinned,

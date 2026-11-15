@@ -180,7 +180,7 @@
       : '';
     box = mkEl('div', 'term-quote-composer', {}, { dockMode: 'docked', instanceTabId: curTabId });
     const hdr = mkEl('div', 'term-toolbar term-quote-composer-hdr');
-    const sessionsEl = mkEl('agy-tab-strip', 'agy-tab-strip', {}, { role: 'sessions' });
+    const sessionsEl = mkEl('agy-tab-strip', 'agy-tab-strip agy-tab-strip-sub', {}, { role: 'sessions' });
     sessionsEl.setAttribute?.('aria-label', 'Side Chat threads');
     const actionsEl = mkEl('div', 'term-toolbar-actions');
     sessionsEl.addEventListener?.('wheel', (e) => {
@@ -300,7 +300,7 @@
     const newThreadBtn = mkEl(
       'button',
       'agy-icon-btn hidden',
-      { type: 'button', title: 'New Side Chat', ariaLabel: 'New Side Chat', html: ns.iconSvg?.('add', 18) || '+' },
+      { type: 'button', title: 'New Side Chat', ariaLabel: 'New Side Chat', html: ns.iconSvg?.('add', 16) || '+' },
       { action: 'new', role: 'sidechat-new' },
       () => spawnNewInInstance()
     );
