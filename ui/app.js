@@ -477,8 +477,9 @@
   });
   const VISIBLE_POLL_MS = 3000;
   const HIDDEN_POLL_MS = 60 * 1000;
+  let hostVisible = true;
   let inViewport = true;
-  const isHidden = () => Boolean(document.hidden || !inViewport);
+  const isHidden = () => Boolean(document.hidden || !inViewport || !hostVisible);
   ns.isHostHidden = isHidden;
   const syncHostVisibility = () => {
     ns.syncDeckVisibility?.();
@@ -486,6 +487,14 @@
     ns.syncTerminalVisibility?.();
     if (!isHidden()) refreshHangarState();
   };
+  window.addEventListener?.('message', (e) => {
+    if (e?.data?.type !== 'sidecar-visibility') return;
+    if (ns.isHostMessage && !ns.isHostMessage(e.source)) return;
+    const raw = e.data.payload?.visible ?? e.data.visible;
+    if (typeof raw !== 'boolean' || raw === hostVisible) return;
+    hostVisible = raw;
+    syncHostVisibility();
+  });
   if (typeof IntersectionObserver === 'function') {
     new IntersectionObserver((entries) => {
       const next = entries[entries.length - 1].isIntersecting;

@@ -292,4 +292,128 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.equal(agentApiCalls[1].args[0], 'new-conversation');
     assert.deepEqual(toasts, [{ text: 'Sent quote from "zsh" to Main Chat', isErr: false }]);
   });
+
+  it('closes Hangar SSE EventSource and propagates visibility to child iframes when hidden via CSS, document.hidden, or sidecar-visibility', () => {
+    const createdEventSources = [];
+    const observers = [];
+    const winListeners = new Map();
+    const docListeners = new Map();
+    const deckVisibilityCalls = [];
+    const addL = (m, t, fn) => {
+      const s = m.get(t) || new Set();
+      s.add(fn);
+      m.set(t, s);
+    };
+    const emit = (m, t, ev) => {
+      for (const fn of [...(m.get(t) || [])]) fn(ev);
+    };
+
+    class MockEventSource {
+      constructor(url) {
+        this.url = url;
+        this.closed = false;
+        createdEventSources.push(this);
+      }
+      addEventListener() {}
+      close() {
+        this.closed = true;
+      }
+    }
+
+    class MockIntersectionObserver {
+      constructor(cb) {
+        this.cb = cb;
+        observers.push(this);
+      }
+      observe(target) {
+        this.target = target;
+      }
+      disconnect() {}
+    }
+
+    const parentWin = {};
+    const document = {
+      readyState: 'complete',
+      hidden: false,
+      documentElement: {
+        dataset: {},
+        classList: { contains: () => false },
+        style: { setProperty() {}, getPropertyValue: () => '' },
+        toggleAttribute() {},
+      },
+      getElementById: () => null,
+      querySelectorAll: () => [],
+      addEventListener: (t, fn) => addL(docListeners, t, fn),
+      removeEventListener: (t, fn) => docListeners.get(t)?.delete(fn),
+    };
+    const window = {
+      parent: parentWin,
+      document,
+      EventSource: MockEventSource,
+      location: {
+        href: 'http://localhost:53083/?token=tok1&conversationId=conv-1',
+        search: '?token=tok1&conversationId=conv-1',
+        origin: 'http://localhost:53083',
+      },
+      addEventListener: (t, fn) => addL(winListeners, t, fn),
+      removeEventListener: (t, fn) => winListeners.get(t)?.delete(fn),
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({ sidecars: [], layout: {} }) }),
+    };
+
+    const ctx = vm.createContext({
+      window,
+      document,
+      EventSource: MockEventSource,
+      IntersectionObserver: MockIntersectionObserver,
+      URL,
+      URLSearchParams,
+      sessionStorage: { getItem: () => '', setItem() {} },
+      console,
+      setTimeout: (fn) => {
+        fn();
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval: () => 0,
+    });
+
+    vm.runInContext(createShellClientHandler()().body, ctx, { filename: 'shell.js' });
+    vm.runInContext(readFileSync(join(ROOT, 'ui', 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+    window.Hangar.partitionSplitTabs = () => ({ workspaceTabs: [], topTabs: [], bottomTabs: [], topSet: new Set() });
+    window.Hangar.syncDeckVisibility = () => deckVisibilityCalls.push(window.Hangar.isHostHidden());
+    vm.runInContext(readFileSync(join(ROOT, 'ui', 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+
+    assert.equal(createdEventSources.length, 1);
+    assert.equal(createdEventSources[0].closed, false);
+
+    // 1. Background conversation hidden via IntersectionObserver -> closes Hangar SSE socket
+    for (const o of observers) o.cb([{ isIntersecting: false }]);
+    assert.equal(createdEventSources[0].closed, true);
+    assert.equal(window.Hangar.isHostHidden(), true);
+
+    for (const o of observers) o.cb([{ isIntersecting: true }]);
+    assert.equal(createdEventSources.length, 2);
+    assert.equal(createdEventSources[1].closed, false);
+    assert.equal(window.Hangar.isHostHidden(), false);
+
+    // 2. Host sidecar-visibility: false -> closes Hangar SSE socket AND notifies child iframe deck
+    const beforeDeckCalls = deckVisibilityCalls.length;
+    emit(winListeners, 'message', {
+      source: parentWin,
+      data: { type: 'sidecar-visibility', payload: { visible: false } },
+    });
+    assert.equal(createdEventSources[1].closed, true);
+    assert.equal(window.Hangar.isHostHidden(), true);
+    assert.equal(deckVisibilityCalls.at(-1), true);
+    assert.ok(deckVisibilityCalls.length > beforeDeckCalls);
+
+    emit(winListeners, 'message', {
+      source: parentWin,
+      data: { type: 'sidecar-visibility', payload: { visible: true } },
+    });
+    assert.equal(createdEventSources.length, 3);
+    assert.equal(createdEventSources[2].closed, false);
+    assert.equal(window.Hangar.isHostHidden(), false);
+    assert.equal(deckVisibilityCalls.at(-1), false);
+  });
 });
