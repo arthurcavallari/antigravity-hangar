@@ -5,7 +5,7 @@
   --hub-fg: var(--agy-ink, var(--foreground, #ffffff));
   --hub-sidebar: var(--sidebar, color-mix(in srgb, var(--hub-fg) 2.5%, var(--hub-bg)));
   --hub-card: var(--agy-card, var(--card, #131317));
-  --hub-card-border: var(--card-border, rgba(255, 255, 255, 0.08));
+  --hub-card-border: var(--agy-card-edge, var(--card-border, rgba(255, 255, 255, 0.08)));
   --hub-border: var(--border, rgba(255, 255, 255, 0.06));
   --hub-primary: var(--agy-accent, var(--primary, #2f71e3));
   --hub-primary-fg: var(--primary-foreground, #ffffff);

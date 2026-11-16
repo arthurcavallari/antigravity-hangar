@@ -218,8 +218,14 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(stylesCss, /--hub-bg:\s*var\(--agy-canvas,\s*var\(--background,\s*#070708\)\)/i);
     assert.match(stylesCss, /--hub-card:\s*var\(--agy-card,\s*var\(--card,\s*#131317\)\)/i);
     assert.match(stylesCss, /--hub-primary:\s*var\(--agy-accent,\s*var\(--primary,\s*#2f71e3\)\)/i);
-    assert.match(compCss, /\.workspace-suggestions\s*\{[\s\S]*?border:\s*0\.5px solid var\(--hub-card-border\);/);
-    assert.match(compCss, /\.hub-shell \.agy-card:not\(\.agy-card-highlight\)\s*\{\s*border:\s*0\.5px solid var\(--hub-card-border\);\s*\}/);
+    assert.match(
+      compCss,
+      /\.workspace-suggestions\s*\{[\s\S]*?border:\s*0\.5px solid var\(--hub-card-border\);[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--hub-fg\)\s*2%,\s*transparent\);/
+    );
+    assert.match(
+      compCss,
+      /\.hub-shell \.agy-card:not\(\.agy-card-highlight\)\s*\{[\s\S]*?border:\s*0\.5px solid var\(--hub-card-border\);[\s\S]*?background:\s*color-mix\(in srgb,\s*var\(--hub-fg\)\s*2%,\s*transparent\);/
+    );
     assert.ok(jbSharedCss.includes('#070708'));
     assert.ok(jbTermCss.includes('#070708'));
   });

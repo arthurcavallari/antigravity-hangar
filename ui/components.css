@@ -147,7 +147,7 @@
   padding: 8px;
   border-radius: var(--radius-xl, 0.75rem);
   border: 0.5px solid var(--hub-card-border);
-  background: var(--hub-card);
+  background: color-mix(in srgb, var(--hub-fg) 2%, transparent);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -155,6 +155,7 @@
 
 .hub-shell .agy-card:not(.agy-card-highlight) {
   border: 0.5px solid var(--hub-card-border);
+  background: color-mix(in srgb, var(--hub-fg) 2%, transparent);
 }
 
 .popover-sug-header {
@@ -1048,5 +1049,9 @@ body:is(.resizing-split, .dragging-tab) :is(.term-jetbox-frame, .term-sidechat-f
     background: Canvas;
     border-bottom: 1px solid ButtonBorder;
     box-shadow: none;
+  }
+
+  :is(.workspace-suggestions, .hub-shell .agy-card:not(.agy-card-highlight)) {
+    background: Canvas;
   }
 }
