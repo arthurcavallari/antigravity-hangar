@@ -34,6 +34,10 @@
   --agy-accent: var(--primary, #2f71e3);
 }
 
+:root[data-theme='light'] .hub-shell :is(.agy-card:not(.agy-card-highlight), .workspace-suggestions) {
+  background: color-mix(in srgb, var(--hub-fg) 2.5%, var(--hub-card));
+}
+
 * {
   box-sizing: border-box;
 }

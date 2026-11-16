@@ -1,6 +1,48 @@
 /** @fileoverview Renders and reconciles workspace suggestions and installed sidecar cards. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
+  const expandedScopeIds = new Set();
+
+  function formatScopeSummary(sc) {
+    const patterns = Array.isArray(sc?.workspaces) ? sc.workspaces : [];
+    if (patterns.includes('*')) {
+      return { label: 'Global (*)', empty: false, extraCount: 0, tooltip: 'Active in all workspaces (*)' };
+    }
+    if (patterns.length === 0) {
+      return {
+        label: 'No workspace rules (hidden)',
+        empty: true,
+        extraCount: 0,
+        tooltip: 'No workspace rules — hidden in all workspaces',
+      };
+    }
+    const first = String(patterns[0] || '');
+    let label = first;
+    if (first.length > 32 && /[\\/]/.test(first)) {
+      const parts = first.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        label = `…/${parts[parts.length - 1]}`;
+      }
+    }
+    return {
+      label,
+      empty: false,
+      extraCount: Math.max(0, patterns.length - 1),
+      tooltip: patterns.join(', '),
+    };
+  }
+
+  function syncCardScopeExpanded(card, isOpen) {
+    const toggleBtn = card.querySelector('[data-role="scope-toggle"]');
+    const drawerEl = card.querySelector('[data-role="scope-drawer"]');
+    const actionLbl = card.querySelector('[data-role="scope-action-label"]');
+    card.classList.toggle('is-scope-open', Boolean(isOpen));
+    toggleBtn?.setAttribute('aria-expanded', String(Boolean(isOpen)));
+    drawerEl?.classList.toggle('hidden', !isOpen);
+    if (actionLbl) {
+      actionLbl.textContent = isOpen ? 'Hide' : 'Edit';
+    }
+  }
 
   function renderRuleList(ruleListEl, sc, onRemovePattern) {
     const patterns = Array.isArray(sc.workspaces) ? sc.workspaces : [];
@@ -94,6 +136,7 @@
   ) {
     const card = Object.assign(document.createElement('div'), { className: 'agy-card' });
     card.dataset.sidecarId = scId;
+    const drawerId = `ws-scope-${String(scId).replace(/[^a-z0-9_-]/gi, '-')}`;
     ns.setHtml(card, ns.html`
       <div class="agy-card-header">
         <div class="manager-card-title-group">
@@ -138,25 +181,56 @@
       </div>
       <div data-role="card-error" class="agy-banner err hidden" role="alert"></div>
       <div data-role="desc" class="manager-card-desc"></div>
-      <div class="manager-section-bar">
-        <span class="manager-section-label">Workspace Scope</span>
-        <div class="manager-scope-actions">
-          <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
-          <agy-toggle-group class="agy-toggle-group" role="group" aria-label="Workspace Scope">
-            <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 16)}<span>Global (*)</span></button>
-            <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
-          </agy-toggle-group>
+      <button
+        type="button"
+        data-role="scope-toggle"
+        class="ws-scope-trigger"
+        aria-expanded="false"
+        aria-controls="${drawerId}"
+      >
+        <span class="ws-scope-trigger-left">
+          ${ns.iconSvg('expand_more', 16, 'ws-scope-chev')}
+          <span class="ws-scope-prefix">Scope:</span>
+          <span data-role="scope-summary" class="ws-scope-val"></span>
+          <span data-role="scope-extra" class="agy-count-pill hidden"></span>
+        </span>
+        <span class="ws-scope-trigger-right">
+          <span data-role="scope-sleep-pill" class="ws-scope-sleep-pill hidden">
+            ${ns.iconSvg('bolt', 16)}<span>Auto-Sleep</span>
+          </span>
+          <span data-role="scope-action-label" class="ws-scope-edit-label">Edit</span>
+        </span>
+      </button>
+      <div id="${drawerId}" data-role="scope-drawer" class="ws-scope-drawer hidden">
+        <div class="manager-section-bar">
+          <div class="manager-scope-actions">
+            <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
+            <agy-toggle-group class="agy-toggle-group" role="group" aria-label="Workspace Scope">
+              <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 16)}<span>Global (*)</span></button>
+              <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
+            </agy-toggle-group>
+          </div>
         </div>
-      </div>
-      <div data-role="rule-list" class="ws-rule-list"></div>
-      <div class="ws-add-row">
-        <input type="text" class="ws-input" aria-label="Add workspace path or glob" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
-        <button type="button" data-role="add-rule-btn" class="agy-btn agy-btn-secondary has-icon">
-          ${ns.iconSvg('add', 16)}<span>Add</span>
-        </button>
+        <div data-role="rule-list" class="ws-rule-list"></div>
+        <div class="ws-add-row">
+          <input type="text" class="ws-input" aria-label="Add workspace path or glob" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
+          <button type="button" data-role="add-rule-btn" class="agy-btn agy-btn-secondary has-icon">
+            ${ns.iconSvg('add', 16)}<span>Add</span>
+          </button>
+        </div>
       </div>
     `);
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
+    q('scope-toggle').addEventListener('click', () => {
+      const id = card._sc?.sidecarId || scId;
+      const nextOpen = !expandedScopeIds.has(id);
+      if (nextOpen) {
+        expandedScopeIds.add(id);
+      } else {
+        expandedScopeIds.delete(id);
+      }
+      syncCardScopeExpanded(card, nextOpen);
+    });
     const wsInput = card.querySelector('.ws-input');
     const commitNewPattern = () => {
       const raw = wsInput.value.trim();
@@ -347,6 +421,16 @@
         ns.setHtml(statusBadge, ns.html`<span class="agy-badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`);
       }
       q('desc').textContent = sc.description || 'No description provided.';
+      const scopeInfo = formatScopeSummary(sc);
+      const scopeSummaryEl = q('scope-summary');
+      scopeSummaryEl.textContent = scopeInfo.label;
+      scopeSummaryEl.classList.toggle('is-empty', scopeInfo.empty);
+      const scopeExtraEl = q('scope-extra');
+      scopeExtraEl.textContent = scopeInfo.extraCount > 0 ? `+${scopeInfo.extraCount}` : '';
+      scopeExtraEl.classList.toggle('hidden', scopeInfo.extraCount === 0);
+      q('scope-sleep-pill')?.classList.toggle('hidden', !sc.autoHibernate);
+      q('scope-toggle').title = `Workspace Scope: ${scopeInfo.tooltip}`;
+      syncCardScopeExpanded(card, expandedScopeIds.has(sc.sidecarId));
       const canUninstall = ns.canUninstallSidecar
         ? ns.canUninstallSidecar(sc)
         : (!sc.sidecarId.includes('/') && !sc.parentPluginId && !String(sc.source || '').startsWith('plugin:'));
@@ -409,7 +493,10 @@
       }
     }
     for (const child of Array.from(paneEl.querySelectorAll('.agy-card'))) {
-      if (!seenIds.has(child.dataset.sidecarId)) child.remove();
+      if (!seenIds.has(child.dataset.sidecarId)) {
+        expandedScopeIds.delete(child.dataset.sidecarId);
+        child.remove();
+      }
     }
   };
 })();

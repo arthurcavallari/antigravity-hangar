@@ -127,6 +127,19 @@ describe('Hangar Extensions tab and Settings pane', () => {
 
     const cmCard = storeViewEl.querySelector('.agy-card[data-sidecar-id="context-monitor"]');
     assert.equal(cmCard.querySelector('[data-role="title"]').textContent, 'Context & Budget Monitor');
+    const cmScopeToggle = cmCard.querySelector('[data-role="scope-toggle"]');
+    const cmScopeDrawer = cmCard.querySelector('[data-role="scope-drawer"]');
+    assert.equal(cmScopeToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(cmScopeDrawer.classList.contains('hidden'), true);
+    assert.equal(cmCard.querySelector('[data-role="scope-summary"]').textContent, 'C:/Proj/App');
+    assert.equal(cmCard.querySelector('[data-role="scope-sleep-pill"]').classList.contains('hidden'), false);
+    assert.equal(cmCard.querySelector('[data-role="scope-action-label"]').textContent, 'Edit');
+    cmScopeToggle.click();
+    assert.equal(cmScopeToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(cmScopeDrawer.classList.contains('hidden'), false);
+    assert.equal(cmCard.classList.contains('is-scope-open'), true);
+    assert.equal(cmCard.querySelector('[data-role="scope-action-label"]').textContent, 'Hide');
+
     const cmProcBtn = cmCard.querySelector('[data-role="proc-btn"]');
     assert.equal(cmProcBtn.classList.contains('on'), true);
     assert.equal(cmProcBtn.getAttribute('aria-checked'), 'true');
@@ -146,6 +159,10 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(savedWorkspaces)), [['context-monitor', []]]);
 
     const pluginCard = storeViewEl.querySelector('.agy-card[data-sidecar-id="my-plugin/pane"]');
+    assert.equal(pluginCard.querySelector('[data-role="scope-summary"]').textContent, 'No workspace rules (hidden)');
+    assert.equal(pluginCard.querySelector('[data-role="scope-summary"]').classList.contains('is-empty'), true);
+    assert.equal(pluginCard.querySelector('[data-role="scope-sleep-pill"]').classList.contains('hidden'), true);
+    assert.equal(pluginCard.querySelector('[data-role="scope-drawer"]').classList.contains('hidden'), true);
     const pluginHibBtn = pluginCard.querySelector('[data-role="hibernate-btn"]');
     assert.equal(pluginHibBtn.disabled, true);
     pluginHibBtn.click();
@@ -164,6 +181,8 @@ describe('Hangar Extensions tab and Settings pane', () => {
       layout: { hibernateAfterIdleMinutes: 10 },
       onUpdateSettings: async (patch) => settingsPatches.push(patch),
     });
+    assert.equal(cmScopeDrawer.classList.contains('hidden'), false);
+    assert.equal(pluginCard.querySelector('[data-role="scope-drawer"]').classList.contains('hidden'), true);
 
     const settingsBtn = storeViewEl.querySelector('[data-role="settings-btn"]');
     const settingsPane = storeViewEl.querySelector('[data-role="pane-settings"]');
