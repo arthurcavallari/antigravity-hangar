@@ -23,7 +23,7 @@ describe('Hangar Extensions tab and Settings pane', () => {
     window.CSS = CSS;
     const ctx = vm.createContext({ window, document, CustomEvent, HTMLElement, DocumentFragment, Node, CSS });
     vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
-    for (const rel of ['core.js', 'components/marketplace-panes.js', 'components/installed-pane.js', 'components/extensions-tab.js']) {
+    for (const rel of ['core.js', 'components/plugin-panes.js', 'components/marketplace-panes.js', 'components/installed-pane.js', 'components/extensions-tab.js']) {
       vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
     }
 
@@ -177,12 +177,39 @@ describe('Hangar Extensions tab and Settings pane', () => {
     };
     window.Hangar.renderExtensionsTab({
       storeViewEl,
-      sidecars,
+      sidecars: [
+        ...sidecars,
+        {
+          sidecarId: 'swarm/swarm_board', displayName: 'Swarm', statusBadge: 'RUNNING',
+          isRunning: true, isErrored: false, builtin: true, webPort: 54979,
+          workspaces: ['*'], autoHibernate: false, autoHibernateLocked: true,
+        },
+      ],
+      plugins: [
+        { name: 'cloudflare', displayName: 'Cloudflare', dir: 'cloudflare', pluginId: '', installedVersion: '1.0.4', counts: { skills: 22, mcpServers: 1 } },
+        { name: 'adversarial-engineering', displayName: '', dir: 'adversarial-engineering', pluginId: '', installedVersion: '', counts: { rules: 1 } },
+        { name: 'agy-plugin-porter', displayName: '', dir: 'agy-plugin-porter', pluginId: 'agy-plugin-porter', installedVersion: '0.3.1', capabilityTier: 'TIER_3_AGENT_CONTROL', counts: { skills: 1, mcpServers: 1 } },
+      ],
       layout: { hibernateAfterIdleMinutes: 10 },
       onUpdateSettings: async (patch) => settingsPatches.push(patch),
     });
     assert.equal(cmScopeDrawer.classList.contains('hidden'), false);
     assert.equal(pluginCard.querySelector('[data-role="scope-drawer"]').classList.contains('hidden'), true);
+    const swarmCard = storeViewEl.querySelector('.agy-card[data-sidecar-id="swarm/swarm_board"]');
+    assert.equal(swarmCard.querySelector('[data-role="builtin-badge"]').classList.contains('hidden'), false);
+    assert.equal(swarmCard.querySelector('[data-role="meta-sub"]').textContent, 'swarm/swarm_board • :54979');
+    const cfCard = storeViewEl.querySelector('.agy-card[data-plugin-dir="cloudflare"]');
+    assert.equal(cfCard.querySelector('[data-role="title"]').textContent, 'Cloudflare');
+    assert.equal(cfCard.dataset.pluginName, 'cloudflare');
+    assert.equal(cfCard.querySelector('[data-role="meta"]').textContent, 'cloudflare • v1.0.4 • 22 skills, 1 MCP server');
+    assert.equal(cfCard.querySelector('[data-role="badges"]').textContent, '');
+    const advCard = storeViewEl.querySelector('.agy-card[data-plugin-dir="adversarial-engineering"]');
+    assert.equal(advCard.querySelector('[data-role="title"]').textContent, 'adversarial-engineering');
+    assert.equal(advCard.querySelector('[data-role="meta"]').textContent, '1 rule');
+    const porterCard = storeViewEl.querySelector('.agy-card[data-plugin-dir="agy-plugin-porter"]');
+    assert.equal(porterCard.querySelector('[data-role="meta"]').textContent, 'v0.3.1 • hangar • 1 skill, 1 MCP server');
+    assert.equal(porterCard.querySelector('[data-role="badges"]').innerHTML.includes('>Plugin<'), false);
+    assert.match(porterCard.querySelector('[data-role="badges"]').textContent, /Tier 3/);
 
     const settingsBtn = storeViewEl.querySelector('[data-role="settings-btn"]');
     const settingsPane = storeViewEl.querySelector('[data-role="pane-settings"]');

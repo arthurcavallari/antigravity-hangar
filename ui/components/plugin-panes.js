@@ -9,13 +9,14 @@
     codex: 'Codex',
   };
 
-  ns.pluginBadgesHtml = function pluginBadgesHtml({ port, portedFrom } = {}) {
+  ns.pluginBadgesHtml = function pluginBadgesHtml({ port, portedFrom, showKind = true } = {}) {
     const sources = portedFrom?.length ? portedFrom : (port?.from && port.from !== 'auto' ? [port.from] : []);
     const label = sources.map((s) => SOURCE_LABELS[s] || s).join(' + ') || 'another tool';
+    const kind = showKind ? '<span class="agy-badge starting">Plugin</span>' : '';
     const ported = port || sources.length
       ? `<span class="agy-badge stopped">Ported from ${ns.escHtml(label)}</span>`
       : '';
-    return ns.rawHtml(`<span class="agy-badge starting">Plugin</span>${ported}`);
+    return ns.rawHtml(`${kind}${ported}`);
   };
 
   function reportList(title, items) {
@@ -188,7 +189,7 @@
     const uninstallCancelBtn = q('uninstall-cancel');
     uninstallBtn.addEventListener('click', () => {
       const p = card._plugin;
-      q('uninstall-confirm-text').textContent = `Uninstall ${p.name}?`;
+      q('uninstall-confirm-text').textContent = `Uninstall ${p.displayName || p.name}?`;
       uninstallConfirm.classList.remove('hidden');
       uninstallCancelBtn?.focus?.();
     });
@@ -222,9 +223,11 @@
       .map((s) => s.key);
     const missingVars = Array.from(new Set((diag?.mcpServers || []).flatMap((s) => s.missingEnvVars || [])));
     const managed = Boolean(p.pluginId);
+    const displayTitle = p.displayName || p.name || p.dir || '';
     const tier = p.capabilityTier ? ns.formatCapabilityTier(p.capabilityTier) : null;
     const sig = JSON.stringify([
       p.name,
+      p.displayName,
       p.portedFrom,
       p.disabled,
       p.builtin,
@@ -239,9 +242,9 @@
     ]);
     if (card.dataset.sig !== sig) {
       card.dataset.sig = sig;
-      card.querySelector('[data-role="title"]').textContent = p.name;
+      card.querySelector('[data-role="title"]').textContent = displayTitle;
       ns.setHtml(card.querySelector('[data-role="badges"]'), ns.rawHtml([
-        ns.pluginBadgesHtml(p),
+        ns.pluginBadgesHtml({ ...p, showKind: false }),
         tier ? `<span class="agy-badge ${ns.escHtml(tier.state)}">${ns.iconSvg('shield', 11)}<span>${ns.escHtml(tier.shortLabel)}</span></span>` : '',
         p.restartRequired ? '<span class="agy-badge hibernated">Restart to load</span>' : '',
         p.incomplete ? '<span class="agy-badge errored">Unfinished</span>' : '',
@@ -250,10 +253,10 @@
         missingBins.length ? `<span class="agy-badge errored" title="Missing MCP command: ${ns.escHtml(missingBins.join(', '))}">Missing CLI</span>` : '',
         missingVars.length ? `<span class="agy-badge hibernated" title="Unset env vars: ${ns.escHtml(missingVars.join(', '))}">Needs Env (${missingVars.length})</span>` : '',
       ].join('')));
-      const origin = managed
-        ? (p.installedVersion ? `v${p.installedVersion}` : 'Hangar')
-        : (p.builtin ? 'ships with Antigravity' : 'installed outside Hangar');
-      card.querySelector('[data-role="meta"]').textContent = `${p.dir} • ${origin} • ${countsText(p.counts)}`;
+      const showDir = Boolean(p.dir && p.dir !== displayTitle);
+      const ver = p.installedVersion ? `v${String(p.installedVersion).replace(/^v/i, '')}` : '';
+      const metaParts = [showDir ? p.dir : '', ver, managed ? 'hangar' : '', countsText(p.counts)].filter(Boolean);
+      card.querySelector('[data-role="meta"]').textContent = metaParts.join(' • ');
       card.querySelector('[data-role="restart-note"]').classList.toggle('hidden', !p.restartRequired);
       card.querySelector('[data-role="incomplete-note"]').classList.toggle('hidden', !p.incomplete);
       const updateError = card.querySelector('[data-role="update-error"]');
@@ -264,12 +267,12 @@
     }
     const uninstallBtn = card.querySelector('[data-role="uninstall-btn"]');
     uninstallBtn.classList.toggle('hidden', !managed);
-    uninstallBtn.title = `Uninstall ${p.name}`;
-    uninstallBtn.setAttribute?.('aria-label', `Uninstall ${p.name}`);
+    uninstallBtn.title = `Uninstall ${displayTitle}`;
+    uninstallBtn.setAttribute?.('aria-label', `Uninstall ${displayTitle}`);
     const canUpdate = managed && Boolean(card._regPkg?.updateAvailable);
     const updateBtn = card.querySelector('[data-role="update-btn"]');
     updateBtn.classList.toggle('hidden', !canUpdate && !card._isInstalling);
-    if (canUpdate) updateBtn.title = `Update ${p.name} to v${card._regPkg.latestVersion}`;
+    if (canUpdate) updateBtn.title = `Update ${displayTitle} to v${card._regPkg.latestVersion}`;
   }
 
   ns.renderInstalledPlugins = function renderInstalledPlugins(sectionEl, ctx = {}) {

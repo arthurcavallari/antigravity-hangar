@@ -78,6 +78,11 @@ describe('Hangar plugin panes UI rendering and consent flow', () => {
     const native = ns.pluginBadgesHtml({ portedFrom: [] });
     assert.match(native, />Plugin</);
     assert.equal(native.includes('Ported'), false);
+    assert.equal(ns.pluginBadgesHtml({ portedFrom: [], showKind: false }), '');
+    assert.equal(
+      ns.pluginBadgesHtml({ portedFrom: ['claude'], showKind: false }),
+      '<span class="agy-badge stopped">Ported from Claude Code</span>',
+    );
   });
 
   it('previews, then installs with exactly the tier and findings the user saw, asking again if they changed', async () => {

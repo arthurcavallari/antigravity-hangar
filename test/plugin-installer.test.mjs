@@ -604,10 +604,18 @@ describe('Hangar plugin installer', () => {
     const box = sandbox();
     try {
       writeTree(join(box.pluginsDir, 'fresh-install'), { 'plugin.json': '{"name":"fresh-install"}' });
+      writeTree(join(box.pluginsDir, 'cloudflare'), {
+        'plugin.json': '{"name":"cloudflare","displayName":"Cloudflare","version":"1.0.4"}',
+      });
       // What a failed update left live on 2.29: an empty folder that a running sidecar held
       mkdirSync(join(box.pluginsDir, 'gutted', 'sidecars', 'cockpit'), { recursive: true });
       const pluginsRes = {
         plugins: [
+          {
+            name: 'cloudflare',
+            path: `${box.pluginsDir}/cloudflare`,
+            skills: [{ name: 'workers' }],
+          },
           {
             name: 'review-port',
             path: `${box.pluginsDir}/review-port`,
@@ -635,8 +643,11 @@ describe('Hangar plugin installer', () => {
       const list = listInstalledPlugins(pluginsRes, hangarConfig, { pluginsDir: box.pluginsDir });
 
       assert.equal(JSON.stringify(list).includes('SECRET'), false);
-      assert.deepEqual(list.map((p) => p.dir), ['fresh-install', 'gutted', 'review-port', 'science']);
-      const [fresh, gutted, review, science] = list;
+      assert.deepEqual(list.map((p) => p.dir), ['cloudflare', 'fresh-install', 'gutted', 'review-port', 'science']);
+      const [cloudflare, fresh, gutted, review, science] = list;
+      assert.equal(cloudflare.displayName, 'Cloudflare');
+      assert.equal(cloudflare.installedVersion, '1.0.4');
+      assert.equal(cloudflare.pluginId, '');
       assert.equal(gutted.incomplete, true, 'a folder without plugin.json is an unfinished install');
       assert.equal(gutted.restartRequired, false, 'a restart would not load it');
       assert.equal(fresh.incomplete, false);

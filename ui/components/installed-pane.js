@@ -412,8 +412,10 @@
         ? 'Built-in Antigravity sidecar — managed by the IDE'
         : `Enable or disable ${scLabel}`;
       q('proc-btn').setAttribute?.('aria-label', `Enable or disable ${scLabel}`);
-      const metaOrigin = sc.builtin ? 'ships with Antigravity' : `${verLabel} • ${sc.source}`;
-      q('meta-sub').textContent = `${sc.sidecarId} • ${metaOrigin}${sc.webPort ? ` • :${sc.webPort}` : ''}`;
+      const metaParts = [sc.sidecarId];
+      if (!sc.builtin) metaParts.push(verLabel, sc.source);
+      if (sc.webPort) metaParts.push(`:${sc.webPort}`);
+      q('meta-sub').textContent = metaParts.filter(Boolean).join(' • ');
       q('builtin-badge')?.classList.toggle('hidden', !sc.builtin);
       const statusBadge = q('status-badge');
       const badgeSig = `${badgeInfo.state}:${badgeInfo.label}`;

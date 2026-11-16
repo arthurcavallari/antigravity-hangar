@@ -538,7 +538,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(instPaneSrc, /uninstallCancelBtn\?\.focus\?\.\(\)/);
     assert.match(instPaneSrc, /uninstallBtn\?\.focus\?\.\(\)/);
     const pluginPaneSrc = readFileSync(join(UI_DIR, 'components/plugin-panes.js'), 'utf8');
-    assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{p\.name\}`\)/);
+    assert.match(pluginPaneSrc, /uninstallBtn\.setAttribute\?\.\('aria-label', `Uninstall \$\{(?:displayTitle|p\.name)\}`\)/);
     assert.match(pluginPaneSrc, /data-role="uninstall-confirm-btn" class="agy-btn agy-btn-danger"/);
     assert.match(pluginPaneSrc, /uninstallCancelBtn\?\.focus\?\.\(\)/);
     assert.match(pluginPaneSrc, /uninstallBtn\?\.focus\?\.\(\)/);
