@@ -118,7 +118,7 @@ body:is(.resizing-split, .dragging-tab) .child-sidecar-frame {
   height: 36px;
   min-height: 36px;
   padding: 0 8px 0 6px;
-  background: color-mix(in srgb, var(--hub-fg) 3%, var(--hub-bg));
+  background: var(--hub-bg);
   border-top: none;
   border-bottom: none;
   box-shadow:
