@@ -245,7 +245,7 @@
   color: var(--hub-secondary-fg);
   font-family: var(--hub-font-sans);
   font-size: var(--text-sm, 0.75rem);
-  line-height: 1rem;
+  line-height: 1.25;
   cursor: pointer;
   text-align: left;
   outline: none;
@@ -287,14 +287,24 @@
   color: var(--hub-fg);
 }
 
+.ws-scope-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .ws-scope-prefix {
   color: var(--hub-muted);
   flex-shrink: 0;
+  line-height: 1.25;
 }
 
 .ws-scope-val {
   font-family: var(--hub-mono-font);
-  font-size: 11px;
+  font-size: var(--text-xs, 0.6875rem);
+  line-height: 1.25;
   color: var(--hub-fg);
   white-space: nowrap;
   overflow: hidden;
@@ -323,7 +333,8 @@
   border-radius: 9999px;
   background: color-mix(in srgb, var(--hub-fg) 5%, transparent);
   border: 0.5px solid var(--hub-border);
-  font-size: 10.5px;
+  font-size: var(--text-xs, 0.6875rem);
+  line-height: 1.2;
   color: var(--hub-muted);
 }
 
@@ -337,7 +348,8 @@
 }
 
 .ws-scope-edit-label {
-  font-size: 11px;
+  font-size: var(--text-xs, 0.6875rem);
+  line-height: 1.25;
   color: var(--hub-muted);
 }
 
@@ -396,7 +408,7 @@
 
 .ws-rule-code {
   font-family: var(--hub-mono-font);
-  font-size: 11px;
+  font-size: var(--text-xs, 0.6875rem);
   color: var(--hub-fg);
   word-break: break-all;
   flex: 1;

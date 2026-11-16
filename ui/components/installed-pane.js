@@ -190,8 +190,10 @@
       >
         <span class="ws-scope-trigger-left">
           ${ns.iconSvg('expand_more', 16, 'ws-scope-chev')}
-          <span class="ws-scope-prefix">Scope:</span>
-          <span data-role="scope-summary" class="ws-scope-val"></span>
+          <span class="ws-scope-text">
+            <span class="ws-scope-prefix">Scope:</span>
+            <span data-role="scope-summary" class="ws-scope-val"></span>
+          </span>
           <span data-role="scope-extra" class="agy-count-pill hidden"></span>
         </span>
         <span class="ws-scope-trigger-right">
