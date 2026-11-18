@@ -109,10 +109,11 @@
           state.layout.closedTabIds = state.layout.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
         }
         if ((ns.getInstanceSideChats?.() || []).length === 0) {
+          const effConvId = state.activeWorkspace?.conversationId || (hangarConversationId !== '_new' ? hangarConversationId : '');
           ns.openTerminalQuoteComposer?.(
             els.mainViewport,
             {},
-            { conversationId: hangarConversationId !== '_new' ? hangarConversationId : '', skipActivate: true },
+            { conversationId: effConvId, skipActivate: true },
           );
         }
       }
@@ -156,7 +157,7 @@
         topSlotId: topId,
         bottomSlotId: bottomId,
         splitEnabled: Boolean(state.layout.splitViewEnabled),
-        conversationId: hangarConversationId,
+        conversationId: state.activeWorkspace?.conversationId || (hangarConversationId !== '_new' ? hangarConversationId : ''),
       });
     };
     const onPreviewTerminalSlot = (previewTabId, pane) => {
@@ -310,13 +311,23 @@
           targetLayout.closedTabIds = targetLayout.closedTabIds.filter((id) => id !== ns.SIDECHAT_TAB_ID);
         }
       }
-      ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath, hangarConversationId);
-      ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath, hangarConversationId);
+      const effHydrateConvId = state.activeWorkspace?.conversationId || hangarConversationId;
+      ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath, effHydrateConvId);
+      ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath, effHydrateConvId);
+      const scSynced = Boolean(
+        data.nativeSideQuestions && ns.syncNativeSideQuestions?.(data.nativeSideQuestions, targetLayout),
+      );
       if (wsFirstResolved && userTabDuringBoot) {
         rememberWindowActiveTab(userTabDuringBoot, nextWsKey);
       }
       if (targetLayout !== state.layout) {
         state.layout = withWindowActiveTab(targetLayout, nextWsKey);
+      } else if (scSynced && !ns.getSideChatState?.()?.isOpen && state.layout.pinnedTopSidecarId === ns.SIDECHAT_TAB_ID) {
+        state.layout = withWindowActiveTab(state.layout, nextWsKey);
+      }
+      if (scSynced) {
+        buildSideChatLayoutPatch();
+        document.querySelector?.('.term-mini-composer')?._syncSideChatBtn?.();
       }
       renderAll();
     } catch (err) {

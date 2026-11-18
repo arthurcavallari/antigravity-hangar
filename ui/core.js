@@ -4,7 +4,11 @@
   ns.EXTENSIONS_TAB_ID = '__extensions__';
   ns.TERMINAL_TAB_ID = '__terminal__';
   ns.SIDECHAT_TAB_ID = '__sidechat__';
-  ns.SIDECHAT_TAB_PREFIX = 'sidechat__';
+  ns.normalizeLegacySideChatTabId = (id = '') => (
+    String(id || '').startsWith('sidechat__') ? ns.SIDECHAT_TAB_ID : String(id || '')
+  );
+  ns.normalizeLegacySideChatTabList = (arr) =>
+    Array.isArray(arr) ? [...new Set(arr.map(ns.normalizeLegacySideChatTabId).filter(Boolean))] : [];
   ns.SIDECAR_IFRAME_ALLOW = [
     'clipboard-read',
     'clipboard-write',
@@ -182,7 +186,7 @@
     }
     return false;
   };
-  const SAFE_ID_RE = (ns.SAFE_ID_RE = /^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?$/);
+  const SAFE_ID_RE = (ns.SAFE_ID_RE = /^[a-zA-Z0-9._@+-]+(?:\/[a-zA-Z0-9._@+-]+)?$/);
   const LOOPBACK_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
   const PLUGIN_ORIGIN_RE = (ns.PLUGIN_ORIGIN_RE = /^plugin:\/\/[a-z0-9][a-z0-9._-]*-\d+\/?$/i);
   ns.isTrustedSidecarOrigin = (origin) => (

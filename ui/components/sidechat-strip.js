@@ -1,346 +1,31 @@
-/** @fileoverview Side Chat session tab-strip controller, inline rename, and cross-instance drag-and-drop. */
+/** @fileoverview Side Chat session tab-strip controller, inline rename, and within-strip reordering. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   const sc = ns.sideChatStore?.state || ns._sc;
 
-  ns.demoteSideChatTabIntoInstance = function demoteSideChatTabIntoInstance(sourceSidecarId, dropTarget = {}) {
-    const targetInstanceTabId = dropTarget.targetInstanceTabId || ns.SIDECHAT_TAB_ID;
-    if (sourceSidecarId === targetInstanceTabId) return false;
-    if (
-      sourceSidecarId === ns.SIDECHAT_TAB_ID &&
-      String(targetInstanceTabId).startsWith(ns.SIDECHAT_TAB_PREFIX)
-    ) {
-      return ns.demoteSideChatTabIntoInstance(targetInstanceTabId, {
-        ...dropTarget,
-        targetInstanceTabId: ns.SIDECHAT_TAB_ID,
-      });
-    }
-    if (!String(sourceSidecarId || '').startsWith(ns.SIDECHAT_TAB_PREFIX)) return false;
-    const srcRoot = sourceSidecarId.slice(ns.SIDECHAT_TAB_PREFIX.length);
-    const dstRoot = targetInstanceTabId.startsWith(ns.SIDECHAT_TAB_PREFIX)
-      ? targetInstanceTabId.slice(ns.SIDECHAT_TAB_PREFIX.length)
-      : '';
-    const movingIds = ns.getInstanceSideChats(sc.threads, srcRoot).map((t) => t.cascadeId);
-    if (!movingIds.includes(srcRoot)) {
-      movingIds.unshift(srcRoot);
-    }
-    sc.poppedIds.delete(srcRoot);
-    if (!dstRoot) {
-      movingIds.forEach((cid) => delete sc.groupMap[cid]);
-      Object.entries(sc.groupMap).forEach(([k, v]) => {
-        if (v === srcRoot) {
-          delete sc.groupMap[k];
-        }
-      });
-      sc.isOpen = true;
-    } else {
-      movingIds.forEach((cid) => {
-        if (cid === dstRoot) {
-          delete sc.groupMap[cid];
-        } else {
-          sc.groupMap[cid] = dstRoot;
-        }
-      });
-    }
-    if (typeof dropTarget.index === 'number') {
-      movingIds.forEach((cid, i) => ns.reorderSideChatThreadsInInstance(dstRoot, cid, dropTarget.index + i));
-    }
-    const focCid = movingIds[0] || srcRoot;
-    ns.setActiveSideChatId(targetInstanceTabId, focCid);
-    const vpEl = typeof document?.getElementById === 'function' ? document.getElementById('main-viewport') : null;
-    const dstBox = ns.ensureSideChatBox?.(
-      targetInstanceTabId,
-      vpEl || ns._sideChatBox?.parentElement || ns._sideChatBox?._toastRoot || document.body
-    );
-    for (const cid of movingIds) {
-      const f = sc.frames.get(cid);
-      if (!f || f.parentElement === dstBox) continue;
-      f.classList?.toggle?.('hidden', cid !== focCid);
-      dstBox?.appendChild?.(f);
-    }
-    sc.boxes.get(sourceSidecarId)?.remove?.();
-    sc.boxes.delete(sourceSidecarId);
-    sc.activeByInstance.delete(sourceSidecarId);
-    dstBox?._syncThreadsUi?.(focCid, null);
-    return true;
-  };
-
-  ns.mergeSideChatDragIntoInstance = function mergeSideChatDragIntoInstance(drag, dropTarget = {}) {
-    if (
-      !drag?.cascadeId ||
-      !dropTarget?.targetInstanceTabId ||
-      drag.instanceTabId === dropTarget.targetInstanceTabId
-    ) {
-      return null;
-    }
-    const prom = ns.promoteSideChatToHangarBar(drag);
-    if (!prom?.newSidecarId) return null;
-    const state = {
-      finalTargetId: dropTarget.targetInstanceTabId,
-      removedSidecarId: prom.newSidecarId,
-      replacedSidecarId: prom.replacedSidecarId,
-    };
-    ns.demoteSideChatTabIntoInstance(prom.newSidecarId, dropTarget);
-    if (
-      drag.instanceTabId === ns.SIDECHAT_TAB_ID &&
-      state.finalTargetId.startsWith(ns.SIDECHAT_TAB_PREFIX) &&
-      !ns.getInstanceSideChats(sc.threads, '').length
-    ) {
-      ns.demoteSideChatTabIntoInstance(state.finalTargetId, {
-        targetInstanceTabId: ns.SIDECHAT_TAB_ID,
-        zone: 'strip',
-      });
-      ns.setActiveSideChatId(ns.SIDECHAT_TAB_ID, drag.cascadeId);
-      sc.boxes.get(ns.SIDECHAT_TAB_ID)?._syncThreadsUi?.(drag.cascadeId, null);
-      Object.assign(state, {
-        removedSidecarId: state.finalTargetId,
-        replacedSidecarId: { from: state.finalTargetId, to: ns.SIDECHAT_TAB_ID },
-        finalTargetId: ns.SIDECHAT_TAB_ID,
-      });
-    }
-    return {
-      removedSidecarId: state.removedSidecarId,
-      replacedSidecarId: state.replacedSidecarId,
-      targetInstanceTabId: state.finalTargetId,
-      targetPane: dropTarget.pane || '',
-    };
-  };
-
-  ns.inspectHangarPointerOverInstance = function inspectHangarPointerOverInstance(
-    clientX,
-    clientY,
-    draggedSidecarId,
-    checkShells,
-    cfg
-  ) {
-    document
-      .querySelectorAll?.('.merge-drop-target, .drop-target, .drop-left, .drop-right')
-      .forEach((el) => el.classList?.remove('merge-drop-target', 'drop-target', 'drop-left', 'drop-right'));
-    const resetShellPills = (keepShell = null) => {
-      for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
-        if (shell !== keepShell && shell.dataset.instanceTabId !== draggedSidecarId) {
-          shell
-            .querySelectorAll?.(`${cfg.pillSel}:not(.is-dragging-source), .agy-tab-add, .agy-tab-add-btn`)
-            .forEach((el) => ns.setTabShift?.(el, 0));
-        }
-      }
-    };
-    if (!cfg.isKindTabId(draggedSidecarId)) {
-      resetShellPills();
-      return null;
-    }
-    const rectOf = (el) => (ns.getUnshiftedRect ? ns.getUnshiftedRect(el) : el.getBoundingClientRect());
-    const srcEl = document.querySelector?.(`.agy-tab[data-sidecar-id="${draggedSidecarId}"]`);
-    const srcR = srcEl ? rectOf(srcEl) : null;
-    for (const el of document.querySelectorAll?.('.agy-tab[data-sidecar-id]') || []) {
-      const sid = el.dataset.sidecarId;
-      const r = rectOf(el);
-      if (
-        !sid ||
-        sid === draggedSidecarId ||
-        !cfg.isKindTabId(sid) ||
-        r.width <= 0 ||
-        clientY < r.top - 18 ||
-        clientY > r.bottom + (!checkShells ? 18 : 4)
-      ) {
-        continue;
-      }
-      const same = srcEl && srcEl.parentElement === el.parentElement;
-      const leftMargin = same && srcR && srcR.left < r.left ? 0 : r.width * 0.12;
-      const rightMargin = same && srcR && srcR.left > r.left ? 0 : r.width * 0.12;
-      if (clientX >= r.left + leftMargin && clientX <= r.right - rightMargin) {
-        resetShellPills();
-        el.classList.add('merge-drop-target');
-        return { targetInstanceTabId: sid, zone: 'hub-tab', pane: el.dataset.pane || 'single' };
-      }
-    }
-    if (!checkShells) {
-      resetShellPills();
-      return null;
-    }
-    for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
-      const targetInstanceTabId = shell.dataset.instanceTabId;
-      const sRect = shell.getBoundingClientRect();
-      if (
-        !targetInstanceTabId ||
-        targetInstanceTabId === draggedSidecarId ||
-        cfg.isShellHidden(shell) ||
-        sRect.width === 0 ||
-        clientX < sRect.left ||
-        clientX > sRect.right ||
-        clientY < sRect.top ||
-        clientY > sRect.bottom
-      ) {
-        continue;
-      }
-      resetShellPills(shell);
-      const strip = shell.querySelector('.agy-tab-strip');
-      const tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
-      shell.classList.add('drop-target');
-      strip?.classList.add('drop-target');
-      const pills = Array.from(strip?.querySelectorAll(cfg.pillSel) || []);
-      const addBtn = strip?.querySelector?.('.agy-tab-add, .agy-tab-add-btn, [data-role="add-tab"], [data-role="agy-add-tab"]');
-      let index = pills.length;
-      if (tRect && clientY <= tRect.bottom + 18) {
-        const hitIdx = pills.findIndex((p) => clientX < rectOf(p).right);
-        index = hitIdx >= 0 ? hitIdx : pills.length;
-        pills.forEach((p, i) => ns.setTabShift?.(p, i >= index ? 68 : 0));
-        if (addBtn) ns.setTabShift?.(addBtn, 68);
-      } else {
-        pills.forEach((p) => ns.setTabShift?.(p, 0));
-        if (addBtn) ns.setTabShift?.(addBtn, 0);
-      }
-      return { targetInstanceTabId, zone: 'strip', index, pane: cfg.getShellPane(shell) };
-    }
-    resetShellPills();
-    return null;
-  };
-
-  ns.inspectHangarPointerOverSideChat = (clientX, clientY, draggedSidecarId, checkShells = true) =>
-    ns.inspectHangarPointerOverInstance(clientX, clientY, draggedSidecarId, checkShells, {
-      isKindTabId: ns.isSideChatTabId,
-      shellSel: '.term-quote-composer[data-instance-tab-id]',
-      pillSel: '.agy-tab[data-cascade-id]',
-      isShellHidden: (s) => Boolean(s.classList?.contains?.('hidden')),
-      getShellPane: (s) => s.dataset.slot || 'top',
-    });
-
-  ns.bindCrossInstancePillDrag = function bindCrossInstancePillDrag(el, cfg) {
-    if (el?.dataset && el.dataset.tabId === undefined) {
-      el.dataset.tabId = cfg.itemId || 'tab';
-    }
-    const st = { dropAction: null, hoverTimer: null, hoverTargetId: '', previewedId: '' };
-    const clearHover = (resetPreview, slot) => {
-      if (st.hoverTimer) {
-        clearTimeout(st.hoverTimer);
-      }
-      Object.assign(st, { hoverTimer: null, hoverTargetId: '' });
-      if (resetPreview && st.previewedId) {
-        st.previewedId = '';
-        ns.getHangarDropCfg?.()?.onPreviewTerminalSlot?.('', slot);
-      }
-    };
-    window.AgyUI?.bindTabDragController?.(el, {
-      stripEl: () => (typeof cfg.sessionsEl === 'function' ? cfg.sessionsEl() : cfg.sessionsEl),
-      tabSelector: '.agy-tab',
-      pinnedRole: cfg.pinnedRole,
-      ignoreSelector: cfg.ignoreSelector,
-      shouldDetach: cfg.shouldDetach,
-      createGhost: cfg.createGhost,
-      onDragStart: (e, dragState) => {
-        st.dropAction = null;
-        cfg.onDragStart?.(e, dragState);
-      },
-      onOutOfRailMove: (e, dragState) => {
-        const curTabId = cfg.getTabId();
-        const sourceSlot = cfg.getSlot();
-        const dropCfg = ns.getHangarDropCfg?.() || {};
-        document
-          .querySelectorAll?.('.drop-left, .drop-right, .drop-target, .merge-drop-target, .split-drop-target')
-          .forEach((n) =>
-            n.classList?.remove(
-              'drop-left',
-              'drop-right',
-              'drop-target',
-              'merge-drop-target',
-              'split-drop-target'
-            )
-          );
-        const ownHit = cfg.checkOwnTarget?.(e, dragState, () => clearHover(true, sourceSlot));
-        if (ownHit) {
-          st.dropAction = ownHit;
-          return true;
-        }
-        dragState.sourceTabs.forEach((sib, i) =>
-          ns.setTabShift?.(sib, dragState.draggedIndex >= 0 && i > dragState.draggedIndex ? -dragState.draggedSlot : 0)
-        );
-        if (dragState.addBtn) {
-          ns.setTabShift?.(dragState.addBtn, dragState.draggedIndex >= 0 ? -dragState.draggedSlot : 0);
-        }
-        const mergeHit = cfg.inspectMerge(e.clientX, e.clientY, curTabId, true);
-        if (mergeHit) {
-          if (
-            mergeHit.zone === 'hub-tab' &&
-            mergeHit.pane !== 'single' &&
-            mergeHit.pane !== sourceSlot &&
-            st.hoverTargetId !== mergeHit.targetInstanceTabId
-          ) {
-            clearHover(false, sourceSlot);
-            st.hoverTargetId = mergeHit.targetInstanceTabId;
-            st.hoverTimer = setTimeout(() => {
-              Object.assign(st, { hoverTimer: null, previewedId: mergeHit.targetInstanceTabId });
-              dropCfg.onPreviewTerminalSlot?.(mergeHit.targetInstanceTabId, mergeHit.pane);
-            }, 350);
-          } else if (mergeHit.zone !== 'hub-tab') {
-            clearHover(false, sourceSlot);
-          }
-          st.dropAction = { type: 'merge', target: mergeHit };
-          return true;
-        }
-        clearHover(true, sourceSlot);
-        st.dropAction = cfg.checkStageTarget?.(e) || ns.checkOutOfRailPromote?.(e, sourceSlot, cfg.isKindTabId);
-        return true;
-      },
-      onDrop: (_e, finishedState, cancelled) => {
-        const slot = cfg.getSlot();
-        const dropCfg = ns.getHangarDropCfg?.() || {};
-        cfg.onDragEnd?.();
-        ns.clearAllTermDropIndicators?.();
-        if (cancelled || !finishedState) {
-          clearHover(true, slot);
-          return;
-        }
-        if (finishedState.locked || st.dropAction?.type === 'same') {
-          clearHover(true, slot);
-          cfg.onSameDrop(
-            finishedState.locked ? { zone: 'strip', index: finishedState.dropIdx } : st.dropAction.target
-          );
-          return;
-        }
-        if (st.dropAction?.type === 'merge') {
-          clearHover(false, slot);
-          st.previewedId = '';
-          const res = cfg.onMergeDrop(st.dropAction.target);
-          if (res) {
-            dropCfg.onMergeIntoTerminalTab?.(res);
-          } else {
-            dropCfg.onPreviewTerminalSlot?.('', slot);
-          }
-        } else if (st.dropAction?.type === 'promote') {
-          clearHover(true, slot);
-          const res = cfg.onPromoteDrop();
-          if (res?.newSidecarId) {
-            dropCfg.onPromoteToHangarTab?.({
-              sidecarId: res.newSidecarId,
-              replacedSidecarId: res.replacedSidecarId,
-              targetPane: st.dropAction.pane,
-              beforeTabId: st.dropAction.beforeTabId,
-            });
-          }
-        }
-      },
-      onClick: () => {
-        el.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
-        cfg.onClick?.();
-      },
-    });
-  };
-
   ns.createSideChatStripController = function createSideChatStripController(ctx) {
     let isRenaming = false;
-    const applyRename = (cid, rawNext) => {
-      const next = String(rawNext || '').trim();
-      ns.saveCustomSideChatTitle(cid, next);
+    const applyRename = (t, rawNext) => {
+      if (!t?.cascadeId) return;
+      const cid = t.cascadeId;
+      const next = String(rawNext || '').replace(/\s+/g, ' ').trim();
+      const rawParent = String(t.parentConversationId || ctx.getConversationId?.() || '').trim();
+      const parentConversationId = rawParent === '_new' ? '' : rawParent;
+      ns.recordSideChatRename?.(cid, next);
       if (next) {
-        ns.apiCall?.('/api/sidechat/rename', { cascadeId: cid, title: next })?.catch?.(() => {});
+        ns.apiCall?.('/api/sidechat/rename', {
+          cascadeId: cid,
+          parentConversationId,
+          title: next,
+        })?.catch?.(() => {});
       }
       isRenaming = false;
       renderSessionStrip();
       ns.notifySideChatState();
     };
-    const finishRename = (cid, lbl, t, rawNext, commit) => {
+    const finishRename = (lbl, t, rawNext, commit) => {
       if (commit) {
-        applyRename(cid, rawNext);
+        applyRename(t, rawNext);
       } else {
         isRenaming = false;
       }
@@ -356,22 +41,16 @@
       (window.AgyUI?.startInlineRename || ns.startInlineRename)?.(pill, lbl, {
         initialValue: ns.resolveSideChatTitle(t),
         inputClassName: 'agy-rename-input',
-        onCommit: (rawNext) => finishRename(t.cascadeId, lbl, t, rawNext, true),
-        onCancel: () => finishRename(t.cascadeId, lbl, t, '', false),
+        onCommit: (rawNext) => finishRename(lbl, t, rawNext, true),
+        onCancel: () => finishRename(lbl, t, '', false),
       });
     };
 
     function renderSessionStrip() {
-      const curTabId = ctx.getTabId();
-      const curRootId = ctx.getRootId();
+      const curTabId = ns.SIDECHAT_TAB_ID;
       if (isRenaming || ns.pointerSideChatInstanceId === curTabId) return;
-      const instThreads = ns.getInstanceSideChats(sc.threads, curRootId);
-      const actCid = ns.getActiveSideChatId(curTabId) || instThreads[0]?.cascadeId || '';
-      ctx.popoutBtn.classList?.toggle?.('active', Boolean(curRootId));
-      const popoutTitle = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
-      ctx.popoutBtn.title = popoutTitle;
-      ctx.popoutBtn.setAttribute?.('aria-label', popoutTitle);
-      ctx.popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
+      const instThreads = sc.threads;
+      const actCid = ns.getActiveSideChatId() || instThreads[0]?.cascadeId || '';
       const togglePin = (t) => {
         t.pinned = !t.pinned;
         sc.threads = [...sc.threads.filter((x) => x.pinned), ...sc.threads.filter((x) => !x.pinned)];
@@ -379,7 +58,7 @@
         ns.notifySideChatState();
       };
       const selectThread = (cid) => {
-        ns.setActiveSideChatId(ctx.getTabId(), cid);
+        ns.setActiveSideChatId(cid);
         ctx.syncThreadsUi(cid, null);
         ns.notifySideChatState();
       };
@@ -395,7 +74,7 @@
         closable: !t.pinned,
         closeTitle: 'Delete Side Chat',
         renamable: true,
-        title: `${ns.resolveSideChatTitle(t)}${t.pinned ? ' · Pinned' : ''} (Drag to reorder or move across Hangar, double-click to rename)`,
+        title: `${ns.resolveSideChatTitle(t)}${t.pinned ? ' · Pinned' : ''} (Drag to reorder, double-click to rename)`,
         dataset: { cascadeId: t.cascadeId, pinned: t.pinned ? 'true' : 'false' },
       }));
       window.AgyUI?.reconcileTabStrip?.(ctx.sessionsEl, items, {
@@ -407,11 +86,11 @@
           onClick: () => ctx.spawnNewInInstance(),
         },
         onSelect: (id) => {
-          if (ns.getActiveSideChatId(ctx.getTabId()) !== id) {
+          if (ns.getActiveSideChatId() !== id) {
             selectThread(id);
           }
         },
-        onClose: (id) => ns.deleteSideChatsByIds([id], curTabId),
+        onClose: (id) => ns.deleteSideChatsByIds([id]),
         onUnpin: (_id, item) => togglePin(item.thread),
         onRenameStart: () => {
           isRenaming = true;
@@ -419,11 +98,11 @@
         onRenameCancel: () => {
           isRenaming = false;
         },
-        onRename: (_id, rawNext, item) => applyRename(item.thread.cascadeId, rawNext),
+        onRename: (_id, rawNext, item) => applyRename(item.thread, rawNext),
         onContextMenu: (_id, item, e, pill) => {
           const t = item.thread;
           const others = instThreads
-            .filter((x) => x.cascadeId !== item.thread.cascadeId && !x.pinned)
+            .filter((x) => x.cascadeId !== t.cascadeId && !x.pinned)
             .map((x) => x.cascadeId);
           const right = instThreads
             .slice(item.idx + 1)
@@ -432,65 +111,61 @@
           ns.openTabContextMenu?.(e, [
             { id: t.pinned ? 'unpin-tab' : 'pin-tab', label: t.pinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(t) },
             { id: 'rename-tab', label: 'Rename Side Chat…', onClick: () => startInlineRename(pill, t) },
-            {
-              id: 'popout-tab',
-              label: curRootId ? 'Merge into Main Side Chat Tab' : 'Pin Side Chat Tab to Top Bar',
-              onClick: () => ctx.handlePopoutOrMerge(t.cascadeId),
-            },
             { separator: true },
             {
               id: 'close-tab',
               label: 'Delete Side Chat',
               disabled: Boolean(t.pinned),
-              onClick: () => ns.deleteSideChatsByIds([t.cascadeId], curTabId),
+              onClick: () => ns.deleteSideChatsByIds([t.cascadeId]),
             },
             {
               id: 'close-other-tabs',
               label: 'Delete Other Side Chats',
               disabled: !others.length,
               onClick: () => {
-                ns.setActiveSideChatId(curTabId, t.cascadeId);
-                ns.deleteSideChatsByIds(others, curTabId);
+                ns.setActiveSideChatId(t.cascadeId);
+                ns.deleteSideChatsByIds(others);
               },
             },
             {
               id: 'close-tabs-to-the-right',
               label: 'Delete Side Chats to the Right',
               disabled: !right.length,
-              onClick: () => ns.deleteSideChatsByIds(right, curTabId),
+              onClick: () => ns.deleteSideChatsByIds(right),
             },
           ]);
         },
-        bindDrag: (pill, item) =>
-          ns.bindCrossInstancePillDrag(pill, {
-            itemId: item.thread.cascadeId,
-            sessionsEl: ctx.sessionsEl,
+        bindDrag: (pill, item) => {
+          if (pill?.dataset && pill.dataset.tabId === undefined) {
+            pill.dataset.tabId = item.thread.cascadeId;
+          }
+          window.AgyUI?.bindTabDragController?.(pill, {
+            stripEl: () => ctx.sessionsEl,
+            tabSelector: '.agy-tab[data-cascade-id]',
+            idDatasetKey: 'cascadeId',
             pinnedRole: 'sidechat-strip-add',
+            railPadY: 1e6,
             ignoreSelector: '[data-close-cid], [data-pin-cid], [data-role="tab-pin"]',
-            getTabId: ctx.getTabId,
-            getSlot: ctx.getSlot,
-            inspectMerge: ns.inspectHangarPointerOverSideChat,
-            isKindTabId: ns.isSideChatTabId,
             onDragStart: () => {
-              Object.assign(ns, { isPointerOnTab: true, pointerSideChatInstanceId: ctx.getTabId() });
+              Object.assign(ns, { isPointerOnTab: true, pointerSideChatInstanceId: curTabId });
             },
-            onDragEnd: () => {
+            onClearPreview: () => {
               Object.assign(ns, { isPointerOnTab: false, pointerSideChatInstanceId: '' });
             },
-            onSameDrop: ({ index }) => {
-              ns.reorderSideChatThreadsInInstance(ctx.getRootId(), item.thread.cascadeId, index);
+            onDrop: (_e, finishedState, cancelled) => {
+              Object.assign(ns, { isPointerOnTab: false, pointerSideChatInstanceId: '' });
+              if (cancelled || !finishedState) return;
+              ns.reorderSideChatThreadsInInstance('', item.thread.cascadeId, finishedState.dropIdx);
               selectThread(item.thread.cascadeId);
             },
-            onMergeDrop: (target) =>
-              ns.mergeSideChatDragIntoInstance({ cascadeId: item.thread.cascadeId, instanceTabId: ctx.getTabId() }, target),
-            onPromoteDrop: () =>
-              ns.promoteSideChatToHangarBar({ cascadeId: item.thread.cascadeId, instanceTabId: ctx.getTabId() }),
             onClick: () => {
-              if (ns.getActiveSideChatId(ctx.getTabId()) !== item.thread.cascadeId) {
+              pill.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+              if (ns.getActiveSideChatId() !== item.thread.cascadeId) {
                 selectThread(item.thread.cascadeId);
               }
             },
-          }),
+          });
+        },
       });
     }
 

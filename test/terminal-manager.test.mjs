@@ -8,7 +8,7 @@ import { closeWorkspaceTerminal, createWorkspaceTerminal, DEFAULT_MAX_SCROLLBACK
 import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
-import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, closeTerminalSideChatStreams, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
+import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, closeTerminalSideChatStreams, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, renameTerminalSideChat, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
@@ -693,28 +693,22 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       });
     }
     assert.equal(composer._els.backBtn.classList.contains('hidden'), true);
+    assert.equal(composer._els.popoutBtn, undefined, 'Side Chat companion pane must not render redundant top-bar popout button');
+    const renameCall = apiCalls.find((c) => c.path === '/api/sidechat/rename');
+    assert.deepEqual(JSON.parse(JSON.stringify(renameCall?.body || null)), {
+      cascadeId: secondCid,
+      parentConversationId: 'conv-host-1',
+      title: 'Bug Triage Chat',
+    });
     composer._syncThreadsUi(secondCid, null);
-    composer._els.popoutBtn.emit('click', { stopPropagation() {} });
-    assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), true);
     const savedSideChatState = windowObj.Hangar.serializeSideChatState();
-    const remainingMainPills = composer._els.sessionsEl.childNodes.filter((c) => c.className?.includes('agy-tab') && c.dataset?.cascadeId);
-    assert.equal(remainingMainPills.length, 1);
-    assert.notEqual(remainingMainPills[0].dataset.cascadeId, secondCid);
-    const poppedBox = children.find((c) => c.dataset?.instanceTabId === `sidechat__${secondCid}`);
-    assert.ok(poppedBox);
-    assert.equal(poppedBox._els.initialFrame.classList.contains('hidden'), true);
-    assert.equal(poppedBox._els.chatFrame.classList.contains('hidden'), false);
-    const poppedScTabs = windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs;
-    assert.ok(poppedScTabs.some((t) => t.sidecarId === `sidechat__${secondCid}` && t.displayName === 'Bug Triage Chat'));
-    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: secondCid } } });
-    assert.equal(lastScDockEvt?.sourceTabId, `sidechat__${secondCid}`);
-    assert.equal(windowObj.Hangar.demoteSideChatTabIntoInstance(`sidechat__${secondCid}`, { targetInstanceTabId: '__sidechat__', zone: 'strip', index: 0 }), true);
-    assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), false);
+    assert.equal(savedSideChatState.poppedIds, undefined);
+    const mainPills = composer._els.sessionsEl.childNodes.filter((c) => c.className?.includes('agy-tab') && c.dataset?.cascadeId);
+    assert.equal(mainPills.length, 2);
+    windowObj.Hangar.reorderSideChatThreadsInInstance('', secondCid, 0);
     assert.equal(windowObj.Hangar.getSideChatState().threads[0].cascadeId, secondCid);
-    composer._els.popoutBtn.emit('click', { stopPropagation() {} });
-    assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), true);
-    await windowObj.Hangar.closeSideChatInstance(`sidechat__${secondCid}`);
-    assert.equal(windowObj.Hangar.getPoppedSideChatIds().has(secondCid), false);
+    for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-sidechat-open-terminal', payload: { cascadeId: secondCid } } });
+    assert.equal(lastScDockEvt?.sourceTabId, '__sidechat__');
     windowObj.Hangar.closeSideChatDrawer({ deleteAll: true, notify: false });
     children.filter((c) => c.className?.includes('agy-tab') && c.dataset?.termTid).at(-1).emit('dblclick', { stopPropagation() {} });
     const clrInp = children.filter((c) => c.className?.includes('rename-input')).at(-1);
@@ -783,15 +777,27 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       vm.runInContext(readFileSync(join(REPO_ROOT, rel), 'utf8'), freshCtx);
     }
     freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, [...curTerms, { terminalId: 'term-popped-1', title: 'popped' }, { terminalId: 't-spawned-new', title: 'pwsh-new' }]);
-    freshWin.Hangar.hydrateSideChatStateFromLayout({ sideChatState: savedSideChatState, tabOrder: ['__sidechat__', `sidechat__${secondCid}`, 'sidechat__sc-popped-9'] });
+    freshWin.Hangar.hydrateSideChatStateFromLayout({
+      pinnedTopSidecarId: 'sidechat__sc-popped-9',
+      sideChatState: { ...savedSideChatState, poppedIds: ['sc-legacy-popped'] },
+      tabOrder: ['__sidechat__', `sidechat__${secondCid}`, 'sidechat__sc-popped-9'],
+    });
     assert.equal(freshWin.Hangar.isMainTerminalOpen(), true);
     assert.equal(freshWin.Hangar.getActiveGroupId('__terminal__'), 't-spawned-new');
     assert.equal(freshWin.Hangar.readCustomTermTitles()['t-spawned-new'], 'persisted-term');
     assert.equal(freshWin.Hangar.getPoppedTerminalIds().has('term-popped-1'), true);
     assert.equal(freshWin.Hangar.getSideChatState().isOpen, true);
-    assert.equal(freshWin.Hangar.getPoppedSideChatIds().has(secondCid), true);
-    assert.equal(freshWin.Hangar.getPoppedSideChatIds().has('sc-popped-9'), true);
+    assert.equal(freshWin.Hangar.getSideChatState().activeCascadeId, 'sc-popped-9');
+    assert.ok(freshWin.Hangar.getSideChatState().threads.some((t) => t.cascadeId === 'sc-popped-9'));
+    assert.ok(freshWin.Hangar.getSideChatState().threads.some((t) => t.cascadeId === 'sc-legacy-popped'));
     assert.equal(freshWin.Hangar.readCustomSideChatTitles()[secondCid], 'Bug Triage Chat');
+    const migratedPart = freshWin.Hangar.partitionSplitTabs(
+      [{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }],
+      { pinnedTopSidecarId: 'sidechat__sc-popped-9', tabOrder: ['context-monitor', `sidechat__${secondCid}`, 'sidechat__sc-popped-9'] },
+      []
+    );
+    assert.equal(migratedPart.activeSingleId, '__sidechat__');
+    assert.equal(migratedPart.workspaceTabs.some((t) => t.sidecarId.startsWith('sidechat__')), false);
 
     freshWin.Hangar.hydrateTerminalStateFromLayout({ terminalState: savedTermState, tabOrder: ['__terminal__', 'terminal__term-popped-1'] }, []);
     freshWin.Hangar.hydrateSideChatStateFromLayout({ sideChatState: savedSideChatState, sideChatStateByWorkspace: { 'c:/users/arthu/ideaprojects/antigravity-hangar': savedSideChatState }, tabOrder: ['__sidechat__', `sidechat__${secondCid}`] }, 'C:\\Users\\arthu\\IdeaProjects\\antigravity-sidecar-kit');
@@ -800,7 +806,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const otherProjPart = freshWin.Hangar.partitionSplitTabs([{ sidecarId: 'context-monitor', displayName: 'Context', matchesWorkspace: true }], { tabOrder: ['context-monitor', '__terminal__', 'terminal__term-popped-1', '__sidechat__'] }, []);
     assert.deepEqual(Array.from(otherProjPart.workspaceTabs, (t) => t.sidecarId), ['context-monitor', '__extensions__']);
 
-    // Projectless conversation (workspacePath === '') must not inherit global/last-project sideChatState or popped sidechat__ tabs
+    // Projectless conversation (workspacePath === '') must not inherit global/last-project sideChatState or legacy sidechat__ tabs
     freshWin.Hangar.hydrateSideChatStateFromLayout(
       {
         sideChatState: savedSideChatState,
@@ -812,7 +818,6 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     );
     assert.equal(freshWin.Hangar.getSideChatState().isOpen, false);
     assert.equal(freshWin.Hangar.getSideChatState().threads.length, 0);
-    assert.equal(freshWin.Hangar.getPoppedSideChatIds().size, 0);
   });
 
   it('forks tool-enabled SIDE_QUESTION cascades, streams AgentStateUpdates, and injects @terminal mentions into jetbox-chat', async () => {
@@ -1008,11 +1013,55 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
     const serverSrc = readFileSync(join(REPO_ROOT, 'server.mjs'), 'utf8');
     assert.match(serverSrc, /\/api\/sidechat\/rename/);
-    assert.match(serverSrc, /UpdateConversationAnnotations/);
+    assert.match(serverSrc, /renameTerminalSideChat/);
+
+    const renameRpcs = [];
+    await renameTerminalSideChat({
+      cascadeId: 'sq-child-1',
+      parentConversationId: 'hangar:conv-parent-1',
+      title: '  Investigate   port 5432  ',
+      rpcFn: async (method, body) => {
+        renameRpcs.push({ method, body });
+        return { ok: true };
+      },
+    });
+    assert.deepEqual(renameRpcs, [
+      {
+        method: 'UpdateConversationAnnotations',
+        body: {
+          cascadeIds: ['sq-child-1'],
+          cascadeId: 'sq-child-1',
+          annotations: { title: 'Investigate port 5432' },
+          mergeAnnotations: true,
+        },
+      },
+      {
+        method: 'UpdateConversationAnnotations',
+        body: {
+          cascadeIds: ['conv-parent-1'],
+          cascadeId: 'conv-parent-1',
+          annotations: { sideQuestionTitles: { 'sq-child-1': 'Investigate port 5432' } },
+          mergeAnnotations: true,
+        },
+      },
+    ]);
+
+    const standaloneRenameRpcs = [];
+    await renameTerminalSideChat({
+      cascadeId: 'sq-standalone-1',
+      parentConversationId: '_new',
+      title: 'Standalone Check',
+      rpcFn: async (method, body) => {
+        standaloneRenameRpcs.push({ method, body });
+        return { ok: true };
+      },
+    });
+    assert.equal(standaloneRenameRpcs.length, 1);
+    assert.equal(standaloneRenameRpcs[0].body.cascadeId, 'sq-standalone-1');
 
     const tabBarSrc = readFileSync(join(REPO_ROOT, 'ui/components/tab-bar.js'), 'utf8');
     assert.match(tabBarSrc, /ns\.apiCall\?\.\('\/api\/terminal\/rename'|ns\.apiCall\('\/api\/terminal\/rename'/);
-    assert.match(tabBarSrc, /ns\.apiCall\?\.\('\/api\/sidechat\/rename'|ns\.apiCall\('\/api\/sidechat\/rename'/);
+    assert.doesNotMatch(tabBarSrc, /isPoppedSc/);
     assert.equal(tabBarSrc.includes('/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations'), false);
   });
 

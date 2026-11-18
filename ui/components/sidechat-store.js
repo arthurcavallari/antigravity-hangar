@@ -1,13 +1,16 @@
-/** @fileoverview Side Chat thread state, workspace hydration, and cross-instance tab promotion/demotion. */
+/** @fileoverview Side Chat thread state, workspace hydration, and native Side Question annotation sync. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   ns.SIDECHAT_TAB_ID = '__sidechat__';
-  ns.SIDECHAT_TAB_PREFIX = 'sidechat__';
-  ns.isSideChatTabId = (tabId = '') =>
-    tabId === ns.SIDECHAT_TAB_ID || String(tabId || '').startsWith(ns.SIDECHAT_TAB_PREFIX);
+  const LEGACY_SIDECHAT_TAB_PREFIX = 'sidechat__';
+  ns.isSideChatTabId = (tabId = '') => tabId === ns.SIDECHAT_TAB_ID;
+  const normScTabId = ns.normalizeLegacySideChatTabId || ((id = '') => (
+    String(id || '').startsWith(LEGACY_SIDECHAT_TAB_PREFIX) ? ns.SIDECHAT_TAB_ID : String(id || '')
+  ));
 
   const CUSTOM_TITLES_KEY = 'hangar.sideChatCustomTitles';
   const LEGACY_SIDECHAT_ID_RE = /^sidechat-\d+-\d+$/;
+  const PENDING_RENAME_TTL_MS = 8_000;
   const genSideChatUuid = () => (
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -27,16 +30,14 @@
     isDocked: true,
     onStateChange: null,
     startInFlight: null,
-    poppedIds: new Set(),
-    groupMap: {},
-    activeByInstance: new Map(),
+    pendingRenames: new Map(),
     boxes: new Map(),
     frames: new Map(),
   });
   ns.sideChatStore = {
     state: sc,
     getState: () => sc,
-    getBox: (tabId) => sc.boxes.get(tabId),
+    getBox: (tabId = ns.SIDECHAT_TAB_ID) => sc.boxes.get(tabId),
     setBox: (tabId, box) => sc.boxes.set(tabId, box),
     deleteBox: (tabId) => sc.boxes.delete(tabId),
     getBoxes: () => sc.boxes,
@@ -94,18 +95,6 @@
     Object.assign(sendBtn, { disabled: false, textContent: idleLabel });
   };
 
-  ns._resolveSideChatRootId = (cid) => {
-    if (!cid) return '';
-    if (sc.poppedIds.has(cid)) return cid;
-    if (sc.groupMap[cid] && sc.poppedIds.has(sc.groupMap[cid])) return sc.groupMap[cid];
-    return '';
-  };
-
-  ns._resolveSideChatTabId = (cid) => {
-    const rootId = ns._resolveSideChatRootId(cid);
-    return rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
-  };
-
   ns.readCustomSideChatTitles = () => {
     try {
       return JSON.parse(localStorage.getItem(CUSTOM_TITLES_KEY) || '{}') || {};
@@ -127,29 +116,30 @@
     }
   };
 
-  ns.resolveSideChatTitle = (t) =>
-    t ? (ns.readCustomSideChatTitles()[t.cascadeId] || t.title || 'Side Chat') : 'Side Chat';
-  ns.getPoppedSideChatIds = () => new Set(sc.poppedIds);
-  ns.getSideChatGroupMap = () => ({ ...sc.groupMap });
-  ns.getActiveSideChatId = (tabId = ns.SIDECHAT_TAB_ID) =>
-    sc.activeByInstance.get(tabId) || (tabId === ns.SIDECHAT_TAB_ID ? sc.activeId : '');
-  ns.setActiveSideChatId = (tabId = ns.SIDECHAT_TAB_ID, cid = '') => {
-    if (cid) {
-      sc.activeByInstance.set(tabId, cid);
+  ns.recordSideChatRename = (cid, rawTitle) => {
+    if (!cid) return;
+    const next = String(rawTitle || '').replace(/\s+/g, ' ').trim();
+    ns.saveCustomSideChatTitle(cid, next);
+    const th = sc.threads.find((t) => t.cascadeId === cid);
+    if (next) {
+      if (th) th.title = next;
+      sc.pendingRenames.set(cid, { title: next, ts: Date.now() });
     } else {
-      sc.activeByInstance.delete(tabId);
-    }
-    if (tabId === ns.SIDECHAT_TAB_ID) {
-      sc.activeId = cid;
+      sc.pendingRenames.delete(cid);
+      if (th && th._lastNativeTitle) {
+        th.title = th._lastNativeTitle;
+      }
     }
   };
 
-  ns.getInstanceSideChats = (all = sc.threads, rootId = '') =>
-    all.filter((t) =>
-      rootId
-        ? sc.poppedIds.has(rootId) && (t.cascadeId === rootId || sc.groupMap[t.cascadeId] === rootId)
-        : !sc.poppedIds.has(t.cascadeId) && !sc.poppedIds.has(sc.groupMap[t.cascadeId])
-    );
+  ns.resolveSideChatTitle = (t) =>
+    t ? (ns.readCustomSideChatTitles()[t.cascadeId] || t.title || 'Side Chat') : 'Side Chat';
+
+  ns.getActiveSideChatId = () => sc.activeId;
+  ns.setActiveSideChatId = (first = '', second) => {
+    sc.activeId = String((second === undefined ? first : second) || '');
+  };
+  ns.getInstanceSideChats = (all = sc.threads) => all;
 
   ns.serializeSideChatState = () => ({
     isOpen: Boolean(sc.isOpen),
@@ -161,10 +151,8 @@
       title: String(t.title || 'Side Chat'),
       parentConversationId: String(t.parentConversationId || ''),
       pinned: Boolean(t.pinned),
+      ...(t.nativeLinked ? { nativeLinked: true } : {}),
     })),
-    poppedIds: [...sc.poppedIds],
-    groupMap: { ...sc.groupMap },
-    activeByInstance: Object.fromEntries(sc.activeByInstance.entries()),
     customTitles: ns.readCustomSideChatTitles(),
   });
 
@@ -193,9 +181,7 @@
       counter: 0,
       isOpen: false,
     });
-    sc.poppedIds.clear();
-    Object.keys(sc.groupMap).forEach((k) => delete sc.groupMap[k]);
-    sc.activeByInstance.clear();
+    sc.pendingRenames.clear();
     const raw = scopeKey
       ? layout?.sideChatStateByWorkspace?.[scopeKey]
       : (!hasWsMap ? layout?.sideChatState : null);
@@ -208,6 +194,10 @@
       }
       return legacyIdMap.get(id);
     };
+    const rawPinnedTop = String(layout?._legacyPinnedSideChatTabId || layout?.pinnedTopSidecarId || '');
+    let legacyPinnedCid = rawPinnedTop.startsWith(LEGACY_SIDECHAT_TAB_PREFIX)
+      ? normCid(rawPinnedTop.slice(LEGACY_SIDECHAT_TAB_PREFIX.length))
+      : '';
     if (raw && typeof raw === 'object') {
       if (raw.customTitles && typeof raw.customTitles === 'object') {
         try {
@@ -229,27 +219,35 @@
             hasActivity: false,
             pinned: Boolean(t.pinned),
             quotePayload: null,
+            nativeLinked: Boolean(t.nativeLinked),
+            _lastNativeTitle: t.nativeLinked ? String(t.title || '') : '',
           }));
+      }
+      if (Array.isArray(raw.poppedIds)) {
+        for (const rawPopId of raw.poppedIds) {
+          const cid = normCid(rawPopId);
+          if (cid && !sc.threads.some((t) => t.cascadeId === cid)) {
+            sc.counter += 1;
+            sc.threads.push({
+              cascadeId: cid,
+              title: ns.readCustomSideChatTitles()[cid] || `Side Chat #${sc.threads.length + 1}`,
+              parentConversationId: '',
+              hasActivity: false,
+              pinned: false,
+              quotePayload: null,
+              nativeLinked: false,
+              _lastNativeTitle: '',
+            });
+          }
+        }
       }
       sc.counter = Math.max(
         sc.counter,
         typeof raw.sideChatCounter === 'number' ? raw.sideChatCounter : 0,
         sc.threads.length
       );
-      if (Array.isArray(raw.poppedIds)) {
-        raw.poppedIds.filter(Boolean).forEach((id) => sc.poppedIds.add(normCid(id)));
-      }
-      if (raw.groupMap && typeof raw.groupMap === 'object') {
-        Object.entries(raw.groupMap).forEach(([k, v]) => {
-          sc.groupMap[normCid(k)] = normCid(v);
-        });
-      }
-      if (raw.activeByInstance && typeof raw.activeByInstance === 'object') {
-        Object.entries(raw.activeByInstance).forEach(([k, v]) => {
-          if (v) {
-            sc.activeByInstance.set(k, normCid(v));
-          }
-        });
+      if (legacyPinnedCid && raw.activeByInstance?.[rawPinnedTop]) {
+        legacyPinnedCid = normCid(raw.activeByInstance[rawPinnedTop]);
       }
       if (raw.activeCascadeId) {
         sc.activeId = normCid(raw.activeCascadeId);
@@ -281,36 +279,150 @@
       const candidateTabs = [
         ...(layout?.tabOrder || []),
         ...(layout?.topSplitTabIds || []),
-        layout?.pinnedTopSidecarId || '',
+        rawPinnedTop,
       ];
       for (const tabId of candidateTabs) {
-        const cid = String(tabId).startsWith(ns.SIDECHAT_TAB_PREFIX) && !closedSet.has(tabId)
-          ? String(tabId).slice(ns.SIDECHAT_TAB_PREFIX.length)
+        const cid = String(tabId).startsWith(LEGACY_SIDECHAT_TAB_PREFIX) && !closedSet.has(tabId)
+          ? normCid(String(tabId).slice(LEGACY_SIDECHAT_TAB_PREFIX.length))
           : '';
         if (!cid) continue;
-        sc.poppedIds.add(cid);
         if (!sc.threads.some((t) => t.cascadeId === cid)) {
           sc.counter += 1;
           sc.threads.push({
             cascadeId: cid,
-            title: `Side Chat #${sc.counter}`,
+            title: ns.readCustomSideChatTitles()[cid] || `Side Chat #${sc.counter}`,
             parentConversationId: '',
             hasActivity: false,
             pinned: false,
             quotePayload: null,
+            nativeLinked: false,
+            _lastNativeTitle: '',
           });
-        }
-        if (!sc.activeByInstance.has(tabId)) {
-          sc.activeByInstance.set(tabId, cid);
         }
       }
     }
-    if (
-      ns.getInstanceSideChats(sc.threads, '').length > 0 &&
-      (!closedSet.has(ns.SIDECHAT_TAB_ID) || layout?.pinnedTopSidecarId === ns.SIDECHAT_TAB_ID)
-    ) {
+    if (legacyPinnedCid && sc.threads.some((t) => t.cascadeId === legacyPinnedCid)) {
+      sc.activeId = legacyPinnedCid;
+    } else if (!sc.activeId && sc.threads.length > 0) {
+      sc.activeId = sc.threads[0].cascadeId;
+    }
+    const pinnedIsSideChat =
+      rawPinnedTop === ns.SIDECHAT_TAB_ID || rawPinnedTop.startsWith(LEGACY_SIDECHAT_TAB_PREFIX);
+    if (sc.threads.length > 0 && (!closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedIsSideChat)) {
       sc.isOpen = true;
     }
+  };
+
+  ns.syncNativeSideQuestions = function syncNativeSideQuestions(nativePayload, layout = {}) {
+    if (!nativePayload || typeof nativePayload !== 'object') return false;
+    const convId = String(nativePayload.conversationId || '').trim();
+    if (!convId || convId === '_new') return false;
+    const cascadeIds = Array.isArray(nativePayload.cascadeIds)
+      ? [...new Set(nativePayload.cascadeIds.map((id) => String(id || '').trim()).filter(Boolean))]
+      : [];
+    const titles = nativePayload.titles && typeof nativePayload.titles === 'object' ? nativePayload.titles : {};
+    const idSet = new Set(cascadeIds);
+    let changed = false;
+
+    const kept = [];
+    for (const t of sc.threads) {
+      if (idSet.has(t.cascadeId)) {
+        if (t._unpersisted) delete t._unpersisted;
+        if (!t.nativeLinked || t.parentConversationId !== convId) {
+          t.nativeLinked = true;
+          t.parentConversationId = convId;
+          changed = true;
+        }
+        kept.push(t);
+        continue;
+      }
+      if (t?._unpersisted || sc.startInFlight) {
+        kept.push(t);
+        continue;
+      }
+      if (t.nativeLinked) {
+        if (t.parentConversationId === convId) {
+          ns.disposeSideChatFrame(t.cascadeId);
+          ns.saveCustomSideChatTitle(t.cascadeId, '');
+          sc.pendingRenames.delete(t.cascadeId);
+          changed = true;
+          continue;
+        }
+        if (t.parentConversationId && t.parentConversationId !== convId && !t.pinned) {
+          ns.disposeSideChatFrame(t.cascadeId);
+          changed = true;
+          continue;
+        }
+      }
+      kept.push(t);
+    }
+    if (kept.length !== sc.threads.length) {
+      sc.threads = kept;
+      changed = true;
+    }
+
+    const now = Date.now();
+    for (const cid of cascadeIds) {
+      const nativeTitle = String(titles[cid] || '').replace(/\s+/g, ' ').trim();
+      const existing = sc.threads.find((x) => x.cascadeId === cid);
+      if (!existing) {
+        const savedCustom = ns.readCustomSideChatTitles()[cid] || '';
+        sc.threads.push({
+          cascadeId: cid,
+          title: nativeTitle || savedCustom || 'Side Question',
+          parentConversationId: convId,
+          hasActivity: false,
+          pinned: false,
+          quotePayload: null,
+          nativeLinked: true,
+          _lastNativeTitle: nativeTitle,
+        });
+        changed = true;
+      } else {
+        const pending = sc.pendingRenames.get(cid);
+        if (pending) {
+          if (nativeTitle && nativeTitle === pending.title) {
+            sc.pendingRenames.delete(cid);
+            existing._lastNativeTitle = nativeTitle;
+          } else if (now - pending.ts >= PENDING_RENAME_TTL_MS) {
+            sc.pendingRenames.delete(cid);
+          }
+        }
+        if (!sc.pendingRenames.has(cid) && nativeTitle && nativeTitle !== existing._lastNativeTitle) {
+          existing.title = nativeTitle;
+          existing._lastNativeTitle = nativeTitle;
+          if (ns.readCustomSideChatTitles()[cid] !== undefined) {
+            ns.saveCustomSideChatTitle(cid, '');
+          }
+          changed = true;
+        }
+      }
+    }
+
+    if (sc.threads.some((x) => x.pinned)) {
+      sc.threads = [...sc.threads.filter((x) => x.pinned), ...sc.threads.filter((x) => !x.pinned)];
+    }
+    sc.counter = Math.max(sc.counter, sc.threads.length);
+
+    if (sc.threads.length === 0 && !sc.startInFlight && !sc._pendingOpen) {
+      if (sc.isOpen || sc.activeId) {
+        sc.activeId = '';
+        ns.closeSideChatDrawer?.({ deleteAll: false, notify: false });
+        changed = true;
+      }
+    } else if (sc.threads.length > 0) {
+      if (!sc.activeId || !sc.threads.some((x) => x.cascadeId === sc.activeId)) {
+        sc.activeId = sc.threads[sc.threads.length - 1].cascadeId;
+        changed = true;
+      }
+      const closedSet = new Set(Array.isArray(layout?.closedTabIds) ? layout.closedTabIds : []);
+      const pinnedTop = normScTabId(layout?.pinnedTopSidecarId || '');
+      if (!sc.isOpen && (!closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedTop === ns.SIDECHAT_TAB_ID)) {
+        sc.isOpen = true;
+        changed = true;
+      }
+    }
+    return changed;
   };
 
   ns.getSideChatState = () => ({
@@ -318,7 +430,6 @@
     activeCascadeId: sc.activeId,
     isOpen: sc.isOpen,
     isDocked: sc.isDocked,
-    poppedIds: [...sc.poppedIds],
     sideChatState: ns.serializeSideChatState(),
   });
   ns.setSideChatDockCallback = (fn) => {
@@ -333,16 +444,11 @@
     parentConversationId = '',
     labelHint = '',
     forceNew = false,
-    rootId = '',
-    popOut = false,
     quotePayload = null,
   } = {}) {
-    const instTabId = rootId ? `${ns.SIDECHAT_TAB_PREFIX}${rootId}` : ns.SIDECHAT_TAB_ID;
-    if (!forceNew && !popOut) {
-      const instThreads = ns.getInstanceSideChats(sc.threads, rootId);
+    if (!forceNew) {
       const existing =
-        instThreads.find((t) => t.cascadeId === ns.getActiveSideChatId(instTabId)) ||
-        instThreads[instThreads.length - 1];
+        sc.threads.find((t) => t.cascadeId === sc.activeId) || sc.threads[sc.threads.length - 1];
       if (existing) {
         return Object.assign(existing, quotePayload ? { quotePayload } : {});
       }
@@ -351,19 +457,25 @@
       }
     }
     const gen = sc.generation;
-    if (!popOut && !rootId) {
-      sc._pendingOpen = true;
-    }
+    sc._pendingOpen = true;
     const run = (async () => {
       sc.counter += 1;
       const idx = sc.counter;
       let cascadeId = genSideChatUuid();
+      let resolvedParentId = String(parentConversationId || '').trim();
+      if (resolvedParentId === '_new') resolvedParentId = '';
       let createdRemote = false;
       try {
-        const res = await ns.apiCall?.('/api/terminal/sidechat/start', { parentConversationId, cascadeId });
+        const res = await ns.apiCall?.('/api/terminal/sidechat/start', {
+          parentConversationId: resolvedParentId,
+          cascadeId,
+        });
         if (res?.cascadeId) {
           cascadeId = String(res.cascadeId);
           createdRemote = true;
+        }
+        if (res && typeof res === 'object' && 'parentConversationId' in res) {
+          resolvedParentId = String(res.parentConversationId || '');
         }
       } catch {
         /* ignore */
@@ -374,25 +486,32 @@
         }
         return null;
       }
+      const existing = sc.threads.find((t) => t.cascadeId === cascadeId);
+      if (existing) {
+        delete existing._unpersisted;
+        if (quotePayload) existing.quotePayload = quotePayload;
+        if (labelHint && existing.title === 'Side Question') {
+          existing.title = `Side Chat #${idx} · ${labelHint}`;
+        }
+        sc.isOpen = true;
+        ns.setActiveSideChatId(cascadeId);
+        return existing;
+      }
       const thread = {
         cascadeId,
         title: labelHint ? `Side Chat #${idx} · ${labelHint}` : `Side Chat #${idx}`,
-        parentConversationId: String(parentConversationId || ''),
+        parentConversationId: resolvedParentId,
         hasActivity: false,
         pinned: false,
         quotePayload: quotePayload || null,
+        nativeLinked: false,
+        _lastNativeTitle: '',
         _unpersisted: true,
         _createdWsKey: sc.hydratedWsKey || '',
       };
       sc.threads.push(thread);
-      if (popOut) {
-        sc.poppedIds.add(cascadeId);
-      } else if (rootId) {
-        sc.groupMap[cascadeId] = rootId;
-      } else {
-        sc.isOpen = true;
-      }
-      ns.setActiveSideChatId(popOut ? `${ns.SIDECHAT_TAB_PREFIX}${cascadeId}` : instTabId, cascadeId);
+      sc.isOpen = true;
+      ns.setActiveSideChatId(cascadeId);
       return thread;
     })();
     sc.startInFlight = run;
@@ -420,45 +539,24 @@
     sc.frames.delete(cid);
   };
 
-  const rekeyPoppedRoot = (oldTabId, oldRoot, nextRoot, activeCid) => {
-    const nextTabId = `${ns.SIDECHAT_TAB_PREFIX}${nextRoot}`;
-    const b = sc.boxes.get(oldTabId);
-    const ordered = [...sc.poppedIds].map((id) => (id === oldRoot ? nextRoot : id));
-    sc.poppedIds.clear();
-    ordered.forEach((id) => sc.poppedIds.add(id));
-    delete sc.groupMap[nextRoot];
-    Object.entries(sc.groupMap).forEach(([k, v]) => {
-      if (v === oldRoot) {
-        sc.groupMap[k] = nextRoot;
-      }
-    });
-    if (b && sc.boxes.delete(oldTabId)) {
-      sc.boxes.set(nextTabId, b);
-    }
-    b?._setInstance?.(nextTabId, nextRoot);
-    sc.activeByInstance.delete(oldTabId);
-    ns.setActiveSideChatId(nextTabId, activeCid);
-    b?._syncThreadsUi?.(activeCid, null);
-    return nextTabId;
-  };
-
-  ns.deleteSideChatsByIds = async function deleteSideChatsByIds(cids = [], instanceTabId = ns.SIDECHAT_TAB_ID) {
+  ns.deleteSideChatsByIds = async function deleteSideChatsByIds(cids = []) {
     const targetIds = cids.filter(Boolean);
     if (!targetIds.length) return;
     const rmSet = new Set(targetIds);
-    const rootId = instanceTabId.startsWith(ns.SIDECHAT_TAB_PREFIX)
-      ? instanceTabId.slice(ns.SIDECHAT_TAB_PREFIX.length)
-      : '';
     for (const cid of targetIds) {
-      delete sc.groupMap[cid];
+      sc.pendingRenames.delete(cid);
       ns.saveCustomSideChatTitle(cid, '');
       ns.disposeSideChatFrame(cid);
       ns.apiCall?.('/api/terminal/sidechat/delete', { cascadeId: cid })?.catch?.(() => {});
     }
-    const prevIds = ns.getInstanceSideChats(sc.threads, rootId).map((t) => t.cascadeId);
-    const prevAct = ns.getActiveSideChatId(instanceTabId) || prevIds[0] || '';
+    const prevIds = sc.threads.map((t) => t.cascadeId);
+    const prevAct = sc.activeId || prevIds[0] || '';
     sc.threads = sc.threads.filter((t) => !rmSet.has(t.cascadeId));
-    const remIds = ns.getInstanceSideChats(sc.threads, rootId).map((t) => t.cascadeId);
+    const remIds = sc.threads.map((t) => t.cascadeId);
+    if (!remIds.length) {
+      ns.closeSideChatDrawer?.({ deleteAll: true, notify: true });
+      return;
+    }
     const remSet = new Set(remIds);
     const pIdx = prevIds.indexOf(prevAct);
     const nextAct = remSet.has(prevAct)
@@ -466,98 +564,18 @@
       : ((pIdx >= 0 ? prevIds.slice(pIdx + 1).find((id) => remSet.has(id)) : '') ||
           remIds[remIds.length - 1] ||
           '');
-    if (rootId && !remIds.length) {
-      sc.poppedIds.delete(rootId);
-      Object.entries(sc.groupMap).forEach(([k, v]) => {
-        if (v === rootId) {
-          delete sc.groupMap[k];
-        }
-      });
-      sc.boxes.get(instanceTabId)?.remove?.();
-      sc.boxes.delete(instanceTabId);
-      sc.activeByInstance.delete(instanceTabId);
-      ns.notifySideChatState({ closedSidecarId: instanceTabId });
-      return;
-    }
-    if (rootId && rmSet.has(rootId)) {
-      const nextTabId = rekeyPoppedRoot(instanceTabId, rootId, remIds[0], nextAct);
-      ns.notifySideChatState({ replacedSidecarId: { from: instanceTabId, to: nextTabId } });
-      return;
-    }
-    if (!rootId && !remIds.length) {
-      ns.closeSideChatDrawer?.({ deleteAll: sc.threads.length === 0, notify: true });
-      return;
-    }
-    ns.setActiveSideChatId(instanceTabId, nextAct);
-    sc.boxes.get(instanceTabId)?._syncThreadsUi?.(nextAct, null);
+    ns.setActiveSideChatId(nextAct);
+    sc.boxes.get(ns.SIDECHAT_TAB_ID)?._syncThreadsUi?.(nextAct, null);
     ns.notifySideChatState();
   };
 
-  ns.closeSideChatInstance = async (tabId = '') => {
-    const rId = String(tabId || '').startsWith(ns.SIDECHAT_TAB_PREFIX)
-      ? String(tabId).slice(ns.SIDECHAT_TAB_PREFIX.length)
-      : '';
-    if (!rId) {
-      ns.closeSideChatDrawer?.({ deleteAll: false, notify: false });
-      return;
-    }
-    const cids = ns.getInstanceSideChats(sc.threads, rId).map((t) => t.cascadeId);
-    if (!cids.includes(rId)) {
-      cids.push(rId);
-    }
-    await ns.deleteSideChatsByIds(cids, tabId);
-  };
-
-  ns.reorderSideChatThreadsInInstance = (rootId = '', movedCid = '', targetIndex = 0) => {
-    const inst = ns.getInstanceSideChats(sc.threads, rootId);
-    const srcIdx = inst.findIndex((t) => t.cascadeId === movedCid);
+  ns.reorderSideChatThreadsInInstance = (_rootId = '', movedCid = '', targetIndex = 0) => {
+    const srcIdx = sc.threads.findIndex((t) => t.cascadeId === movedCid);
     if (srcIdx < 0) return;
-    const [moved] = inst.splice(srcIdx, 1);
-    const dstIdx = Math.max(0, Math.min(inst.length, targetIndex > srcIdx ? targetIndex - 1 : targetIndex));
-    inst.splice(dstIdx, 0, moved);
-    const ordered = [...inst.filter((t) => t.pinned), ...inst.filter((t) => !t.pinned)];
-    const instSet = new Set(ordered.map((t) => t.cascadeId));
-    let k = 0;
-    sc.threads = sc.threads.map((t) => (instSet.has(t.cascadeId) ? ordered[k++] : t));
-  };
-
-  ns.promoteSideChatToHangarBar = function promoteSideChatToHangarBar(dragPayload) {
-    const cid = dragPayload?.cascadeId;
-    if (!cid) return null;
-    const srcTabId = dragPayload.instanceTabId || ns.SIDECHAT_TAB_ID;
-    const srcRoot = srcTabId.startsWith(ns.SIDECHAT_TAB_PREFIX)
-      ? srcTabId.slice(ns.SIDECHAT_TAB_PREFIX.length)
-      : '';
-    const remaining = ns.getInstanceSideChats(sc.threads, srcRoot).filter((t) => t.cascadeId !== cid);
-    if (srcRoot && !remaining.length) {
-      return { newSidecarId: srcTabId, replacedSidecarId: null };
-    }
-    const newSidecarId = `${ns.SIDECHAT_TAB_PREFIX}${cid}`;
-    sc.poppedIds.add(cid);
-    delete sc.groupMap[cid];
-    ns.setActiveSideChatId(newSidecarId, cid);
-    const vpEl = typeof document?.getElementById === 'function' ? document.getElementById('main-viewport') : null;
-    const targetRoot = vpEl || ns._sideChatBox?.parentElement || ns._sideChatBox?._toastRoot || document.body;
-    ns.ensureSideChatBox?.(newSidecarId, targetRoot)?._syncThreadsUi?.(cid, null);
-    let replacedSidecarId = null;
-    if (srcRoot && cid === srcRoot && remaining.length > 0) {
-      const nextTabId = rekeyPoppedRoot(
-        srcTabId,
-        srcRoot,
-        remaining[0].cascadeId,
-        remaining[remaining.length - 1].cascadeId
-      );
-      replacedSidecarId = { from: srcTabId, to: nextTabId };
-    } else if (srcRoot || remaining.length > 0) {
-      const targetTab = srcRoot ? srcTabId : ns.SIDECHAT_TAB_ID;
-      const nextAct = remaining[remaining.length - 1]?.cascadeId || srcRoot;
-      ns.setActiveSideChatId(targetTab, nextAct);
-      sc.boxes.get(targetTab)?._syncThreadsUi?.(nextAct, null);
-    } else {
-      sc.isOpen = false;
-      sc.boxes.get(ns.SIDECHAT_TAB_ID)?.classList?.add?.('hidden');
-      replacedSidecarId = { from: ns.SIDECHAT_TAB_ID, to: newSidecarId };
-    }
-    return { newSidecarId, replacedSidecarId };
+    const next = [...sc.threads];
+    const [moved] = next.splice(srcIdx, 1);
+    const dstIdx = Math.max(0, Math.min(next.length, targetIndex > srcIdx ? targetIndex - 1 : targetIndex));
+    next.splice(dstIdx, 0, moved);
+    sc.threads = [...next.filter((t) => t.pinned), ...next.filter((t) => !t.pinned)];
   };
 })();

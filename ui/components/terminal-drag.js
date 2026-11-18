@@ -321,6 +321,218 @@
   ns.getHangarDropCfg = () => hangarDropCfg;
   ns.measurePillStrip = (sourceStrip, btn, startX, startY, selector = '.agy-tab') =>
     window.AgyUI?.measureStrip?.(sourceStrip, btn, startX, startY, selector) || null;
+
+  ns.inspectHangarPointerOverInstance = function inspectHangarPointerOverInstance(
+    clientX,
+    clientY,
+    draggedSidecarId,
+    checkShells,
+    cfg
+  ) {
+    document
+      .querySelectorAll?.('.merge-drop-target, .drop-target, .drop-left, .drop-right')
+      .forEach((el) => el.classList?.remove('merge-drop-target', 'drop-target', 'drop-left', 'drop-right'));
+    const resetShellPills = (keepShell = null) => {
+      for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
+        if (shell !== keepShell && shell.dataset.instanceTabId !== draggedSidecarId) {
+          shell
+            .querySelectorAll?.(`${cfg.pillSel}:not(.is-dragging-source), .agy-tab-add, .agy-tab-add-btn`)
+            .forEach((el) => ns.setTabShift?.(el, 0));
+        }
+      }
+    };
+    if (!cfg.isKindTabId(draggedSidecarId)) {
+      resetShellPills();
+      return null;
+    }
+    const rectOf = (el) => (ns.getUnshiftedRect ? ns.getUnshiftedRect(el) : el.getBoundingClientRect());
+    const srcEl = document.querySelector?.(`.agy-tab[data-sidecar-id="${draggedSidecarId}"]`);
+    const srcR = srcEl ? rectOf(srcEl) : null;
+    for (const el of document.querySelectorAll?.('.agy-tab[data-sidecar-id]') || []) {
+      const sid = el.dataset.sidecarId;
+      const r = rectOf(el);
+      if (
+        !sid ||
+        sid === draggedSidecarId ||
+        !cfg.isKindTabId(sid) ||
+        r.width <= 0 ||
+        clientY < r.top - 18 ||
+        clientY > r.bottom + (!checkShells ? 18 : 4)
+      ) {
+        continue;
+      }
+      const same = srcEl && srcEl.parentElement === el.parentElement;
+      const leftMargin = same && srcR && srcR.left < r.left ? 0 : r.width * 0.12;
+      const rightMargin = same && srcR && srcR.left > r.left ? 0 : r.width * 0.12;
+      if (clientX >= r.left + leftMargin && clientX <= r.right - rightMargin) {
+        resetShellPills();
+        el.classList.add('merge-drop-target');
+        return { targetInstanceTabId: sid, zone: 'hub-tab', pane: el.dataset.pane || 'single' };
+      }
+    }
+    if (!checkShells) {
+      resetShellPills();
+      return null;
+    }
+    for (const shell of document.querySelectorAll?.(cfg.shellSel) || []) {
+      const targetInstanceTabId = shell.dataset.instanceTabId;
+      const sRect = shell.getBoundingClientRect();
+      if (
+        !targetInstanceTabId ||
+        targetInstanceTabId === draggedSidecarId ||
+        cfg.isShellHidden(shell) ||
+        sRect.width === 0 ||
+        clientX < sRect.left ||
+        clientX > sRect.right ||
+        clientY < sRect.top ||
+        clientY > sRect.bottom
+      ) {
+        continue;
+      }
+      resetShellPills(shell);
+      const strip = shell.querySelector('.agy-tab-strip');
+      const tRect = (shell.querySelector('.term-toolbar') || strip)?.getBoundingClientRect();
+      shell.classList.add('drop-target');
+      strip?.classList.add('drop-target');
+      const pills = Array.from(strip?.querySelectorAll(cfg.pillSel) || []);
+      const addBtn = strip?.querySelector?.('.agy-tab-add, .agy-tab-add-btn, [data-role="add-tab"], [data-role="agy-add-tab"]');
+      let index = pills.length;
+      if (tRect && clientY <= tRect.bottom + 18) {
+        const hitIdx = pills.findIndex((p) => clientX < rectOf(p).right);
+        index = hitIdx >= 0 ? hitIdx : pills.length;
+        pills.forEach((p, i) => ns.setTabShift?.(p, i >= index ? 68 : 0));
+        if (addBtn) ns.setTabShift?.(addBtn, 68);
+      } else {
+        pills.forEach((p) => ns.setTabShift?.(p, 0));
+        if (addBtn) ns.setTabShift?.(addBtn, 0);
+      }
+      return { targetInstanceTabId, zone: 'strip', index, pane: cfg.getShellPane(shell) };
+    }
+    resetShellPills();
+    return null;
+  };
+
+  ns.bindCrossInstancePillDrag = function bindCrossInstancePillDrag(el, cfg) {
+    if (el?.dataset && el.dataset.tabId === undefined) {
+      el.dataset.tabId = cfg.itemId || 'tab';
+    }
+    const st = { dropAction: null, hoverTimer: null, hoverTargetId: '', previewedId: '' };
+    const clearHover = (resetPreview, slot) => {
+      if (st.hoverTimer) {
+        clearTimeout(st.hoverTimer);
+      }
+      Object.assign(st, { hoverTimer: null, hoverTargetId: '' });
+      if (resetPreview && st.previewedId) {
+        st.previewedId = '';
+        ns.getHangarDropCfg?.()?.onPreviewTerminalSlot?.('', slot);
+      }
+    };
+    window.AgyUI?.bindTabDragController?.(el, {
+      stripEl: () => (typeof cfg.sessionsEl === 'function' ? cfg.sessionsEl() : cfg.sessionsEl),
+      tabSelector: '.agy-tab',
+      pinnedRole: cfg.pinnedRole,
+      ignoreSelector: cfg.ignoreSelector,
+      shouldDetach: cfg.shouldDetach,
+      createGhost: cfg.createGhost,
+      onDragStart: (e, dragState) => {
+        st.dropAction = null;
+        cfg.onDragStart?.(e, dragState);
+      },
+      onOutOfRailMove: (e, dragState) => {
+        const curTabId = cfg.getTabId();
+        const sourceSlot = cfg.getSlot();
+        const dropCfg = ns.getHangarDropCfg?.() || {};
+        document
+          .querySelectorAll?.('.drop-left, .drop-right, .drop-target, .merge-drop-target, .split-drop-target')
+          .forEach((n) =>
+            n.classList?.remove(
+              'drop-left',
+              'drop-right',
+              'drop-target',
+              'merge-drop-target',
+              'split-drop-target'
+            )
+          );
+        const ownHit = cfg.checkOwnTarget?.(e, dragState, () => clearHover(true, sourceSlot));
+        if (ownHit) {
+          st.dropAction = ownHit;
+          return true;
+        }
+        dragState.sourceTabs.forEach((sib, i) =>
+          ns.setTabShift?.(sib, dragState.draggedIndex >= 0 && i > dragState.draggedIndex ? -dragState.draggedSlot : 0)
+        );
+        if (dragState.addBtn) {
+          ns.setTabShift?.(dragState.addBtn, dragState.draggedIndex >= 0 ? -dragState.draggedSlot : 0);
+        }
+        const mergeHit = cfg.inspectMerge(e.clientX, e.clientY, curTabId, true);
+        if (mergeHit) {
+          if (
+            mergeHit.zone === 'hub-tab' &&
+            mergeHit.pane !== 'single' &&
+            mergeHit.pane !== sourceSlot &&
+            st.hoverTargetId !== mergeHit.targetInstanceTabId
+          ) {
+            clearHover(false, sourceSlot);
+            st.hoverTargetId = mergeHit.targetInstanceTabId;
+            st.hoverTimer = setTimeout(() => {
+              Object.assign(st, { hoverTimer: null, previewedId: mergeHit.targetInstanceTabId });
+              dropCfg.onPreviewTerminalSlot?.(mergeHit.targetInstanceTabId, mergeHit.pane);
+            }, 350);
+          } else if (mergeHit.zone !== 'hub-tab') {
+            clearHover(false, sourceSlot);
+          }
+          st.dropAction = { type: 'merge', target: mergeHit };
+          return true;
+        }
+        clearHover(true, sourceSlot);
+        st.dropAction = cfg.checkStageTarget?.(e) || ns.checkOutOfRailPromote?.(e, sourceSlot, cfg.isKindTabId);
+        return true;
+      },
+      onDrop: (_e, finishedState, cancelled) => {
+        const slot = cfg.getSlot();
+        const dropCfg = ns.getHangarDropCfg?.() || {};
+        cfg.onDragEnd?.();
+        ns.clearAllTermDropIndicators?.();
+        if (cancelled || !finishedState) {
+          clearHover(true, slot);
+          return;
+        }
+        if (finishedState.locked || st.dropAction?.type === 'same') {
+          clearHover(true, slot);
+          cfg.onSameDrop(
+            finishedState.locked ? { zone: 'strip', index: finishedState.dropIdx } : st.dropAction.target
+          );
+          return;
+        }
+        if (st.dropAction?.type === 'merge') {
+          clearHover(false, slot);
+          st.previewedId = '';
+          const res = cfg.onMergeDrop(st.dropAction.target);
+          if (res) {
+            dropCfg.onMergeIntoTerminalTab?.(res);
+          } else {
+            dropCfg.onPreviewTerminalSlot?.('', slot);
+          }
+        } else if (st.dropAction?.type === 'promote') {
+          clearHover(true, slot);
+          const res = cfg.onPromoteDrop();
+          if (res?.newSidecarId) {
+            dropCfg.onPromoteToHangarTab?.({
+              sidecarId: res.newSidecarId,
+              replacedSidecarId: res.replacedSidecarId,
+              targetPane: st.dropAction.pane,
+              beforeTabId: st.dropAction.beforeTabId,
+            });
+          }
+        }
+      },
+      onClick: () => {
+        el.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+        cfg.onClick?.();
+      },
+    });
+  };
+
   ns.inspectHangarPointerOverTerminal = (clientX, clientY, draggedSidecarId, checkShells = true) =>
     ns.inspectHangarPointerOverInstance?.(clientX, clientY, draggedSidecarId, checkShells, {
       isKindTabId: ns.isTerminalTabId,
