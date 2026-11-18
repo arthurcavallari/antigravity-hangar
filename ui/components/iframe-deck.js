@@ -201,11 +201,11 @@
         d.pane = !splitEnabled ? 'single' : (e.clientY < midY ? 'top' : 'bottom');
         d.drop = btn._sc?.isTerminal
           ? ns.inspectHangarPointerOverTerminal?.(e.clientX, e.clientY, curId, d.pane !== pane)
-          : (btn._sc?.isSideChat ? ns.inspectHangarPointerOverSideChat?.(e.clientX, e.clientY, curId, d.pane !== pane) : null);
+          : null;
         return Boolean(d.drop || d.pane !== pane);
       },
       getMergeSpanFactor: (sib) => (
-        (btn._sc?.isTerminal && sib?._sc?.isTerminal) || (btn._sc?.isSideChat && sib?._sc?.isSideChat) ? 0.12 : 1.0
+        btn._sc?.isTerminal && sib?._sc?.isTerminal ? 0.12 : 1.0
       ),
       onOutOfRailMove: (e, dragState) => {
         document.querySelectorAll('.split-drop-target').forEach((el) => el.classList.remove('split-drop-target'));
@@ -236,8 +236,7 @@
         Array.from(targetStrip?.querySelectorAll('.agy-tab[data-sidecar-id]') || []).forEach((sib) => {
           const sibPin = sib.dataset.pinned === 'true';
           const r = ns.getUnshiftedRect ? ns.getUnshiftedRect(sib) : sib.getBoundingClientRect();
-          const sameKind = (btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId)) ||
-            (btn._sc?.isSideChat && ns.isSideChatTabId?.(sib.dataset.sidecarId));
+          const sameKind = Boolean(btn._sc?.isTerminal && ns.isTerminalTabId?.(sib.dataset.sidecarId));
           const beforeSib = (isPin && !sibPin) || (isPin === sibPin && e.clientX < r.left + r.width * (sameKind ? 0.12 : 0.5));
           if (inBar && d.beforeId === null && beforeSib) {
             d.beforeId = sib.dataset.sidecarId;

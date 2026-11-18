@@ -210,9 +210,8 @@
       promptText: String(rawPayload?.promptText || opts.promptText || ''),
       autoSubmit: Boolean(rawPayload?.autoSubmit ?? opts.autoSubmit),
     };
-    const popOut = Boolean(opts.popOut);
     const existing = opts.targetCascadeId ? sc.threads.find((t) => t.cascadeId === opts.targetCascadeId) : null;
-    const targetTabId = existing ? ns._resolveSideChatTabId(existing.cascadeId) : ns.SIDECHAT_TAB_ID;
+    const targetTabId = ns.SIDECHAT_TAB_ID;
     const box = ns.ensureSideChatBox(targetTabId, root);
     Object.assign(box, {
       _toastRoot: hostEl || root,
@@ -228,38 +227,29 @@
       box.classList?.remove?.('hidden');
     };
     if (existing) {
-      if (!ns._resolveSideChatRootId(existing.cascadeId)) {
-        openMain();
-      }
+      openMain();
       box._syncThreadsUi?.(existing.cascadeId, hasQuote ? payload : null);
       ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: opts.pane || '' });
       return box;
     }
     ns._syncSideChatPreview?.(box._els, payload.selectionContent);
-    if (!popOut) {
-      openMain();
-    }
+    openMain();
     Promise.resolve(
       ns.ensureSideChatThread({
         parentConversationId: box._convId,
         labelHint: hasQuote ? payload.cleanName : '',
-        forceNew: Boolean(opts.forceNewThread || popOut),
-        popOut,
+        forceNew: Boolean(opts.forceNewThread),
         quotePayload: hasQuote ? payload : null,
       })
     ).then((th) => {
-      const tId = th?.cascadeId ? (popOut ? `${ns.SIDECHAT_TAB_PREFIX}${th.cascadeId}` : ns.SIDECHAT_TAB_ID) : '';
-      if (tId) {
-        if (!popOut) {
-          openMain();
-        }
-        const targetBox = popOut ? Object.assign(ns.ensureSideChatBox(tId, root), { _convId: box._convId }) : box;
-        targetBox._syncThreadsUi?.(th.cascadeId, hasQuote ? payload : null);
-        ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId: tId, pane: opts.pane || '' });
+      if (th?.cascadeId) {
+        openMain();
+        box._syncThreadsUi?.(th.cascadeId, hasQuote ? payload : null);
+        ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: opts.pane || '' });
       }
     });
-    if (!popOut && !opts.skipActivate) {
-      ns.notifySideChatState({ activateTab: true, targetTabId: ns.SIDECHAT_TAB_ID, pane: opts.pane || '' });
+    if (!opts.skipActivate) {
+      ns.notifySideChatState({ activateTab: true, targetTabId, pane: opts.pane || '' });
     }
     return box;
   };
@@ -277,7 +267,7 @@
   ns.openTerminalMiniComposer = function openTerminalMiniComposer(hostEl, rawPayload = {}, opts = {}) {
     const sc = getSc();
     const root = hostEl || document.body;
-    const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || '');
+    const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator?.platform || '');
     if (!root || typeof document?.createElement !== 'function') return null;
     const payload = rawPayload?.cleanName ? rawPayload : ns.buildTerminalScopePayload(rawPayload || {});
     let mini = root._hangarMiniComposer;
@@ -469,7 +459,7 @@
     const isDomArg = firstArg && typeof firstArg.appendChild === 'function' && !firstArg.containerEl;
     const opts = isDomArg ? secondArg : (firstArg || {});
     const hostEl = isDomArg ? firstArg : (firstArg?.containerEl || document.body);
-    const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || '');
+    const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator?.platform || '');
     const resolveMeta = () =>
       typeof opts.getTerminalMeta === 'function'
         ? (opts.getTerminalMeta() || {})

@@ -1,4 +1,4 @@
-/** @fileoverview Docked Side Chat pane controller and iframe lifecycle. */
+/** @fileoverview Docked Side Chat companion pane controller and iframe lifecycle. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   const store = ns.sideChatStore;
@@ -58,7 +58,8 @@
     if (!type || !String(type).startsWith('hangar-sidechat-')) return;
     if (!isTrustedSideChatMessage(e)) return;
     const payload = e.data?.payload || {};
-    const tabId = ns._resolveSideChatTabId?.(payload.cascadeId) || ns.SIDECHAT_TAB_ID;
+    const tabId = ns.SIDECHAT_TAB_ID;
+    const box = sc.boxes.get(tabId) || ns._sideChatBox;
     if (type === 'hangar-sidechat-quote-injected') {
       store ? store.markThreadActivity(payload.cascadeId, true) : (() => {
         const th = sc.threads.find((t) => t.cascadeId === payload.cascadeId);
@@ -66,16 +67,13 @@
           th.hasActivity = true;
         }
       })();
-      sc.boxes.forEach((b) => {
-        if (b._pendingQuote) {
-          b._pendingQuote = null;
-        }
-      });
+      if (box?._pendingQuote) {
+        box._pendingQuote = null;
+      }
     } else if (type === 'hangar-sidechat-open-terminal') {
       if (payload.cascadeId) {
         overviewOpenIds.delete(payload.cascadeId);
       }
-      const box = sc.boxes.get(tabId);
       if (box) {
         box._overviewOpen = false;
       }
@@ -95,15 +93,13 @@
           overviewOpenIds.delete(payload.cascadeId);
         }
       }
-      sc.boxes.forEach((b, id) => {
-        if (!payload.cascadeId || ns.getActiveSideChatId(id) === payload.cascadeId) {
-          b._overviewOpen = isOpen;
-          b._els?.overviewBtn?.classList?.toggle?.('active', b._overviewOpen);
-          if (!isOpen) {
-            b._els?.overviewBtn?.blur?.();
-          }
+      if (box && (!payload.cascadeId || ns.getActiveSideChatId() === payload.cascadeId)) {
+        box._overviewOpen = isOpen;
+        box._els?.overviewBtn?.classList?.toggle?.('active', box._overviewOpen);
+        if (!isOpen) {
+          box._els?.overviewBtn?.blur?.();
         }
-      });
+      }
     } else if (type === 'hangar-sidechat-foreign-nav') {
       const expCid = payload.expectedCascadeId || payload.cascadeId || '';
       const isForeign = payload.active !== undefined ? Boolean(payload.active) : Boolean(payload.cascadeId && payload.cascadeId !== expCid);
@@ -114,23 +110,20 @@
           foreignNavIds.delete(expCid);
         }
       }
-      sc.boxes.forEach((b, id) => {
-        if (!expCid || ns.getActiveSideChatId(id) === expCid) {
-          b._els?.backBtn?.classList?.toggle?.('hidden', !isForeign);
-        }
-      });
+      if (box && (!expCid || ns.getActiveSideChatId() === expCid)) {
+        box._els?.backBtn?.classList?.toggle?.('hidden', !isForeign);
+      }
     } else if (type === 'hangar-sidechat-switch-cascade' && sc.threads.some((t) => t.cascadeId === payload.cascadeId)) {
-      ns.setActiveSideChatId(tabId, payload.cascadeId);
-      sc.boxes.get(tabId)?._syncThreadsUi?.(payload.cascadeId, null);
+      ns.setActiveSideChatId(payload.cascadeId);
+      box?._syncThreadsUi?.(payload.cascadeId, null);
       ns.notifySideChatState?.({ activateTab: true, targetTabId: tabId });
     } else if (type === 'hangar-sidechat-open-parent') {
       const parentId = String(payload.parentConversationId || '').trim();
       if (!parentId) return;
       if (sc.threads.some((t) => t.cascadeId === parentId)) {
-        const targetTab = ns._resolveSideChatTabId?.(parentId) || tabId;
-        ns.setActiveSideChatId(targetTab, parentId);
-        sc.boxes.get(targetTab)?._syncThreadsUi?.(parentId, null);
-        ns.notifySideChatState?.({ activateTab: true, targetTabId: targetTab });
+        ns.setActiveSideChatId(parentId);
+        box?._syncThreadsUi?.(parentId, null);
+        ns.notifySideChatState?.({ activateTab: true, targetTabId: tabId });
       } else {
         window.sidecar?.toggleConversation?.(parentId);
       }
@@ -149,7 +142,6 @@
           targetTabId = hit;
         }
       }
-      const box = sc.boxes.get(tabId);
       ns.notifySideChatState?.({
         activateTab: true,
         targetTabId,
@@ -158,7 +150,7 @@
     }
   });
 
-    const syncPreview = (ns._syncSideChatPreview = function syncPreview(els, rawSel) {
+  const syncPreview = (ns._syncSideChatPreview = function syncPreview(els, rawSel) {
     const sel = String(rawSel || '').trim();
     const lines = sel ? sel.split(/\r?\n/) : [];
     els.badge.textContent = '';
@@ -169,15 +161,10 @@
     els.preview.classList?.toggle?.('hidden', !sel);
   });
 
-  ns.ensureSideChatBox = function ensureSideChatBox(instanceTabId, root) {
-    let box =
-      sc.boxes.get(instanceTabId) ||
-      (instanceTabId === ns.SIDECHAT_TAB_ID ? (root?._hangarQuoteComposer || ns._sideChatBox) : null);
+  ns.ensureSideChatBox = function ensureSideChatBox(_instanceTabId, root) {
+    const curTabId = ns.SIDECHAT_TAB_ID;
+    let box = sc.boxes.get(curTabId) || root?._hangarQuoteComposer || ns._sideChatBox;
     if (box) return box;
-    let curTabId = instanceTabId;
-    let curRootId = instanceTabId.startsWith(ns.SIDECHAT_TAB_PREFIX)
-      ? instanceTabId.slice(ns.SIDECHAT_TAB_PREFIX.length)
-      : '';
     box = mkEl('div', 'term-quote-composer', {}, { dockMode: 'docked', instanceTabId: curTabId });
     const hdr = mkEl('div', 'term-toolbar term-quote-composer-hdr');
     const sessionsEl = mkEl('agy-tab-strip', 'agy-tab-strip agy-tab-strip-sub', {}, { role: 'sessions' });
@@ -198,42 +185,11 @@
         parentConversationId: box._convId || '',
         labelHint: '',
         forceNew: true,
-        rootId: curRootId,
       });
       if (thread?.cascadeId) {
         box._syncThreadsUi(thread.cascadeId, null);
       }
       ns.notifySideChatState();
-    };
-
-    const handlePopoutOrMerge = (targetCid = '') => {
-      const actCid =
-        targetCid ||
-        ns.getActiveSideChatId(curTabId) ||
-        ns.getInstanceSideChats(sc.threads, curRootId)[0]?.cascadeId ||
-        '';
-      if (!actCid) return;
-      if (curRootId) {
-        ns.demoteSideChatTabIntoInstance(curTabId, { targetInstanceTabId: ns.SIDECHAT_TAB_ID, zone: 'strip' });
-        ns.notifySideChatState({
-          activateTab: true,
-          targetTabId: ns.SIDECHAT_TAB_ID,
-          removedSidecarId: curTabId,
-          replacedSidecarId: { from: curTabId, to: ns.SIDECHAT_TAB_ID },
-          pane: box.dataset?.slot || '',
-        });
-        return;
-      }
-      const res = ns.promoteSideChatToHangarBar({ cascadeId: actCid, instanceTabId: curTabId });
-      if (res?.newSidecarId) {
-        ns.notifySideChatState({
-          activateTab: true,
-          targetTabId: res.newSidecarId,
-          replacedSidecarId: res.replacedSidecarId,
-          afterTabId: curTabId,
-          pane: box.dataset?.slot || '',
-        });
-      }
     };
 
     const hide = (closeOpts = {}) => ns.closeSideChatDrawer({ deleteAll: true, ...closeOpts });
@@ -259,7 +215,7 @@
       { type: 'button', title: 'Return to the active Side Chat thread', textContent: '↩ Back to Side Chat' },
       { role: 'sidechat-back' },
       () => {
-        const actCid = ns.getActiveSideChatId(curTabId);
+        const actCid = ns.getActiveSideChatId();
         if (actCid) {
           foreignNavIds.delete(actCid);
         }
@@ -311,9 +267,9 @@
       { type: 'button', title: 'Delete Side Chat', ariaLabel: 'Delete Side Chat', html: ns.iconSvg?.('delete', 15) || '🗑' },
       { action: 'kill', role: 'sidechat-delete' },
       () => {
-        const activeId = ns.getActiveSideChatId(curTabId);
+        const activeId = ns.getActiveSideChatId();
         if (activeId) {
-          ns.deleteSideChatsByIds([activeId], curTabId);
+          ns.deleteSideChatsByIds([activeId]);
         } else {
           ns.closeSideChatDrawer({ deleteAll: true, notify: true });
         }
@@ -327,7 +283,7 @@
       { action: 'overview', role: 'sidechat-overview' },
       () => {
         box._overviewOpen = !box._overviewOpen;
-        const actCid = ns.getActiveSideChatId(curTabId);
+        const actCid = ns.getActiveSideChatId();
         if (actCid) {
           if (box._overviewOpen) {
             overviewOpenIds.add(actCid);
@@ -352,21 +308,6 @@
     );
     overviewBtn.setAttribute?.('aria-label', 'Toggle Overview Panel');
     overviewBtn.setAttribute?.('aria-pressed', 'false');
-    const popoutLabel = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
-    const popoutBtn = mkEl(
-      'button',
-      'agy-icon-btn',
-      {
-        type: 'button',
-        title: popoutLabel,
-        ariaLabel: popoutLabel,
-        html: ns.iconSvg?.('dock_to_right', 14) || '⧉',
-      },
-      { action: 'popout', role: 'sidechat-popout' },
-      () => handlePopoutOrMerge()
-    );
-    popoutBtn.setAttribute?.('aria-label', popoutLabel);
-    popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
     const dockBtn = mkEl(
       'button',
       'agy-icon-btn term-sidechat-btn hidden',
@@ -384,7 +325,6 @@
       newThreadBtn,
       deleteBtn,
       overviewBtn,
-      popoutBtn,
       threadSelect,
       hint,
       dockBtn,
@@ -410,8 +350,8 @@
 
     threadSelect.addEventListener?.('change', (e) => {
       e.stopPropagation?.();
-      if (!threadSelect.value || threadSelect.value === ns.getActiveSideChatId(curTabId)) return;
-      ns.setActiveSideChatId(curTabId, threadSelect.value);
+      if (!threadSelect.value || threadSelect.value === ns.getActiveSideChatId()) return;
+      ns.setActiveSideChatId(threadSelect.value);
       box._syncThreadsUi(threadSelect.value, null);
       ns.notifySideChatState();
     });
@@ -443,7 +383,7 @@
           if (box._overviewOpen) {
             f.contentWindow?.postMessage({ type: 'hangar-sidechat-toggle-overview', open: true }, '*');
           }
-          if (box._pendingQuote && f.dataset?.loadedCascadeId === ns.getActiveSideChatId(curTabId)) {
+          if (box._pendingQuote && f.dataset?.loadedCascadeId === ns.getActiveSideChatId()) {
             f.contentWindow?.postMessage({ type: 'hangar-inject-terminal-quote', payload: box._pendingQuote }, '*');
           }
         } catch {
@@ -470,34 +410,35 @@
       dockBtn,
       deleteBtn,
       overviewBtn,
-      popoutBtn,
       sessionsEl,
       chatFrame,
       initialFrame: chatFrame,
       mainBar,
       hint,
     };
-    box._setInstance = (nextTabId, nextRootId) => {
-      curTabId = nextTabId;
-      curRootId = nextRootId;
-      Object.assign(box.dataset || {}, { instanceTabId: curTabId });
-      const nextPopoutLabel = curRootId ? 'Merge back into main Side Chat tab' : 'Pin Side Chat Tab to Top Bar';
-      popoutBtn.title = nextPopoutLabel;
-      popoutBtn.setAttribute?.('aria-label', nextPopoutLabel);
-      popoutBtn.setAttribute?.('aria-pressed', String(Boolean(curRootId)));
-      popoutBtn.classList?.toggle?.('active', Boolean(curRootId));
+
+    const syncSelectOptions = (selectedCid) => {
+      const optsMarkup = sc.threads
+        .map((t) => {
+          const safeId = ns.escHtml?.(t.cascadeId) || t.cascadeId;
+          const safeTitle = ns.escHtml?.(ns.resolveSideChatTitle(t)) || ns.resolveSideChatTitle(t);
+          return `<option value="${safeId}"${t.cascadeId === selectedCid ? ' selected' : ''}>${safeTitle}</option>`;
+        })
+        .join('');
+      ns.setHtml(threadSelect, ns.rawHtml ? ns.rawHtml(optsMarkup) : optsMarkup);
+      if (selectedCid) threadSelect.value = selectedCid;
     };
 
-    const { renderSessionStrip } = ns.createSideChatStripController({
+    const { renderSessionStrip: baseRenderSessionStrip } = ns.createSideChatStripController({
       sessionsEl,
-      popoutBtn,
-      getTabId: () => curTabId,
-      getRootId: () => curRootId,
-      getSlot: () => box.dataset?.slot || 'top',
+      getConversationId: () => box._convId || '',
       spawnNewInInstance,
-      handlePopoutOrMerge,
       syncThreadsUi: (cid, q) => box._syncThreadsUi(cid, q),
     });
+    const renderSessionStrip = () => {
+      syncSelectOptions(ns.getActiveSideChatId() || sc.threads[0]?.cascadeId || '');
+      baseRenderSessionStrip();
+    };
 
     box._syncThreadsUi = (targetCascadeId, quoteToInject) => {
       backBtn.classList?.toggle?.('hidden', !foreignNavIds.has(targetCascadeId));
@@ -507,16 +448,7 @@
       if (!box._overviewOpen) {
         overviewBtn.blur?.();
       }
-      ns.setActiveSideChatId(curTabId, targetCascadeId);
-      const optsMarkup = ns.getInstanceSideChats(sc.threads, curRootId)
-        .map((t) => {
-          const safeId = ns.escHtml?.(t.cascadeId) || t.cascadeId;
-          const safeTitle = ns.escHtml?.(ns.resolveSideChatTitle(t)) || ns.resolveSideChatTitle(t);
-          return `<option value="${safeId}"${t.cascadeId === targetCascadeId ? ' selected' : ''}>${safeTitle}</option>`;
-        })
-        .join('');
-      ns.setHtml(threadSelect, ns.rawHtml ? ns.rawHtml(optsMarkup) : optsMarkup);
-      threadSelect.value = targetCascadeId;
+      ns.setActiveSideChatId(targetCascadeId);
       const th = sc.threads.find((t) => t.cascadeId === targetCascadeId);
       if (quoteToInject && (quoteToInject.selectionContent || quoteToInject.terminalId)) {
         if (th) {
@@ -589,64 +521,59 @@
 
     Object.assign(box, { _renderSessionStrip: renderSessionStrip, _submit: submit, _hide: hide });
     sc.boxes.set(curTabId, box);
-    if (curTabId === ns.SIDECHAT_TAB_ID && root) {
+    if (root) {
       root._hangarQuoteComposer = box;
     }
-    if (curTabId === ns.SIDECHAT_TAB_ID) {
-      ns._sideChatBox = box;
-    }
+    ns._sideChatBox = box;
     return box;
   };
 
-  ns.renderSideChatSlot = function renderSideChatSlot({ viewportEl, topSlotId, bottomSlotId, splitEnabled } = {}) {
-    const isScSlot = (id) => Boolean(ns.isSideChatTabId(id) && (id !== ns.SIDECHAT_TAB_ID || sc.isOpen));
+  ns.renderSideChatSlot = function renderSideChatSlot({
+    viewportEl,
+    topSlotId,
+    bottomSlotId,
+    splitEnabled,
+    conversationId = '',
+  } = {}) {
+    const isScSlot = (id) => Boolean(id === ns.SIDECHAT_TAB_ID && sc.isOpen);
     const topAct = isScSlot(topSlotId);
     const botAct = Boolean(splitEnabled && bottomSlotId && bottomSlotId !== topSlotId && isScSlot(bottomSlotId));
-    if (topAct && viewportEl) {
-      ns.ensureSideChatBox(topSlotId, viewportEl);
+    if ((topAct || botAct) && viewportEl) {
+      ns.ensureSideChatBox(ns.SIDECHAT_TAB_ID, viewportEl);
     }
-    if (botAct && viewportEl) {
-      ns.ensureSideChatBox(bottomSlotId, viewportEl);
+    const cleanConv = conversationId && conversationId !== '_new' ? String(conversationId) : '';
+    const box = sc.boxes.get(ns.SIDECHAT_TAB_ID) || ns._sideChatBox;
+    if (!box) return;
+    if (cleanConv) {
+      box._convId = cleanConv;
     }
-    for (const [tabId, box] of sc.boxes.entries()) {
-      const inTop = Boolean(topAct && tabId === topSlotId);
-      const inBot = Boolean(botAct && tabId === bottomSlotId);
-      const isVisible = inTop || inBot;
-      if (viewportEl && !viewportEl.contains?.(box)) {
-        viewportEl.appendChild?.(box);
+    const isVisible = topAct || botAct;
+    if (viewportEl && !viewportEl.contains?.(box)) {
+      viewportEl.appendChild?.(box);
+    }
+    Object.assign(box.dataset, { dockMode: 'docked', slot: botAct ? 'bottom' : 'top' });
+    box.classList?.toggle?.('slot-top', topAct);
+    box.classList?.toggle?.('slot-bottom', botAct);
+    const wasBoxHidden = Boolean(box.classList?.contains?.('hidden'));
+    box.classList?.toggle?.('hidden', !isVisible);
+    const effVis = Boolean(isVisible && !ns.isHostHidden?.());
+    if (wasBoxHidden === isVisible || box.dataset.jetboxVisible !== (effVis ? '1' : '0')) {
+      box.dataset.jetboxVisible = effVis ? '1' : '0';
+      try {
+        box._els?.chatFrame?.contentWindow?.postMessage(
+          { type: effVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
+          '*'
+        );
+      } catch {
+        /* ignore */
       }
-      Object.assign(box.dataset, { dockMode: 'docked', slot: inBot ? 'bottom' : 'top' });
-      box.classList?.toggle?.('slot-top', inTop);
-      box.classList?.toggle?.('slot-bottom', inBot);
-      const wasBoxHidden = Boolean(box.classList?.contains?.('hidden'));
-      box.classList?.toggle?.('hidden', !isVisible);
-      const effVis = Boolean(isVisible && !ns.isHostHidden?.());
-      if (wasBoxHidden === isVisible || box.dataset.jetboxVisible !== (effVis ? '1' : '0')) {
-        box.dataset.jetboxVisible = effVis ? '1' : '0';
-        try {
-          box._els?.chatFrame?.contentWindow?.postMessage(
-            { type: effVis ? 'hangar-jetbox-shown' : 'hangar-jetbox-hidden', focus: false },
-            '*'
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-      if (isVisible) {
-        const rId = tabId.startsWith(ns.SIDECHAT_TAB_PREFIX) ? tabId.slice(ns.SIDECHAT_TAB_PREFIX.length) : '';
-        const actCid =
-          ns.getActiveSideChatId(tabId) ||
-          ns.getInstanceSideChats(sc.threads, rId)[0]?.cascadeId ||
-          rId;
-        if (actCid && box._els?.chatFrame?.dataset?.loadedCascadeId !== actCid) {
-          box._syncThreadsUi?.(actCid, null);
-        } else {
-          box._renderSessionStrip?.();
-        }
-      }
-      if (tabId !== ns.SIDECHAT_TAB_ID && !sc.poppedIds.has(tabId.slice(ns.SIDECHAT_TAB_PREFIX.length))) {
-        box.remove?.();
-        sc.boxes.delete(tabId);
+    }
+    if (isVisible) {
+      const actCid = ns.getActiveSideChatId() || sc.threads[0]?.cascadeId || '';
+      if (actCid && box._els?.chatFrame?.dataset?.loadedCascadeId !== actCid) {
+        box._syncThreadsUi?.(actCid, null);
+      } else {
+        box._renderSessionStrip?.();
       }
     }
   };
@@ -711,16 +638,9 @@
         threads: [],
         activeId: '',
       });
-      sc.poppedIds.clear();
+      sc.pendingRenames.clear();
       foreignNavIds.clear();
       overviewOpenIds.clear();
-      Object.keys(sc.groupMap).forEach((k) => delete sc.groupMap[k]);
-      sc.activeByInstance.clear();
-      for (const [id, b] of sc.boxes.entries()) {
-        if (id === ns.SIDECHAT_TAB_ID) continue;
-        b.remove?.();
-        sc.boxes.delete(id);
-      }
       const cf = ns._sideChatBox?._els?.chatFrame;
       if (ns._sideChatBox?._els?.sessionsEl) {
         ns.clear(ns._sideChatBox._els.sessionsEl);
@@ -732,9 +652,7 @@
         cf.src = 'about:blank';
       }
     } else {
-      const drawerCids = sc.threads
-        .filter((t) => t?.cascadeId && !t.rootId && !sc.poppedIds?.has?.(t.cascadeId))
-        .map((t) => t.cascadeId);
+      const drawerCids = sc.threads.filter((t) => t?.cascadeId).map((t) => t.cascadeId);
       for (const cid of drawerCids) {
         const frame = sc.frames?.get?.(cid);
         if (frame?.dataset) {
@@ -753,7 +671,7 @@
       }
       ns.apiCall?.('/api/terminal/sidechat/close-stream', {
         cascadeIds: drawerCids,
-        all: (sc.poppedIds?.size || 0) === 0,
+        all: true,
       })?.catch?.(() => {});
     }
     sc.isOpen = false;

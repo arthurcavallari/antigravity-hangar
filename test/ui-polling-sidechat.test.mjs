@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { extractNativeSideQuestions } from '../lib/state-orchestrator.mjs';
 
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const flush = async () => {
@@ -402,5 +403,282 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
     await flush();
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__sidechat__');
     assert.equal(window.Hangar.getSideChatState().isOpen, true);
+  });
+
+  it('extractNativeSideQuestions extracts parent annotations and falls back to resident child titles', () => {
+    assert.equal(extractNativeSideQuestions({ trajectorySummaries: {} }, ''), null);
+    assert.equal(extractNativeSideQuestions({ trajectorySummaries: {} }, '_new'), null);
+    assert.equal(extractNativeSideQuestions({ trajectorySummaries: {} }, 'conv-missing'), null);
+
+    const extracted = extractNativeSideQuestions(
+      {
+        trajectorySummaries: {
+          'conv-main': {
+            annotations: {
+              sideQuestionCascadeIds: ['sq-1', 'sq-2', 'sq-1'],
+              sideQuestionTitles: { 'sq-1': '  Check   Redis TTL  ' },
+            },
+          },
+          'sq-2': {
+            annotations: { title: 'Fallback Child Title' },
+          },
+        },
+      },
+      'conv-main',
+    );
+    assert.deepEqual(extracted, {
+      conversationId: 'conv-main',
+      cascadeIds: ['sq-1', 'sq-2'],
+      titles: {
+        'sq-1': 'Check Redis TTL',
+        'sq-2': 'Fallback Child Title',
+      },
+    });
+  });
+
+  it('syncs native /btw Side Questions, bidirectional titles, stale-poll protection, and native Promote/Delete pruning', async () => {
+    const sharedSession = new Map([['hangar.activeTabId:c:/proj/sync', 'context-monitor']]);
+    const sessionStorage = {
+      getItem: (k) => sharedSession.get(k) || '',
+      setItem: (k, v) => sharedSession.set(k, String(v)),
+      removeItem: (k) => sharedSession.delete(k),
+    };
+    const localMap = new Map();
+    const localStorage = {
+      getItem: (k) => localMap.get(k) ?? null,
+      setItem: (k, v) => localMap.set(k, String(v)),
+      removeItem: (k) => localMap.delete(k),
+    };
+    let sharedLayout = {
+      pinnedTopSidecarId: 'context-monitor',
+      topSplitTabIds: ['context-monitor'],
+      closedTabIds: [],
+      tabOrder: ['context-monitor'],
+      splitViewEnabled: false,
+    };
+    let currentConvId = 'conv-sync-a';
+    let nativePayload = {
+      conversationId: 'conv-sync-a',
+      cascadeIds: ['sq-btw-1'],
+      titles: { 'sq-btw-1': 'Check port 5432' },
+    };
+    const renameRequests = [];
+    let lastTabBarProps = null;
+    let intervalTick = null;
+    let now = 1000;
+
+    const makeEl = (tag = 'div') => ({
+      tagName: tag.toUpperCase(),
+      className: '',
+      dataset: {},
+      style: { setProperty() {} },
+      children: [],
+      classList: {
+        _s: new Set(),
+        add(...c) { c.forEach((x) => this._s.add(x)); },
+        remove(...c) { c.forEach((x) => this._s.delete(x)); },
+        toggle(c, f) {
+          const on = f === undefined ? !this._s.has(c) : Boolean(f);
+          this._s[on ? 'add' : 'delete'](c);
+          return on;
+        },
+        contains(c) { return this._s.has(c); },
+      },
+      appendChild(ch) { this.children.push(ch); ch.parentElement = this; return ch; },
+      append(...chs) { chs.forEach((c) => this.appendChild(c)); },
+      remove() {
+        if (this.parentElement) {
+          this.parentElement.children = this.parentElement.children.filter((c) => c !== this);
+        }
+      },
+      contains(ch) { return this.children.includes(ch); },
+      setAttribute(k, v) { this[k] = v; },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener() {},
+    });
+    const viewportEl = makeEl('div');
+    const document = {
+      hidden: false,
+      body: makeEl('body'),
+      createElement: (t) => makeEl(t),
+      getElementById: (id) => (id === 'main-viewport' ? viewportEl : null),
+      addEventListener() {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const window = {
+      location: { search: '?conversationId=_new' },
+      addEventListener() {},
+      Hangar: {
+        apiCall: async (path, body) => {
+          if (path === '/api/state') {
+            return {
+              activeWorkspace: {
+                workspacePath: 'C:\\Proj\\Sync',
+                workspaceName: 'Sync',
+                conversationId: currentConvId,
+              },
+              nativeSideQuestions: JSON.parse(JSON.stringify(nativePayload)),
+              sidecars: [{ sidecarId: 'context-monitor', displayName: 'Context Monitor', matchesWorkspace: true, isRunning: true }],
+              terminals: [],
+              layout: JSON.parse(JSON.stringify(sharedLayout)),
+            };
+          }
+          if (path === '/api/terminal/sidechat/start') {
+            return { ok: true, cascadeId: 'sq-hangar-2', parentConversationId: body.parentConversationId };
+          }
+          if (path === '/api/sidechat/rename') {
+            renameRequests.push(body);
+            return { ok: true };
+          }
+          if (path === '/api/layout/update') {
+            const prevWsLayouts = sharedLayout.workspaceLayouts || {};
+            const prevScByWs = sharedLayout.sideChatStateByWorkspace || {};
+            sharedLayout = { ...sharedLayout, ...body };
+            if (body.workspaceLayouts) sharedLayout.workspaceLayouts = { ...prevWsLayouts, ...body.workspaceLayouts };
+            if (body.sideChatStateByWorkspace) sharedLayout.sideChatStateByWorkspace = { ...prevScByWs, ...body.sideChatStateByWorkspace };
+            return { ok: true, layout: sharedLayout };
+          }
+          return {};
+        },
+      },
+    };
+    window.parent = {};
+    const ctx = vm.createContext({
+      window, document, URLSearchParams, sessionStorage, localStorage, console,
+      Date: { now: () => now }, setTimeout,
+      setInterval: (fn) => {
+        intervalTick ??= fn;
+        return 0;
+      },
+    });
+    for (const rel of [
+      'core.js',
+      'components/terminal-groups.js',
+      'components/sidechat-store.js',
+      'components/sidechat-strip.js',
+      'components/sidechat-pane.js',
+      'components/terminal-quote.js',
+      'components/tab-bar.js',
+      'components/layout-controller.js',
+    ]) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+    window.Hangar.renderTabBar = (props) => {
+      lastTabBarProps = props;
+    };
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    // 1. Native /btw thread arrives on /api/state without stealing focus or spawning background iframes
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
+    assert.equal(viewportEl.children.length, 0, 'must not spawn Side Chat DOM/iframe while context-monitor is active');
+    const part1 = window.Hangar.partitionSplitTabs(lastTabBarProps.sidecars, lastTabBarProps.layout, []);
+    assert.ok(part1.workspaceTabs.some((t) => t.sidecarId === '__sidechat__'));
+    assert.equal(window.Hangar.getSideChatState().threads.length, 1);
+    assert.equal(window.Hangar.getSideChatState().threads[0].title, 'Check port 5432');
+
+    // Alt+Shift+L mini-composer lists the native /btw thread
+    const mini = window.Hangar.openTerminalMiniComposer(
+      makeEl('div'),
+      { terminalId: 't1', cleanName: 'pwsh', selectionContent: 'ERR' },
+      { conversationId: 'conv-sync-a' },
+    );
+    mini._setTargetCascadeId('sq-btw-1');
+    assert.ok(mini._els.sideChatBtn.innerHTML.includes('Ask in Check port 5432'));
+
+    // 2. User spawns a Hangar Quote & Ask thread; stale /api/state poll BEFORE LS lists sq-hangar-2 must NOT prune it
+    window.Hangar.openTerminalQuoteComposer(
+      viewportEl,
+      { terminalId: 't1', cleanName: 'pwsh', selectionContent: 'netstat', promptText: 'why', autoSubmit: true },
+      { conversationId: 'conv-sync-a', forceNewThread: true },
+    );
+    await flush();
+    assert.equal(window.Hangar.getSideChatState().threads.length, 2);
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__sidechat__');
+
+    // Stale poll still only has ['sq-btw-1']
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.equal(
+      window.Hangar.getSideChatState().threads.some((t) => t.cascadeId === 'sq-hangar-2'),
+      true,
+      'stale /api/state poll must never prune a newly started Hangar Side Chat before LS registers it',
+    );
+
+    // 3. LS registers sq-hangar-2 and generates an automatic summary title
+    nativePayload = {
+      conversationId: 'conv-sync-a',
+      cascadeIds: ['sq-btw-1', 'sq-hangar-2'],
+      titles: {
+        'sq-btw-1': 'Check port 5432',
+        'sq-hangar-2': 'Investigate netstat listener',
+      },
+    };
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.equal(
+      window.Hangar.getSideChatState().threads.find((t) => t.cascadeId === 'sq-hangar-2')?.title,
+      'Investigate netstat listener',
+    );
+
+    // 4. Optimistic Hangar rename resists stale in-flight /api/state poll, settles, then accepts native UI rename
+    window.Hangar.recordSideChatRename('sq-hangar-2', 'Hangar Custom Title');
+    // Stale poll still carries 'Investigate netstat listener'
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.equal(
+      window.Hangar.resolveSideChatTitle(window.Hangar.getSideChatState().threads.find((t) => t.cascadeId === 'sq-hangar-2')),
+      'Hangar Custom Title',
+    );
+
+    // Server catches up with 'Hangar Custom Title', then user renames in Antigravity's native UI to 'Native Final Title'
+    nativePayload.titles['sq-hangar-2'] = 'Hangar Custom Title';
+    now += 3500;
+    intervalTick();
+    await flush();
+    nativePayload.titles['sq-hangar-2'] = 'Native Final Title';
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.equal(
+      window.Hangar.resolveSideChatTitle(window.Hangar.getSideChatState().threads.find((t) => t.cascadeId === 'sq-hangar-2')),
+      'Native Final Title',
+    );
+
+    // 5. Native Promote to Conversation / Delete removes both threads -> Hangar prunes frames and falls back to context-monitor
+    nativePayload = { conversationId: 'conv-sync-a', cascadeIds: [], titles: {} };
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.equal(window.Hangar.getSideChatState().threads.length, 0);
+    assert.equal(window.Hangar.getSideChatState().isOpen, false);
+    assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
+
+    // 6. Switching between conversations in the same workspace swaps unpinned native threads cleanly
+    nativePayload = {
+      conversationId: 'conv-sync-a',
+      cascadeIds: ['sq-conv-a'],
+      titles: { 'sq-conv-a': 'Thread in Conv A' },
+    };
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.deepEqual(Array.from(window.Hangar.getSideChatState().threads, (t) => t.cascadeId), ['sq-conv-a']);
+
+    currentConvId = 'conv-sync-b';
+    nativePayload = {
+      conversationId: 'conv-sync-b',
+      cascadeIds: ['sq-conv-b'],
+      titles: { 'sq-conv-b': 'Thread in Conv B' },
+    };
+    now += 3500;
+    intervalTick();
+    await flush();
+    assert.deepEqual(Array.from(window.Hangar.getSideChatState().threads, (t) => t.cascadeId), ['sq-conv-b']);
   });
 });

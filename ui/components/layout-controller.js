@@ -39,16 +39,40 @@
     return removedId && removedId !== to ? next.filter((id) => id !== removedId) : next;
   }
 
+  const normLegacyScTabId = (id = '') => ns.normalizeLegacySideChatTabId
+    ? ns.normalizeLegacySideChatTabId(id)
+    : (String(id || '').startsWith('sidechat__') ? (ns.SIDECHAT_TAB_ID || '__sidechat__') : String(id || ''));
+  const normLegacyScTabList = (arr) => ns.normalizeLegacySideChatTabList
+    ? ns.normalizeLegacySideChatTabList(arr)
+    : (Array.isArray(arr) ? [...new Set(arr.map(normLegacyScTabId).filter(Boolean))] : []);
+    const sanitizeLegacySideChatLayout = (layout = {}) => {
+      const out = { ...layout };
+      if (typeof out.pinnedTopSidecarId === 'string') {
+        if (out.pinnedTopSidecarId.startsWith('sidechat__')) {
+          out._legacyPinnedSideChatTabId = out.pinnedTopSidecarId;
+        }
+        out.pinnedTopSidecarId = normLegacyScTabId(out.pinnedTopSidecarId);
+      }
+      if (Array.isArray(out.tabOrder)) out.tabOrder = normLegacyScTabList(out.tabOrder);
+      if (Array.isArray(out.topSplitTabIds)) out.topSplitTabIds = normLegacyScTabList(out.topSplitTabIds);
+      if (Array.isArray(out.pinnedTabIds)) out.pinnedTabIds = normLegacyScTabList(out.pinnedTabIds);
+      if (Array.isArray(out.closedTabIds)) {
+        out.closedTabIds = out.closedTabIds.filter((id) => !String(id || '').startsWith('sidechat__'));
+      }
+      return out;
+    };
+
   ns.createLayoutController = function createLayoutController(ctx) {
     const { state, els, hangarConversationId, bumpLayoutSeq, getRenderedLists, renderAll, refreshHangarState } = ctx;
     const part = () => ns.partitionSplitTabs(state.sidecars, state.layout, state.terminals);
-    const convId = () => (hangarConversationId !== '_new' ? hangarConversationId : '');
+    const convId = () => state.activeWorkspace?.conversationId || (hangarConversationId !== '_new' ? hangarConversationId : '');
     const getWsStateKey = (wsPath = state.activeWorkspace?.workspacePath) => (
       String(wsPath || '').trim().replace(/\\/g, '/').toLowerCase()
     );
-    const getScopeStateKey = (wsKey = getWsStateKey()) => (
-      wsKey || (hangarConversationId ? `conv:${hangarConversationId}` : '')
-    );
+    const getScopeStateKey = (wsKey = getWsStateKey()) => {
+      const effConv = state.activeWorkspace?.conversationId || hangarConversationId;
+      return wsKey || (effConv ? `conv:${effConv}` : '');
+    };
     const getActiveTabStorageKey = (wsKey = getWsStateKey()) => (
       wsKey ? `${ACTIVE_TAB_KEY}:${wsKey}` : (hangarConversationId ? `${ACTIVE_TAB_KEY}:conv:${hangarConversationId}` : ACTIVE_TAB_KEY)
     );
@@ -94,13 +118,10 @@
       return ns.apiCall?.('/api/layout/update', { ...patch, workspaceLayouts: state.layout.workspaceLayouts });
     }
 
-    const isTabValidForWindow = (id) => {
-      const scPrefix = ns.SIDECHAT_TAB_PREFIX || 'sidechat__';
+    const isTabValidForWindow = (rawId) => {
+      const id = normLegacyScTabId(rawId);
       const termPrefix = ns.TERMINAL_TAB_PREFIX || 'terminal__';
       if (!id || (id === ns.SIDECHAT_TAB_ID && !ns.getSideChatState?.()?.isOpen)) return false;
-      if (String(id).startsWith(scPrefix)) {
-        return Boolean(ns.getPoppedSideChatIds?.()?.has(String(id).slice(scPrefix.length)));
-      }
       if (String(id).startsWith(termPrefix)) {
         const termId = String(id).slice(termPrefix.length);
         return Boolean(
@@ -111,7 +132,8 @@
       return id !== ns.TERMINAL_TAB_ID || Boolean(ns.isMainTerminalOpen?.());
     };
 
-    const rememberWindowActiveTab = (id, wsKey = getWsStateKey()) => {
+    const rememberWindowActiveTab = (rawId, wsKey = getWsStateKey()) => {
+      const id = normLegacyScTabId(rawId);
       if (!id) return;
       try {
         sessionStorage[isTabValidForWindow(id) ? 'setItem' : 'removeItem'](getActiveTabStorageKey(wsKey), id);
@@ -123,9 +145,9 @@
     const applyWorkspaceLayout = (raw = {}, wsKey = getWsStateKey()) => {
       const scopeKey = getScopeStateKey(wsKey);
       const hasScopedMaps = Boolean(raw?.workspaceLayouts || raw?.sideChatStateByWorkspace);
-      if (!scopeKey && !hasScopedMaps) return { ...raw };
+      if (!scopeKey && !hasScopedMaps) return sanitizeLegacySideChatLayout(raw);
       const wsLayout = (scopeKey && raw?.workspaceLayouts?.[scopeKey]) || {};
-      const merged = { ...raw, ...WS_LAYOUT_DEFAULTS, ...wsLayout };
+      const merged = sanitizeLegacySideChatLayout({ ...raw, ...WS_LAYOUT_DEFAULTS, ...wsLayout });
       const wsSc = scopeKey ? raw?.sideChatStateByWorkspace?.[scopeKey] : null;
       if (
         wsSc?.isOpen &&
@@ -140,9 +162,9 @@
     const withWindowActiveTab = (layout, wsKey = getWsStateKey()) => {
       let w = '';
       try {
-        w = sessionStorage.getItem(getActiveTabStorageKey(wsKey)) || '';
+        w = normLegacyScTabId(sessionStorage.getItem(getActiveTabStorageKey(wsKey)) || '');
         if (!w && wsKey) {
-          const fallbackW = sessionStorage.getItem(getActiveTabStorageKey('')) || '';
+          const fallbackW = normLegacyScTabId(sessionStorage.getItem(getActiveTabStorageKey('')) || '');
           if (fallbackW && isTabValidForWindow(fallbackW)) {
             w = fallbackW;
             sessionStorage.setItem(getActiveTabStorageKey(wsKey), fallbackW);
@@ -152,10 +174,11 @@
         /* ignore */
       }
       if (isTabValidForWindow(w)) return { ...layout, pinnedTopSidecarId: w };
-      if (layout?.pinnedTopSidecarId && !isTabValidForWindow(layout.pinnedTopSidecarId)) {
+      const curPinned = normLegacyScTabId(layout?.pinnedTopSidecarId || '');
+      if (curPinned && !isTabValidForWindow(curPinned)) {
         return { ...layout, pinnedTopSidecarId: 'context-monitor' };
       }
-      return layout;
+      return curPinned !== layout?.pinnedTopSidecarId ? { ...layout, pinnedTopSidecarId: curPinned } : layout;
     };
 
     function insertTabIntoOrder(sidecarId, { beforeTabId = '', afterTabId = '' } = {}) {
@@ -400,12 +423,11 @@
         return;
       }
       if (action === 'new-sidechat') {
-        const unpoppedSc = ns.getInstanceSideChats?.() || [];
-        const popOut = Boolean(ns.getSideChatState?.()?.isOpen && !closed.has(ns.SIDECHAT_TAB_ID) && unpoppedSc.length > 0);
+        const scList = ns.getInstanceSideChats?.() || [];
+        const wasOpen = Boolean(ns.getSideChatState?.()?.isOpen && !closed.has(ns.SIDECHAT_TAB_ID) && scList.length > 0);
         ns.openTerminalQuoteComposer?.(els.mainViewport, {}, {
           conversationId: convId(),
-          forceNewThread: Boolean(popOut || !unpoppedSc.length),
-          popOut,
+          forceNewThread: Boolean(wasOpen || !scList.length),
           pane,
         });
         return;
@@ -446,8 +468,6 @@
       for (const id of ids) {
         if (id === ns.SIDECHAT_TAB_ID) {
           ns.closeSideChatDrawer?.({ deleteAll: false, notify: false });
-        } else if (id.startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__')) {
-          await ns.closeSideChatInstance?.(id);
         } else if (id === ns.TERMINAL_TAB_ID) {
           ns.setMainTerminalOpen?.(false);
         } else if (id.startsWith('terminal__')) {
@@ -455,14 +475,11 @@
           await ns.closeTerminalInstance?.(id, state.terminals);
         }
         const shouldDeleteClosed = id.startsWith('terminal__') ||
-          id.startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__') ||
           (id === ns.TERMINAL_TAB_ID && !(ns.getInstanceTerminals?.(state.terminals, '') || []).length);
         closed[shouldDeleteClosed ? 'delete' : 'add'](id);
       }
       state.layout.closedTabIds = [...closed];
-      const removedPopped = new Set(
-        ids.filter((id) => id.startsWith('terminal__') || id.startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__')),
-      );
+      const removedPopped = new Set(ids.filter((id) => id.startsWith('terminal__')));
       if (removedPopped.size && Array.isArray(state.layout.tabOrder)) {
         state.layout.tabOrder = state.layout.tabOrder.filter((id) => !removedPopped.has(id));
       }
@@ -484,15 +501,12 @@
     }
 
     async function handleDropIntoTerminal({ sourceSidecarId, targetInstanceTabId, zone, index, targetPaneId, side, pane }) {
-      const isSc = Boolean(ns.isSideChatTabId?.(sourceSidecarId));
-      const ok = isSc
-        ? ns.demoteSideChatTabIntoInstance?.(sourceSidecarId, { targetInstanceTabId, zone, index, pane })
-        : ns.demoteHangarTabIntoInstance?.(sourceSidecarId, { targetInstanceTabId, zone, index, targetPaneId, side });
+      const ok = ns.demoteHangarTabIntoInstance?.(sourceSidecarId, { targetInstanceTabId, zone, index, targetPaneId, side });
       if (!ok) {
         renderAll();
         return;
       }
-      const mainId = isSc ? ns.SIDECHAT_TAB_ID : ns.TERMINAL_TAB_ID;
+      const mainId = ns.TERMINAL_TAB_ID;
       const isMain = sourceSidecarId === mainId;
       await applyTerminalMergeLayout({
         removedSidecarId: isMain ? targetInstanceTabId : sourceSidecarId,

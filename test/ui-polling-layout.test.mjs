@@ -281,11 +281,12 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
       return window;
     };
 
-    // 1. Project window shows its terminals and side chats
+    // 1. Project window shows its terminals and migrates legacy popped sidechat__ tabs into singleton __sidechat__
     const projWin = await bootWindow('conv-proj-1');
     assert.equal(projWin.Hangar.isMainTerminalOpen(), true);
     assert.equal(projWin.Hangar.getSideChatState().isOpen, true);
     assert.equal(projWin.Hangar.getSideChatState().threads.length, 2);
+    assert.equal(lastTabBarProps.layout.tabOrder.some((id) => id.startsWith('sidechat__')), false);
 
     // 2. Switching to a projectless conversation in the same window clears project terminals and side chats
     currentWsPath = '';
@@ -294,7 +295,6 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(projWin.Hangar.isMainTerminalOpen(), false);
     assert.equal(projWin.Hangar.getSideChatState().isOpen, false);
     assert.equal(projWin.Hangar.getSideChatState().threads.length, 0);
-    assert.equal(projWin.Hangar.getSideChatState().poppedIds.length, 0);
     assert.equal(lastTabBarProps.hasActiveWorkspace, false);
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
 
@@ -303,7 +303,6 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(noProjWin.Hangar.isMainTerminalOpen(), false);
     assert.equal(noProjWin.Hangar.getSideChatState().isOpen, false);
     assert.equal(noProjWin.Hangar.getSideChatState().threads.length, 0);
-    assert.equal(noProjWin.Hangar.getSideChatState().poppedIds.length, 0);
     const part = noProjWin.Hangar.partitionSplitTabs(
       lastTabBarProps.sidecars,
       lastTabBarProps.layout,
@@ -566,7 +565,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(sidechatPaneSrc, /newThreadBtn\.setAttribute\?\.\('aria-label', 'New Side Chat'\)/);
     assert.match(sidechatPaneSrc, /deleteBtn\.setAttribute\?\.\('aria-label', 'Delete Side Chat'\)/);
     assert.match(sidechatPaneSrc, /overviewBtn\.setAttribute\?\.\('aria-pressed', String\(Boolean\(box\._overviewOpen\)\)\)/);
-    assert.match(sidechatPaneSrc, /popoutBtn\.setAttribute\?\.\('aria-pressed', String\(Boolean\(curRootId\)\)\)/);
+    assert.doesNotMatch(sidechatPaneSrc, /sidechat-popout/);
     assert.match(sidechatPaneSrc, /closeBtn\.setAttribute\?\.\('aria-label', 'Close Side Chat'\)/);
   });
 

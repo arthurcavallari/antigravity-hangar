@@ -4,9 +4,12 @@
   ns.EXTENSIONS_TAB_ID = '__extensions__';
   ns.TERMINAL_TAB_ID = ns.TERMINAL_TAB_ID || '__terminal__';
   ns.SIDECHAT_TAB_ID = ns.SIDECHAT_TAB_ID || '__sidechat__';
-  ns.SIDECHAT_TAB_PREFIX = ns.SIDECHAT_TAB_PREFIX || 'sidechat__';
-  ns.isSideChatTabId = ns.isSideChatTabId || ((tabId = '') => (
-    tabId === ns.SIDECHAT_TAB_ID || String(tabId || '').startsWith(ns.SIDECHAT_TAB_PREFIX)
+  ns.isSideChatTabId = ns.isSideChatTabId || ((tabId = '') => tabId === ns.SIDECHAT_TAB_ID);
+  const normScTabId = ns.normalizeLegacySideChatTabId || ((id = '') => (
+    String(id || '').startsWith('sidechat__') ? ns.SIDECHAT_TAB_ID : String(id || '')
+  ));
+  const normScTabList = ns.normalizeLegacySideChatTabList || ((arr) => (
+    Array.isArray(arr) ? [...new Set(arr.map(normScTabId).filter(Boolean))] : []
   ));
   const TERMINAL_TAB = {
     sidecarId: ns.TERMINAL_TAB_ID,
@@ -60,12 +63,13 @@
     const popped = ns.getPoppedTerminalIds?.() || new Set();
     const customTitles = ns.readCustomTermTitles?.() || {};
     const grpMap = ns.readGroupMap?.() || {};
-    const poppedSc = ns.getPoppedSideChatIds?.() || new Set();
-    const customScTitles = ns.readCustomSideChatTitles?.() || {};
-    const scGrpMap = ns.getSideChatGroupMap?.() || {};
-    const pinnedSet = new Set(Array.isArray(layout?.pinnedTabIds) ? layout.pinnedTabIds : []);
+    const pinnedSet = new Set(normScTabList(layout?.pinnedTabIds));
     const closedSet = new Set(
-      Array.isArray(layout?.closedTabIds) ? layout.closedTabIds.filter((id) => !pinnedSet.has(id)) : [],
+      Array.isArray(layout?.closedTabIds)
+        ? layout.closedTabIds
+            .filter((id) => !String(id || '').startsWith('sidechat__'))
+            .filter((id) => !pinnedSet.has(id))
+        : [],
     );
     const visibleTerms = Array.isArray(terminals)
       ? (layout?.showExternalTerminals === false ? terminals.filter((t) => !t?.isExternal) : terminals)
@@ -98,30 +102,10 @@
     });
     const scState = ns.getSideChatState?.();
     const allScThreads = scState?.threads || [];
-    const poppedScTabs = [...poppedSc].map((rootId, idx) => {
-      const sidecarId = `${ns.SIDECHAT_TAB_PREFIX}${rootId}`;
-      const instThreads = allScThreads.filter((t) => t.cascadeId === rootId || scGrpMap[t.cascadeId] === rootId);
-      const actCid = ns.getActiveSideChatId?.(sidecarId) || instThreads[0]?.cascadeId || rootId;
-      const actThread = instThreads.find((t) => t.cascadeId === actCid) || instThreads[0] || null;
-      const base = customScTitles[actCid] || actThread?.title || `Side Chat ${idx + 2}`;
-      const cnt = Math.max(1, instThreads.length);
-      return {
-        sidecarId,
-        sideChatId: rootId,
-        activeSideChatId: actCid,
-        displayName: cnt > 1 ? `${base} (${cnt})` : base,
-        statusBadge: 'RUNNING',
-        isVirtual: true,
-        isSideChat: true,
-        matchesWorkspace: true,
-      };
-    });
     const isTermBtn = layout?.terminalDisplayMode === 'button';
     const isExtBtn = layout?.extensionsDisplayMode === 'button';
-    const unpoppedSc = ns.getInstanceSideChats ? ns.getInstanceSideChats(allScThreads, '') : allScThreads;
     const hasSideChat = Boolean(
-      (scState?.isOpen || closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedSet.has(ns.SIDECHAT_TAB_ID) || unpoppedSc.length > 0) &&
-      (unpoppedSc.length > 0 || !poppedScTabs.length),
+      scState?.isOpen || closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedSet.has(ns.SIDECHAT_TAB_ID) || allScThreads.length > 0,
     );
     const hasMainTerm = typeof ns.isMainTerminalOpen === 'function'
       ? Boolean(ns.isMainTerminalOpen() || closedSet.has(ns.TERMINAL_TAB_ID) || pinnedSet.has(ns.TERMINAL_TAB_ID))
@@ -130,37 +114,37 @@
       ...(!isTermBtn && hasMainTerm ? [TERMINAL_TAB] : []),
       ...poppedTabs,
       ...(hasSideChat ? [SIDECHAT_TAB] : []),
-      ...poppedScTabs,
       ...(isExtBtn ? [] : [EXTENSIONS_TAB]),
     ];
     const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...virtualTabs].map((sc) => ({
       ...sc,
       isPinned: pinnedSet.has(sc.sidecarId),
-      canClose: Boolean(sc.terminalId || sc.sideChatId || sc.isTerminal || sc.isSideChat),
+      canClose: Boolean(sc.terminalId || sc.isTerminal || sc.isSideChat),
     }));
-    const orderIndex = new Map((Array.isArray(layout?.tabOrder) ? layout.tabOrder : []).map((id, idx) => [id, idx]));
+    const orderIndex = new Map(normScTabList(layout?.tabOrder).map((id, idx) => [id, idx]));
     if (orderIndex.size > 0) {
       allTabs.sort((a, b) => (orderIndex.get(a.sidecarId) ?? 9999) - (orderIndex.get(b.sidecarId) ?? 9999));
     }
     const openTabs = allTabs.filter((sc) => !closedSet.has(sc.sidecarId));
     const closedTabs = allTabs.filter((sc) => closedSet.has(sc.sidecarId));
     const workspaceTabs = [...openTabs.filter((sc) => sc.isPinned), ...openTabs.filter((sc) => !sc.isPinned)];
-    const defaultTopIds = layout?.pinnedTopSidecarId
-      ? [layout.pinnedTopSidecarId]
+    const effectivePinnedTop = normScTabId(layout?.pinnedTopSidecarId);
+    const defaultTopIds = effectivePinnedTop
+      ? [effectivePinnedTop]
       : (workspaceTabs[0] ? [workspaceTabs[0].sidecarId] : []);
-    const topSet = new Set(Array.isArray(layout?.topSplitTabIds) ? layout.topSplitTabIds : defaultTopIds);
+    const topSet = new Set(Array.isArray(layout?.topSplitTabIds) ? normScTabList(layout.topSplitTabIds) : defaultTopIds);
     const topTabs = workspaceTabs.filter((sc) => topSet.has(sc.sidecarId));
     const bottomTabs = workspaceTabs.filter((sc) => !topSet.has(sc.sidecarId));
-    const specialBtnId = (isExtBtn && layout?.pinnedTopSidecarId === ns.EXTENSIONS_TAB_ID) ||
-      (isTermBtn && hasMainTerm && layout?.pinnedTopSidecarId === ns.TERMINAL_TAB_ID)
-      ? layout.pinnedTopSidecarId
+    const specialBtnId = (isExtBtn && effectivePinnedTop === ns.EXTENSIONS_TAB_ID) ||
+      (isTermBtn && hasMainTerm && effectivePinnedTop === ns.TERMINAL_TAB_ID)
+      ? effectivePinnedTop
       : '';
     const activeSingleId = specialBtnId ||
-      workspaceTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId ||
+      workspaceTabs.find((sc) => sc.sidecarId === effectivePinnedTop)?.sidecarId ||
       workspaceTabs[0]?.sidecarId ||
       '';
     const activeTopId = specialBtnId ||
-      topTabs.find((sc) => sc.sidecarId === layout?.pinnedTopSidecarId)?.sidecarId ||
+      topTabs.find((sc) => sc.sidecarId === effectivePinnedTop)?.sidecarId ||
       topTabs[0]?.sidecarId ||
       '';
     return { workspaceTabs, topTabs, bottomTabs, closedTabs, activeSingleId, activeTopId, topSet, pinnedSet, closedSet };
@@ -194,16 +178,14 @@
           ? (updCount > 0 ? 'update' : '')
           : (badgeInfo.state || badgeInfo.cls || '');
     const isPoppedTerm = String(sc.sidecarId).startsWith('terminal__');
-    const isPoppedSc = String(sc.sidecarId).startsWith(ns.SIDECHAT_TAB_PREFIX || 'sidechat__');
-    const targetId = isPoppedTerm ? (sc.focusedTerminalId || sc.terminalId) : (sc.activeSideChatId || sc.sideChatId);
+    const targetId = isPoppedTerm ? (sc.focusedTerminalId || sc.terminalId) : '';
     const baseName = String(sc.displayName || '').replace(/\s+\(\d+\)$/, '');
-    const renameValue = (isPoppedTerm ? ns.readCustomTermTitles?.()?.[targetId] : ns.readCustomSideChatTitles?.()?.[targetId]) || baseName;
+    const renameValue = (isPoppedTerm ? ns.readCustomTermTitles?.()?.[targetId] : '') || baseName;
     return {
       id: sc.sidecarId,
       sc,
       targetId,
       isPoppedTerm,
-      isPoppedSc,
       displayName: sc.displayName,
       label: sc.displayName,
       icon,
@@ -211,11 +193,11 @@
       active: sc.sidecarId === activeId,
       pinned: Boolean(sc.isPinned),
       closable: Boolean(sc.canClose && !sc.isPinned),
-      closeTitle: ((sc.isSideChat && !sc.sideChatId) || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab',
+      closeTitle: (sc.isSideChat || (sc.isTerminal && !sc.terminalId)) ? 'Hide Tab' : 'Close Tab',
       externalBadge: Boolean(sc.isTerminal && sc.isExternal),
       externalTitle: 'Opened outside Hangar (shared with Antigravity)',
       statusDot,
-      renamable: isPoppedTerm || isPoppedSc,
+      renamable: isPoppedTerm,
       renameValue,
       title,
       dataset: {
@@ -260,9 +242,6 @@
         if (item.isPoppedTerm) {
           ns.saveCustomTermTitle?.(item.targetId, next);
           await ns.apiCall('/api/terminal/rename', { terminalId: item.targetId, title: next }).catch(() => {});
-        } else if (item.isPoppedSc) {
-          ns.saveCustomSideChatTitle?.(item.targetId, next);
-          await ns.apiCall('/api/sidechat/rename', { cascadeId: item.targetId, title: next }).catch(() => {});
         }
         ns.renderTabs?.();
       },
@@ -286,7 +265,7 @@
           ]
           : [];
         const isDestructive = Boolean(
-          curSc.canClose && !(curSc.isSideChat && !curSc.sideChatId) && !(curSc.isTerminal && !curSc.terminalId),
+          curSc.canClose && !curSc.isSideChat && !(curSc.isTerminal && !curSc.terminalId),
         );
         (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(e, [
           {
@@ -301,7 +280,7 @@
             disabled: isPinned,
             onClick: () => act({ action: 'close', targetIds: [curId], pane }),
           },
-          ...(curSc.isSideChat && !curSc.sideChatId
+          ...(curSc.isSideChat
             ? [{ id: 'delete-sidechat', label: 'Delete Side Chat', onClick: () => act({ action: 'delete-sidechat', pane }) }]
             : []),
           {

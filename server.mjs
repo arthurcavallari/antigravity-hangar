@@ -26,6 +26,7 @@ import {
 import { installRemotePlugin, pluginRequest, previewPluginPort, uninstallPlugin } from './lib/plugin-installer.mjs';
 import { inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from './lib/plugin-diagnostics.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
+import { renameTerminalSideChat } from './lib/jetbox-proxy.mjs';
 import { registerTerminalRoutes } from './lib/terminal-manager.mjs';
 
 const UI_DIR = join(realpathSync(dirname(fileURLToPath(import.meta.url))), 'ui');
@@ -97,11 +98,11 @@ app.api('/api/store/self-update', guardApi(async (d) => selfUpdateHangar({
   sha256: d?.sha256 ? String(d.sha256) : '',
   deferRestart: true,
 })), 'POST');
-app.api('/api/sidechat/rename', guardApi(async (ctx) => hangarRpc('UpdateConversationAnnotations', {
-  cascadeIds: [String(ctx?.body?.cascadeId || ctx?.cascadeId || '')].filter(Boolean),
-  cascadeId: String(ctx?.body?.cascadeId || ctx?.cascadeId || ''),
-  annotations: { title: String(ctx?.body?.title || ctx?.title || '') },
-  mergeAnnotations: true,
+app.api('/api/sidechat/rename', guardApi(async (ctx) => renameTerminalSideChat({
+  cascadeId: String(ctx?.body?.cascadeId ?? ctx?.cascadeId ?? ''),
+  parentConversationId: String(ctx?.body?.parentConversationId ?? ctx?.parentConversationId ?? ''),
+  title: String(ctx?.body?.title ?? ctx?.title ?? ''),
+  rpcFn: hangarRpc,
 })), 'POST');
 
 registerTerminalRoutes(app, { ResponseClass: Response });

@@ -4,7 +4,11 @@
   ns.EXTENSIONS_TAB_ID = '__extensions__';
   ns.TERMINAL_TAB_ID = '__terminal__';
   ns.SIDECHAT_TAB_ID = '__sidechat__';
-  ns.SIDECHAT_TAB_PREFIX = 'sidechat__';
+  ns.normalizeLegacySideChatTabId = (id = '') => (
+    String(id || '').startsWith('sidechat__') ? ns.SIDECHAT_TAB_ID : String(id || '')
+  );
+  ns.normalizeLegacySideChatTabList = (arr) =>
+    Array.isArray(arr) ? [...new Set(arr.map(ns.normalizeLegacySideChatTabId).filter(Boolean))] : [];
   ns.SIDECAR_IFRAME_ALLOW = [
     'clipboard-read',
     'clipboard-write',
