@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-10T00:00:00Z",
+  "generatedAt": "2026-11-18T00:00:00Z",
   "hangar": {
     "id": "hangar",
     "name": "Antigravity Hangar",
@@ -25,7 +25,7 @@
         "verified": true
       },
       "funding": "https://github.com/sponsors/arthurcavallari",
-      "latestVersion": "1.5.0",
+      "latestVersion": "1.6.2",
       "pricing": "free",
       "categories": [
         "telemetry",
@@ -57,7 +57,7 @@
         "verified": true
       },
       "funding": "https://github.com/sponsors/arthurcavallari",
-      "latestVersion": "0.3.1",
+      "latestVersion": "0.3.2",
       "pricing": "free",
       "categories": [
         "productivity"
@@ -66,8 +66,8 @@
       "license": "MIT",
       "homepage": "https://github.com/arthurcavallari/agy-plugin-porter",
       "release": {
-        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.3.1/agy-plugin-porter-plugin-0.3.1.tgz",
-        "sha256": "c95be882afa7b9b6dfff9a6604f6d1b3f3dbd2f6d28dc49f1be55820f4ee1907"
+        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.3.2/agy-plugin-porter-plugin-0.3.2.tgz",
+        "sha256": "f9b5ef047f5682208edb507b78e06076e85cd505f1284419d925d2505a38e8d1"
       }
     },
     {
