@@ -1004,8 +1004,7 @@ describe('Hangar plugin installer', () => {
       const srcDir = join(box.packagesDir, 'deploy-src');
       const outDir = join(box.packagesDir, 'deploy-out');
       writeTree(srcDir, {
-        '.claude-plugin/plugin.json': JSON.stringify({ name: 'deploy-pack', version: '1.0.0' }),
-        'skills/deploy/SKILL.md': [
+        '.agents/skills/deploy/SKILL.md': [
           '---',
           'name: deploy',
           'description: Production deploy workflow',
