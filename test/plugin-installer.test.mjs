@@ -1028,4 +1028,44 @@ describe('Hangar plugin installer', () => {
       box.cleanup();
     }
   });
+
+  it('handles enable-versioned-plugin-dirs layouts (plugins/<slug>/<ver> and plugins/<slug>@<ver>) in reducePlugin and listInstalledPlugins', () => {
+    const box = sandbox();
+    try {
+      writeTree(join(box.pluginsDir, 'nested-plug', '2.1.0'), {
+        'plugin.json': JSON.stringify({ name: 'nested-plug', displayName: 'Nested Plug', version: '2.1.0' }),
+      });
+      writeTree(join(box.pluginsDir, 'at-plug@1.4.0'), {
+        'plugin.json': JSON.stringify({ name: 'at-plug', displayName: 'At Plug', version: '1.4.0' }),
+      });
+      const hangarCfg = {
+        plugins: {
+          'nested-plug': { dir: 'nested-plug', installedVersion: '2.1.0', capabilityTier: 'TIER_1_TELEMETRY' },
+          'at-plug': { dir: 'at-plug', installedVersion: '1.4.0', capabilityTier: 'TIER_1_TELEMETRY' },
+        },
+      };
+      const listed = listInstalledPlugins(
+        {
+          plugins: [
+            { name: 'nested-plug', path: join(box.pluginsDir, 'nested-plug', '2.1.0'), skills: ['a'] },
+            { name: 'at-plug', path: join(box.pluginsDir, 'at-plug@1.4.0'), skills: [] },
+          ],
+        },
+        hangarCfg,
+        { pluginsDir: box.pluginsDir }
+      );
+      const byName = Object.fromEntries(listed.map((p) => [p.name, p]));
+      assert.equal(byName['nested-plug'].dir, 'nested-plug');
+      assert.equal(byName['nested-plug'].displayName, 'Nested Plug');
+      assert.equal(byName['nested-plug'].pluginId, 'nested-plug');
+      assert.equal(byName['nested-plug'].restartRequired, false);
+      assert.equal(byName['at-plug'].dir, 'at-plug@1.4.0');
+      assert.equal(byName['at-plug'].pluginId, 'at-plug');
+      assert.equal(byName['at-plug'].restartRequired, false);
+      assert.ok(hangarCfg.plugins['nested-plug'], 'must not prune nested versioned plugin record');
+      assert.ok(hangarCfg.plugins['at-plug'], 'must not prune @semver plugin record');
+    } finally {
+      box.cleanup();
+    }
+  });
 });

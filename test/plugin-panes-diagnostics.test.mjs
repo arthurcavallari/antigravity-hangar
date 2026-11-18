@@ -502,4 +502,43 @@ describe('Hangar navigate messages, popped terminal focus, and plugin diagnostic
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('supports versioned plugin directories (nested <slug>/<ver> and @semver) in inspectInstalledPluginHealth and handleHangarNavigateMessage', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-ver-dirs-'));
+    try {
+      const v1 = join(tmp, 'stripe', '1.0.0');
+      const v2 = join(tmp, 'stripe', '1.2.0');
+      mkdirSync(v1, { recursive: true });
+      mkdirSync(v2, { recursive: true });
+      writeFileSync(join(v1, 'plugin.json'), JSON.stringify({ name: 'stripe', displayName: 'Stripe Old', version: '1.0.0' }), 'utf8');
+      writeFileSync(join(v2, 'plugin.json'), JSON.stringify({ name: 'stripe', displayName: 'Stripe Latest', version: '1.2.0' }), 'utf8');
+      writeFileSync(join(v2, 'server.mjs'), '// ok\n', 'utf8');
+      writeFileSync(
+        join(v2, 'mcp_config.json'),
+        JSON.stringify({ mcpServers: { api: { command: '${PLUGIN_ROOT}/server.mjs' } } }),
+        'utf8'
+      );
+
+      const diag = inspectInstalledPluginHealth(tmp, {});
+      assert.equal(diag.length, 1);
+      assert.equal(diag[0].id, 'stripe');
+      assert.equal(diag[0].displayName, 'Stripe Latest');
+      assert.equal(diag[0].version, '1.2.0');
+      assert.equal(diag[0].healthy, true);
+
+      const window = { location: { origin: 'http://127.0.0.1:58253', search: '' }, addEventListener() {} };
+      const ctx = vm.createContext({ window, document: {}, URL, URLSearchParams });
+      vm.runInContext(readFileSync(join(UI_DIR, 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+      assert.equal(
+        window.Hangar.handleHangarNavigateMessage({
+          origin: 'http://127.0.0.1:59049',
+          data: { type: 'hangar-navigate', targetTab: 'plugins', pluginId: 'figma@1.2.0+build1', targetId: 'figma@1.2.0+build1/viewer' },
+        }),
+        true
+      );
+      assert.equal(window.Hangar.activeNavigatedPluginId, 'figma@1.2.0+build1');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
