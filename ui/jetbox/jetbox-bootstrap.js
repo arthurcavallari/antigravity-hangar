@@ -1808,6 +1808,8 @@
     }
   }, true);
 
+  const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || navigator?.userAgent || '');
+
   function ensureAskButton() {
     const popup = document.querySelector?.('.selection-popup');
     const quoteBtn = popup?.querySelector?.('button:not([data-hangar-ask])');
@@ -1829,7 +1831,6 @@
       }
       const askBtn = document.createElement('button');
       const row = quoteBtn.parentElement || popup;
-      const isMac = /Mac|iPhone|iPad/i.test(navigator?.platform || navigator?.userAgent || '');
       askBtn.type = 'button';
       askBtn.className = ((quoteBtn.className || '') + ' border-l border-border whitespace-nowrap').trim();
       askBtn.setAttribute?.('data-hangar-ask', 'true');
@@ -1970,6 +1971,7 @@
       ? (cachedQuoteCtx?.selectionText ? cachedQuoteCtx : findTerminalContext(btn))
       : null;
     if (!ctx?.selectionText?.trim()) return;
+    cachedQuoteCtx = ctx;
     isDraggingQuote = true;
     saveQuoteFile(ctx);
     e.stopPropagation?.();
@@ -1997,6 +1999,7 @@
   });
 
   window.addEventListener('dragend', (e) => {
+    if (!isDraggingQuote) return;
     const ctx = cachedQuoteCtx;
     const sel = ctx?.selectionText?.trim() || '';
     const tid = ctx?.termId || terminalId;
@@ -2033,9 +2036,14 @@
           })
             .then((res) => (res?.json ? res.json() : null))
             .then((r) => {
-              if (r?.hostSync?.reason === 'no-cdp-port' && dropEffect === 'none' && document.body) {
+              if ((r?.reason || r?.hostSync?.reason) === 'no-cdp-port' && dropEffect === 'none' && document.body) {
+                const prior = document.body.querySelectorAll?.('[data-hangar-quote-toast]') || [];
+                for (const old of prior) {
+                  old.remove?.();
+                }
                 const toast = document.createElement('div');
                 toast.setAttribute('role', 'status');
+                toast.setAttribute('data-hangar-quote-toast', '1');
                 toast.textContent = `Quoted "${ttl}" — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`;
                 Object.assign(toast.style, {
                   position: 'fixed',

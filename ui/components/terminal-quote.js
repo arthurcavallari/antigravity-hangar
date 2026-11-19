@@ -578,7 +578,7 @@
             selectionContent: payload.selectionContent,
           })
             ?.then?.((r) => {
-              if (r?.hostSync?.reason === 'no-cdp-port' && dropEffect === 'none') {
+              if ((r?.reason || r?.hostSync?.reason) === 'no-cdp-port' && dropEffect === 'none') {
                 ns.showTerminalQuoteToast(
                   hostEl,
                   `Quoted "${payload.cleanName}" — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`
@@ -630,15 +630,17 @@
       if (payload.outsideFrame && payload.selectionContent) {
         const dropEffect = payload.dropEffect || 'none';
         const pasteChord = /Mac|iPhone|iPad/i.test(window.navigator?.platform || '') ? '⌘V' : 'Ctrl+V';
-        ns.apiCall('/api/terminal/ls-rpc', {
-          method: 'InjectQuoteDrop',
-          conversationId: effCid,
-          terminalId: term.terminalId,
-          title,
-          selectionContent: payload.selectionContent,
-        })
+        Promise.resolve(
+          ns.apiCall?.('/api/terminal/ls-rpc', {
+            method: 'InjectQuoteDrop',
+            conversationId: effCid,
+            terminalId: term.terminalId,
+            title,
+            selectionContent: payload.selectionContent,
+          })
+        )
           .then((r) => {
-            if (r?.hostSync?.reason === 'no-cdp-port' && dropEffect === 'none') {
+            if ((r?.reason || r?.hostSync?.reason) === 'no-cdp-port' && dropEffect === 'none') {
               ns.showTerminalQuoteToast(rootEl, `Quoted "${title}" — press ${pasteChord} in chat`);
             }
           })
