@@ -3131,4 +3131,39 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('shows clipboard paste toast on 2.33.0 outside-frame quote dragend when CDP port is absent (no-cdp-port)', async () => {
+    const toasts = [];
+    const windowObj = {
+      navigator: { platform: 'Win32' },
+      Hangar: {
+        apiCall: async () => ({ ok: true, hostSync: { ok: false, reason: 'no-cdp-port' } }),
+        copyTerminalQuoteToClipboard: (p) => ({ ...p, cleanName: p.title || 'term' }),
+        showTerminalQuoteToast: (_el, msg) => toasts.push(msg),
+        openTerminalMiniComposer() {},
+      },
+    };
+    const code = readFileSync(new URL('../ui/components/terminal-quote.js', import.meta.url), 'utf8');
+    vm.runInNewContext(code, { window: windowObj, document: {}, URL, setTimeout, clearTimeout });
+
+    // Re-attach spy after terminal-quote.js defines default showTerminalQuoteToast
+    windowObj.Hangar.showTerminalQuoteToast = (_el, msg) => toasts.push(msg);
+
+    windowObj.Hangar.handleJetboxQuoteEvent(
+      'hangar-jetbox-quote-dragend',
+      { outsideFrame: true, selectionContent: 'ERR_404', dropEffect: 'none' },
+      { rootEl: {}, term: { terminalId: 't-233' }, title: 'pwsh', conversationId: 'conv-1' }
+    );
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(toasts, ['Quoted "pwsh" — press Ctrl+V in chat']);
+
+    // When native HTML5 drop succeeded (dropEffect: 'copy'), no fallback toast is shown
+    windowObj.Hangar.handleJetboxQuoteEvent(
+      'hangar-jetbox-quote-dragend',
+      { outsideFrame: true, selectionContent: 'ERR_404', dropEffect: 'copy' },
+      { rootEl: {}, term: { terminalId: 't-233' }, title: 'pwsh', conversationId: 'conv-1' }
+    );
+    await new Promise((r) => setImmediate(r));
+    assert.equal(toasts.length, 1);
+  });
 });

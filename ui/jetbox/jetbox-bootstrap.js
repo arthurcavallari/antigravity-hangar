@@ -2018,6 +2018,7 @@
         dropEffect: e?.dataTransfer?.dropEffect || 'none',
       });
       if (outside && (!window.parent || window.parent === window)) {
+        const dropEffect = e?.dataTransfer?.dropEffect || 'none';
         try {
           sidecarFetch()('/api/terminal/ls-rpc', {
             method: 'POST',
@@ -2029,7 +2030,36 @@
               name: ttl,
               selectionContent: sel,
             }),
-          }).catch(() => {});
+          })
+            .then((res) => (res?.json ? res.json() : null))
+            .then((r) => {
+              if (r?.hostSync?.reason === 'no-cdp-port' && dropEffect === 'none' && document.body) {
+                const toast = document.createElement('div');
+                toast.setAttribute('role', 'status');
+                toast.textContent = `Quoted "${ttl}" — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`;
+                Object.assign(toast.style, {
+                  position: 'fixed',
+                  bottom: '12px',
+                  right: '12px',
+                  zIndex: '99999',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  background: 'var(--card, #18181b)',
+                  color: 'var(--foreground, #fafafa)',
+                  border: '1px solid var(--border, #27272a)',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
+                  pointerEvents: 'none',
+                });
+                document.body.appendChild(toast);
+                setTimeout(() => {
+                  try {
+                    toast.remove();
+                  } catch {}
+                }, 3200);
+              }
+            })
+            .catch(() => {});
         } catch {}
       }
     }

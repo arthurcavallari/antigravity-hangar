@@ -96,6 +96,7 @@
     'toggle-conversation',
     'add-artifact-comment',
     'sidecar-key-event',
+    'request-credential-refresh',
   ]);
 
   const isFromChildFrame = (src) => {

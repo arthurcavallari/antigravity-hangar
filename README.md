@@ -3,7 +3,7 @@
 <p>
   <a href="https://www.npmjs.com/package/antigravity-hangar"><img src="https://img.shields.io/npm/v/antigravity-hangar?logo=npm&color=cb3837" alt="npm version" height="20"></a>
   <a href="https://github.com/arthurcavallari/antigravity-hangar/actions/workflows/test.yml"><img src="https://github.com/arthurcavallari/antigravity-hangar/actions/workflows/test.yml/badge.svg" alt="Tests" height="20"></a>
-  <img src="https://img.shields.io/badge/Antigravity-2.0%E2%80%932.32.2-4285F4?logo=google&logoColor=white" alt="Antigravity 2.0–2.32.2" height="20">
+  <img src="https://img.shields.io/badge/Antigravity-2.0%E2%80%932.33.0-4285F4?logo=google&logoColor=white" alt="Antigravity 2.0–2.33.0" height="20">
   <img src="https://img.shields.io/node/v/antigravity-hangar?logo=nodedotjs&logoColor=white&color=339933" alt="Node.js version" height="20">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" height="20"></a>
   <a href="https://github.com/sponsors/arthurcavallari"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub" height="20"></a>
@@ -25,7 +25,7 @@ Mounts natively in Antigravity's Auxiliary (right-hand) Pane (`SIDECAR_UI_ENTRYP
 
 ## 2. Requirements
 
-- **Google Antigravity** `2.0` – `2.32.2` (Desktop / IDE with `SidecarManager` support)
+- **Google Antigravity** `2.0` – `2.33.0` (Desktop / IDE with `SidecarManager` support)
 - **Node.js** `>= 20.0.0` (zero third-party npm dependencies; powered by [`antigravity-sidecar-kit`](https://github.com/arthurcavallari/antigravity-sidecar-kit) and Antigravity's built-in `sidecar_sdk`)
 
 ---
