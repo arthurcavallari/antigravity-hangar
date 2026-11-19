@@ -7,7 +7,7 @@
   const buildChatFrameSrc = (cascadeId) => {
     const isLight = window.AgyShell ? !window.AgyShell.isHostDarkTheme() : Boolean(document.body?.classList?.contains?.('theme-light'));
     const uiTok = ns.getUiToken?.() || new URLSearchParams(window.location?.search || '').get('token') || '';
-    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=8${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
+    return `/jetbox-chat?cascadeId=${encodeURIComponent(cascadeId)}&hostTheme=${isLight ? 'light' : 'dark'}&v=9${uiTok ? `&token=${encodeURIComponent(uiTok)}` : ''}`;
   };
 
   const mkEl = (ns._mkSideChatEl = function mkEl(tag, className, { html: rawHtml, ...rest } = {}, ds = {}, onClick = null) {

@@ -834,6 +834,83 @@
     });
   }
 
+  const VCS_MUTATION_RE = /^(Git|Jj|Fig|Repo|Cog|CheckoutCommit|DiscardFileChanges|RevertToCascadeStep|Acknowledge)/;
+
+  function createVcsConnectStream(reqBody) {
+    let cancelled = false;
+    let afterSeq = 0;
+    let idlePolls = 0;
+    const convId = reqBody?.conversationId || effectiveCascadeId;
+    const streamKey = 'vcs-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    return new window.ReadableStream({
+      async start(controller) {
+        while (!cancelled) {
+          if (isJetboxPaused() && afterSeq > 0) {
+            await waitForNextPoll(5000);
+            continue;
+          }
+          let hadChunks = false;
+          let closed = false;
+          let errorCode = 0;
+          try {
+            const res = await sidecarFetch()('/api/terminal/vcs-poll', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                streamKey,
+                body: reqBody,
+                conversationId: convId,
+                afterSeq,
+              }),
+            });
+            if (res.ok === false) {
+              closed = true;
+              errorCode = 2;
+            } else {
+              const data = await res.json();
+              const chunks = data?.chunks || [];
+              hadChunks = chunks.length > 0;
+              for (const c of chunks) {
+                if (!c || c.seq <= afterSeq) continue;
+                afterSeq = c.seq;
+                const payload = c.rawJson ?? c.data;
+                if (payload) {
+                  controller.enqueue(encodeConnectFrame(payload, 0));
+                }
+              }
+              if (data?.closed) {
+                closed = true;
+                errorCode = Number(data?.errorCode) || 0;
+              }
+            }
+          } catch {
+            closed = true;
+            errorCode = 2;
+          }
+          if (cancelled) break;
+          if (closed) {
+            try {
+              controller.enqueue(encodeGrpcTrailer(errorCode));
+              controller.close();
+            } catch {}
+            return;
+          }
+          idlePolls = hadChunks ? 0 : Math.min(10, idlePolls + 1);
+          const delayMs = isJetboxHidden() ? 5000 : (idlePolls >= 3 ? 750 : 120);
+          await waitForNextPoll(delayMs);
+        }
+      },
+      cancel() {
+        cancelled = true;
+        sidecarFetch()('/api/terminal/vcs-poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ streamKey, action: 'close' }),
+        }).catch(() => {});
+      },
+    });
+  }
+
   async function fetchSanitizedChatSidecars() {
     try {
       const res = await sidecarFetch()('/api/terminal/ls-rpc', {
@@ -1034,6 +1111,15 @@
       if (method === 'WatchDirectory') {
         return makeGrpcStreamResponse([{ ready: true }]);
       }
+      if (method === 'WatchVersionControlState') {
+        if (mode !== 'chat') {
+          return makeGrpcStreamResponse([{ state: { vcsType: 0 } }]);
+        }
+        return new window.Response(createVcsConnectStream(decodeConnectRequest(init.body)), {
+          status: 200,
+          headers: GRPC_WEB_HEADERS,
+        });
+      }
       if (method === 'SubscribeToMcpServerStates' || method === 'SubscribeToPlugins') {
         const unaryMethod = method === 'SubscribeToMcpServerStates' ? 'GetMcpServerStates' : 'GetAllPlugins';
         const subRes = await sidecarFetch()('/api/terminal/ls-rpc', {
@@ -1079,6 +1165,9 @@
       let rpcPayload = await rpcRes.json().catch(() => ({}));
       if (rpcRes.ok === false) {
         return new window.Response(encodeGrpcTrailer(2), { status: 200, headers: GRPC_WEB_HEADERS });
+      }
+      if (mode === 'chat' && VCS_MUTATION_RE.test(method)) {
+        wakePollWaiters();
       }
       if (method === 'GetMendelFlags') {
         const rawExps = Array.isArray(rpcPayload?.experimentConfig?.experiments)

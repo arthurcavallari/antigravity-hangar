@@ -107,6 +107,7 @@ runSidecarSetup({
     'lib/jetbox-audio.mjs',
     'lib/jetbox-proxy.mjs',
     'lib/jetbox-rpc-policy.mjs',
+    'lib/jetbox-vcs.mjs',
     'lib/ls-rpc.mjs',
     'lib/package-installer.mjs',
     'lib/plugin-diagnostics.mjs',

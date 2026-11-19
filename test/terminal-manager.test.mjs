@@ -9,6 +9,7 @@ import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, closeTerminalSideChatStreams, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, renameTerminalSideChat, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
+import { evictStaleVcsStreams, pollVcsStream } from '../lib/jetbox-vcs.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
 
@@ -2864,5 +2865,270 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const chatMendelExps = parseConnectFrames(Buffer.from(await chatMendelRes.arrayBuffer())).frames[0].data.experimentConfig.experiments;
     assert.equal(chatMendelExps.find((x) => x.keyString === 'markdown-table-v2')?.disabled, false);
     assert.equal(chatMendelExps.find((x) => x.keyString === 'enable-notebook-rendering')?.disabled, false);
+  });
+
+  it('SC-14: streams WatchVersionControlState for Side Chat Review panel, forwards strict VCS actions, and aborts on cancel or close-stream', async () => {
+    const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+    const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+    const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
+    process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59985';
+    process.env.ANTIGRAVITY_CSRF_TOKEN = 'csrf-sc14';
+    process.env.ANTIGRAVITY_SIDECAR_ID = 'hangar';
+    try {
+      let vcsCtrl = null;
+      let upstreamAborted = 0;
+      let nextMode = 'git';
+      const seenUnary = [];
+      const apis = new Map();
+      registerTerminalRoutes(
+        { page() {}, api: (p, fn) => apis.set(p, fn) },
+        {
+          rpcFn: async (method, body) => {
+            if (body?.shouldFail) throw new Error(`${method} failed`);
+            seenUnary.push({ method, body });
+            if (method === 'GitStage') {
+              vcsCtrl?.enqueue(
+                encodeConnectFrame(
+                  {
+                    state: {
+                      vcsType: 4,
+                      currentRef: 'main',
+                      workingDirectoryChanges: [],
+                      stagedChanges: [{ uri: body.uris?.[0] || 'file:///c:/repo/a.js', operation: 2, contentHash: 'h1' }],
+                    },
+                  },
+                  0
+                )
+              );
+            }
+            return { ok: true, forwardedMethod: method };
+          },
+          fetchFn: async (url, init) => {
+            assert.ok(String(url).endsWith('/WatchVersionControlState'));
+            init?.signal?.addEventListener('abort', () => {
+              upstreamAborted += 1;
+            });
+            if (nextMode === 'http503') {
+              return { ok: false, status: 503, body: null };
+            }
+            return {
+              ok: true,
+              body: new ReadableStream({
+                start(c) {
+                  vcsCtrl = c;
+                  if (nextMode === 'unimplemented') {
+                    vcsCtrl = null;
+                    c.enqueue(encodeConnectFrame({ error: { code: 'unimplemented', message: 'not supported' } }, 2));
+                    c.close();
+                    return;
+                  }
+                  c.enqueue(
+                    encodeConnectFrame(
+                      {
+                        state: {
+                          vcsType: 4,
+                          currentRef: 'main',
+                          workingDirectoryChanges: [{ uri: 'file:///c:/repo/a.js', operation: 2 }],
+                          stagedChanges: [],
+                        },
+                      },
+                      0
+                    )
+                  );
+                },
+              }),
+            };
+          },
+        }
+      );
+
+      const makeBootWin = (html, pathname) => {
+        const inlineMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+        const win = {
+          location: { search: '?token=tok-sc14', pathname, origin: 'http://127.0.0.1', href: `http://127.0.0.1${pathname}?token=tok-sc14` },
+          history: { replaceState() {}, pushState() {} },
+          localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+          sessionStorage: { setItem() {}, getItem: () => null },
+          navigator: { clipboard: { writeText: async () => {} } },
+          parent: { postMessage() {} },
+          addEventListener() {},
+          removeEventListener() {},
+          document: {
+            hidden: false,
+            documentElement: { classList: { toggle() {} }, style: {}, setAttribute() {}, removeAttribute() {} },
+            addEventListener() {},
+            querySelector: () => null,
+            querySelectorAll: () => [],
+          },
+          Response,
+          Headers,
+          ReadableStream,
+          TextEncoder,
+          TextDecoder,
+          Uint8Array,
+          DataView,
+          URL,
+          URLSearchParams,
+          setTimeout,
+          clearTimeout,
+          fetch: async (url, init) => {
+            const handler = apis.get(String(url));
+            if (handler) {
+              try {
+                const out = await handler(JSON.parse(String(init?.body || '{}')));
+                return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } });
+              } catch (err) {
+                return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+              }
+            }
+            return new Response('{}', { status: 200 });
+          },
+        };
+        win.window = win;
+        vm.runInNewContext(inlineMatch[1], win);
+        return win;
+      };
+
+      // 1. Terminal mode resolves WatchVersionControlState immediately as unsupported without opening an LS stream
+      const termWin = makeBootWin(
+        buildJetboxTerminalHtml({ cascadeId: 'conv-sc14', terminalId: 'term-sc14', hostTheme: 'dark', uiToken: 'tok-sc14' }),
+        '/jetbox-terminal'
+      );
+      const termVcsRes = await termWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/repo' }),
+      });
+      const termVcsRead = await Promise.race([
+        termVcsRes.body.getReader().read(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Terminal WatchVersionControlState hung')), 250)),
+      ]);
+      const termVcsFrames = parseConnectFrames(Buffer.from(termVcsRead.value)).frames;
+      assert.equal(termVcsFrames[0]?.data?.state?.vcsType ?? 0, 0);
+      assert.equal(vcsCtrl, null, 'terminal mode must not open an upstream WatchVersionControlState stream');
+
+      // 2. Chat mode streams WatchVersionControlState Frame 1 immediately and pushes live updates after GitStage
+      const chatWin = makeBootWin(
+        buildJetboxChatHtml({ cascadeId: 'conv-sc14', hostTheme: 'dark', uiToken: 'tok-sc14' }),
+        '/jetbox-chat'
+      );
+      const streamRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/repo', conversationId: 'conv-sc14' }),
+      });
+      const reader = streamRes.body.getReader();
+      const firstRead = await Promise.race([
+        reader.read(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Chat WatchVersionControlState hung forever')), 300)),
+      ]);
+      const firstFrames = parseConnectFrames(Buffer.from(firstRead.value)).frames;
+      assert.equal(firstFrames[0]?.data?.state?.vcsType, 4);
+      assert.equal(firstFrames[0]?.data?.state?.workingDirectoryChanges?.length, 1);
+
+      const stageRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/GitStage', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/repo', uris: ['file:///c:/repo/a.js'] }),
+      });
+      assert.equal(stageRes.status, 200);
+
+      const secondRead = await Promise.race([
+        reader.read(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Second VCS update hung')), 300)),
+      ]);
+      const secondFrames = parseConnectFrames(Buffer.from(secondRead.value)).frames;
+      assert.equal(secondFrames[0]?.data?.state?.stagedChanges?.length, 1);
+
+      await reader.cancel();
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(upstreamAborted, 1, 'cancelling client WatchVersionControlState reader must abort upstream LS stream');
+
+      // 3. closeTerminalSideChatStreams also aborts active WatchVersionControlState streams for that Side Chat
+      const streamRes2 = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/repo', conversationId: 'conv-sc14' }),
+      });
+      const reader2 = streamRes2.body.getReader();
+      await reader2.read();
+      closeTerminalSideChatStreams({ cascadeIds: ['conv-sc14'] });
+      assert.equal(upstreamAborted, 2, 'closeTerminalSideChatStreams must abort open WatchVersionControlState streams');
+      await reader2.cancel().catch(() => {});
+
+      // 4. Upstream HTTP failure on initial connect emits { state: {} } fallback so Review never spins forever
+      nextMode = 'http503';
+      const failRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/missing', conversationId: 'conv-sc14' }),
+      });
+      const failReader = failRes.body.getReader();
+      const failChunks = [];
+      while (true) {
+        const { done, value } = await failReader.read();
+        if (done) break;
+        if (value) failChunks.push(Buffer.from(value));
+      }
+      const failFrames = parseConnectFrames(Buffer.concat(failChunks)).frames;
+      assert.deepEqual(failFrames[0]?.data, { state: {} });
+
+      // 5. Upstream Connect unimplemented emits grpc-status: 12 trailer
+      nextMode = 'unimplemented';
+      const unimpRes = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
+        method: 'POST',
+        body: encodeConnectFrame({ workspaceUri: 'file:///c:/unimp', conversationId: 'conv-sc14' }),
+      });
+      const unimpReader = unimpRes.body.getReader();
+      const unimpChunks = [];
+      while (true) {
+        const { done, value } = await unimpReader.read();
+        if (done) break;
+        if (value) unimpChunks.push(Buffer.from(value));
+      }
+      const unimpFrames = parseConnectFrames(Buffer.concat(unimpChunks)).frames;
+      assert.ok(unimpFrames.some((f) => (f.flags & 0x80) === 0x80 && String(f.data).includes('grpc-status: 12')));
+
+      // 6. Review VCS mutation & read RPCs are allowed and propagate strict errors
+      const lsRpc = apis.get('/api/terminal/ls-rpc');
+      for (const m of [
+        'GitStage',
+        'GitUnstage',
+        'GitCommit',
+        'GitDiscard',
+        'GitPush',
+        'DiscardFileChanges',
+        'CheckoutCommit',
+        'JjCommit',
+        'GetJJWorktrees',
+        'GetGitHubPullRequests',
+      ]) {
+        const out = await lsRpc({ method: m, body: {} });
+        assert.equal(out.forwardedMethod, m);
+      }
+      for (const strictVcs of ['GitStage', 'GitUnstage', 'GitCommit', 'GitDiscard', 'DiscardFileChanges', 'CheckoutCommit']) {
+        await assert.rejects(() => lsRpc({ method: strictVcs, body: { shouldFail: true } }), new RegExp(`${strictVcs} failed`));
+      }
+
+      // 7. evictStaleVcsStreams aborts idle streams and pollVcsStream handles afterSeq>0 eviction/reconnect
+      nextMode = 'git';
+      pollVcsStream({
+        streamKey: 'vcs-idle-1',
+        body: { workspaceUri: 'file:///c:/repo', conversationId: 'conv-sc14' },
+        afterSeq: 0,
+        fetchFn: async (_url, init) => {
+          init?.signal?.addEventListener('abort', () => {
+            upstreamAborted += 1;
+          });
+          return new Promise(() => {});
+        },
+      });
+      await new Promise((r) => setImmediate(r));
+      assert.equal(evictStaleVcsStreams(Date.now() + 200_000, 120_000), 1);
+      assert.equal(upstreamAborted, 3);
+      assert.equal(pollVcsStream({ streamKey: 'vcs-idle-1', afterSeq: 2 }).closed, true);
+    } finally {
+      if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+      else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+      if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+      else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+      if (prevSid === undefined) delete process.env.ANTIGRAVITY_SIDECAR_ID;
+      else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
+    }
   });
 });
