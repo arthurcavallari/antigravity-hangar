@@ -298,6 +298,7 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     const emit = (source, data) => msgListeners.forEach((fn) => fn({ source, data }));
     emit(childWin, { type: 'sidecar-key-event', payload: { key: 'b', ctrlKey: true } });
     emit(childWin, { type: 'add-artifact-comment', payload: { filePath: '/plan.md', commentText: 'ok' } });
+    emit(childWin, { type: 'request-credential-refresh' });
     emit(jetboxWin, { type: 'sidecar-key-event', payload: { key: 'j', ctrlKey: true } });
     emit(jetboxWin, { type: 'toggle-conversation', payload: { split: true } });
     emit({}, { type: 'sidecar-key-event', payload: { key: 'p', ctrlKey: true } }); // untrusted source ignored
@@ -305,6 +306,7 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     assert.deepEqual(parentPosted, [
       { type: 'sidecar-key-event', payload: { key: 'b', ctrlKey: true } },
       { type: 'add-artifact-comment', payload: { filePath: '/plan.md', commentText: 'ok' } },
+      { type: 'request-credential-refresh' },
       { type: 'sidecar-key-event', payload: { key: 'j', ctrlKey: true } },
       { type: 'toggle-conversation', payload: { split: true } },
     ]);

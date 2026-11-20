@@ -3131,4 +3131,240 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       else process.env.ANTIGRAVITY_SIDECAR_ID = prevSid;
     }
   });
+
+  it('shows clipboard paste toast on 2.33.0 outside-frame quote dragend when CDP port is absent (no-cdp-port)', async () => {
+    const emptyAppData = mkdtempSync(join(tmpdir(), 'hangar-nocdp-'));
+    const prevAppData = process.env.APPDATA;
+    const prevBrowserPortFile = process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+    process.env.APPDATA = emptyAppData;
+    delete process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+    try {
+      const realRoutes = new Map();
+      registerTerminalRoutes({ page() {}, api: (p, fn) => realRoutes.set(p, fn) });
+      const invokeRealLsRpc = (body) => realRoutes.get('/api/terminal/ls-rpc')(body, { req: { headers: {} } });
+
+      const toasts = [];
+      const windowObj = {
+        navigator: { platform: 'Win32' },
+        Hangar: {
+          apiCall: (path, body) => {
+            assert.equal(path, '/api/terminal/ls-rpc');
+            return invokeRealLsRpc(body);
+          },
+          copyTerminalQuoteToClipboard: (p) => ({ ...p, cleanName: p.title || 'term' }),
+          showTerminalQuoteToast: (_el, msg) => toasts.push(msg),
+          openTerminalMiniComposer() {},
+        },
+      };
+      const code = readFileSync(new URL('../ui/components/terminal-quote.js', import.meta.url), 'utf8');
+      vm.runInNewContext(code, { window: windowObj, document: {}, URL, setTimeout, clearTimeout });
+
+      // Re-attach spy after terminal-quote.js defines default showTerminalQuoteToast
+      windowObj.Hangar.showTerminalQuoteToast = (_el, msg) => toasts.push(msg);
+
+      windowObj.Hangar.handleJetboxQuoteEvent(
+        'hangar-jetbox-quote-dragend',
+        { outsideFrame: true, selectionContent: 'ERR_404', dropEffect: 'none' },
+        { rootEl: {}, term: { terminalId: 't-233' }, title: 'pwsh', conversationId: 'conv-1' }
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      assert.deepEqual(toasts, ['Quoted "pwsh" — press Ctrl+V in chat']);
+
+      // When native HTML5 drop succeeded (dropEffect: 'copy'), no fallback toast is shown
+      windowObj.Hangar.handleJetboxQuoteEvent(
+        'hangar-jetbox-quote-dragend',
+        { outsideFrame: true, selectionContent: 'ERR_404', dropEffect: 'copy' },
+        { rootEl: {}, term: { terminalId: 't-233' }, title: 'pwsh', conversationId: 'conv-1' }
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(toasts.length, 1);
+    } finally {
+      if (prevAppData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = prevAppData;
+      if (prevBrowserPortFile === undefined) delete process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+      else process.env.AGY_BROWSER_ACTIVE_PORT_FILE = prevBrowserPortFile;
+      rmSync(emptyAppData, { recursive: true, force: true });
+    }
+  });
+
+  it('exercises createQuotePopupController quoteBtn dragend and standalone jetbox-bootstrap dragstart/dragend against real /api/terminal/ls-rpc', async () => {
+    const emptyAppData = mkdtempSync(join(tmpdir(), 'hangar-nocdp-dom-'));
+    const prevAppData = process.env.APPDATA;
+    const prevBrowserPortFile = process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+    const prevUiTok = process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    process.env.APPDATA = emptyAppData;
+    delete process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+    delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+    try {
+      const realRoutes = new Map();
+      registerTerminalRoutes({ page() {}, api: (p, fn) => realRoutes.set(p, fn) });
+      const invokeRealLsRpc = (body) => realRoutes.get('/api/terminal/ls-rpc')(body, { req: { headers: {} } });
+
+      // 1. Direct DOM popup quoteBtn dragend in terminal-quote.js wired to real /api/terminal/ls-rpc
+      const popupToasts = [];
+      const popupRpcs = [];
+      const mkNode = (tag) => {
+        const listeners = {};
+        const children = [];
+        return {
+          tagName: String(tag || 'DIV').toUpperCase(),
+          className: '',
+          style: {},
+          dataset: {},
+          children,
+          classList: { add() {}, remove() {}, contains: () => false },
+          setAttribute() {},
+          appendChild(c) { children.push(c); return c; },
+          getBoundingClientRect: () => ({ left: 0, top: 0, right: 300, bottom: 200, width: 300, height: 200 }),
+          addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+          emit(ev, payload) { for (const fn of listeners[ev] || []) fn(payload); },
+        };
+      };
+      const hostEl = mkNode('div');
+      const winPopup = {
+        innerWidth: 400,
+        innerHeight: 600,
+        navigator: { platform: 'Win32' },
+        getSelection: () => ({ removeAllRanges() {}, toString: () => '' }),
+        Hangar: {
+          mkEl(tag, cls, attrs = {}, styles = {}, onClick) {
+            const n = mkNode(tag);
+            n.className = cls || '';
+            Object.assign(n.style, styles);
+            if (onClick) n.addEventListener('click', onClick);
+            return n;
+          },
+          apiCall: async (_path, body) => {
+            popupRpcs.push(body);
+            return invokeRealLsRpc(body);
+          },
+        },
+      };
+      const docPopup = {
+        body: hostEl,
+        addEventListener() {},
+        removeEventListener() {},
+        execCommand: () => true,
+        createElement: (t) => mkNode(t),
+      };
+      const ctxPopup = vm.createContext({ window: winPopup, document: docPopup, navigator: winPopup.navigator, URL, JSON, Math, Object, String, Number, Boolean, Map, encodeURIComponent, setTimeout, clearTimeout });
+      vm.runInContext(readFileSync(join(REPO_ROOT, 'ui/components/terminal-quote.js'), 'utf8'), ctxPopup);
+      winPopup.Hangar.showTerminalQuoteToast = (_el, msg) => popupToasts.push(msg);
+
+      const ctrl = winPopup.Hangar.createQuotePopupController(hostEl, {
+        terminalId: 'term-dom-1',
+        title: 'pwsh',
+        conversationId: 'conv-dom-1',
+      });
+      ctrl.show({ text: 'ERR_CONNECTION_REFUSED', clientX: 25, clientY: 25 });
+      const quoteBtn = hostEl.children[0].children[0];
+      quoteBtn.emit('dragend', { clientX: -45, clientY: 60, dataTransfer: { dropEffect: 'none' } });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.ok(popupRpcs.some((b) => b.method === 'InjectQuoteDrop' && b.terminalId === 'term-dom-1'));
+      assert.deepEqual(popupToasts, ['Quoted "pwsh" — press Ctrl+V in chat']);
+
+      ctrl.show({ text: 'ERR_CONNECTION_REFUSED', clientX: 25, clientY: 25 });
+      quoteBtn.emit('dragend', { clientX: -45, clientY: 60, dataTransfer: { dropEffect: 'copy' } });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(popupToasts.length, 1);
+
+      // 2. Standalone jetbox-bootstrap.js (window.parent === window) wired to real /api/terminal/ls-rpc
+      const html = buildJetboxTerminalHtml({ cascadeId: 'c1111111-2222-4333-8444-555555555555', terminalId: 'term-jb-1', hostTheme: 'dark', csrfToken: 'csrf', uiToken: '' });
+      const inlineScript = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+      const winListeners = {};
+      const bodyChildren = [];
+      const jbRpcs = [];
+      const termActiveEl = {
+        nodeType: 1,
+        closest: () => termActiveEl,
+        __reactFiber$xyz: {
+          memoizedProps: { process: { terminalId: 'term-jb-1', title: 'bash-jb' } },
+          memoizedState: { memoizedState: { current: { getSelection: () => 'SEGFAULT_139', clearSelection() {}, focus() {} } }, next: null },
+          return: null,
+        },
+      };
+      const popupBtn = { closest: (sel) => (sel === '.selection-popup button' ? popupBtn : termActiveEl), setAttribute() {}, getAttribute: () => null };
+      const winJb = {
+        innerWidth: 500,
+        innerHeight: 600,
+        navigator: { userAgent: 'Windows', platform: 'Win32' },
+        localStorage: { setItem() {} },
+        history: { replaceState() {} },
+        customElements: { get: () => false, define() {} },
+        requestAnimationFrame: () => 1,
+        cancelAnimationFrame() {},
+        location: { origin: 'http://127.0.0.1:51234' },
+        fetch: async (url, init) => {
+          if (String(url).includes('/api/terminal/ls-rpc')) {
+            const parsed = JSON.parse(init.body);
+            jbRpcs.push(parsed);
+            const rpcResult = await invokeRealLsRpc(parsed);
+            return { ok: true, json: async () => rpcResult };
+          }
+          return { ok: true, json: async () => ({ chunks: [] }) };
+        },
+        Response: class { constructor(b) { this.body = b; } },
+        addEventListener: (ev, fn) => { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+        getSelection: () => ({ rangeCount: 0, isCollapsed: true, removeAllRanges() {}, addRange() {}, toString: () => '' }),
+      };
+      winJb.parent = winJb;
+      const docJb = {
+        documentElement: { style: { setProperty() {} } },
+        body: {
+          appendChild(el) { bodyChildren.push(el); return el; },
+          querySelectorAll: (sel) => (sel === '[data-hangar-quote-toast]' ? bodyChildren.filter((x) => x.attrs?.['data-hangar-quote-toast'] === '1') : []),
+        },
+        createElement: () => {
+          const attrs = {};
+          const el = {
+            attrs,
+            style: {},
+            textContent: '',
+            setAttribute(k, v) { attrs[k] = String(v); },
+            getAttribute: (k) => attrs[k] ?? null,
+            remove() {
+              const idx = bodyChildren.indexOf(el);
+              if (idx >= 0) bodyChildren.splice(idx, 1);
+            },
+          };
+          return el;
+        },
+        createRange: () => ({ selectNodeContents() {} }),
+        querySelector: (sel) => (sel.includes('terminal-active') ? termActiveEl : null),
+        addEventListener() {},
+        removeEventListener() {},
+        execCommand: () => true,
+      };
+      vm.runInContext(inlineScript, vm.createContext({ window: winJb, document: docJb, navigator: winJb.navigator, localStorage: winJb.localStorage, history: winJb.history, URL, TextEncoder, TextDecoder, Uint8Array, DataView, ReadableStream, JSON, Math, Object, String, Boolean, Number, Map, Date, encodeURIComponent, setTimeout: () => 1, clearTimeout }));
+
+      // Case A: mousedown on popupBtn WITHOUT dragstart followed by unrelated dragend must NOT trigger InjectQuoteDrop
+      for (const fn of winListeners.mousedown || []) fn({ target: popupBtn, stopPropagation() {}, preventDefault() {} });
+      for (const fn of winListeners.mousedown || []) fn({ target: {}, stopPropagation() {}, preventDefault() {} });
+      for (const fn of winListeners.dragend || []) fn({ clientX: -120, clientY: 90, dataTransfer: { dropEffect: 'none' } });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(jbRpcs.filter((r) => r.method === 'InjectQuoteDrop').length, 0);
+
+      // Case B: dragstart WITHOUT prior mousedown populates cachedQuoteCtx and triggers standalone fallback toast once (deduped on repeat)
+      for (const fn of winListeners.dragstart || []) fn({ target: popupBtn, stopPropagation() {}, dataTransfer: { setData() {} } });
+      for (const fn of winListeners.dragend || []) fn({ clientX: -120, clientY: 90, dataTransfer: { dropEffect: 'none' } });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(jbRpcs.filter((r) => r.method === 'InjectQuoteDrop').length, 1);
+      assert.equal(bodyChildren.length, 1);
+      assert.equal(bodyChildren[0].textContent, 'Quoted "bash-jb" — press Ctrl+V in chat');
+
+      // Second drag replaces existing toast rather than stacking duplicates
+      for (const fn of winListeners.dragstart || []) fn({ target: popupBtn, stopPropagation() {}, dataTransfer: { setData() {} } });
+      for (const fn of winListeners.dragend || []) fn({ clientX: -120, clientY: 90, dataTransfer: { dropEffect: 'none' } });
+      await new Promise((r) => setTimeout(r, 20));
+      assert.equal(bodyChildren.length, 1);
+    } finally {
+      if (prevAppData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = prevAppData;
+      if (prevBrowserPortFile === undefined) delete process.env.AGY_BROWSER_ACTIVE_PORT_FILE;
+      else process.env.AGY_BROWSER_ACTIVE_PORT_FILE = prevBrowserPortFile;
+      if (prevUiTok === undefined) delete process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN;
+      else process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN = prevUiTok;
+      rmSync(emptyAppData, { recursive: true, force: true });
+    }
+  });
 });

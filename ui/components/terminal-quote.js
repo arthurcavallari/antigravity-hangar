@@ -568,6 +568,7 @@
           }
         }
         const outside = (cx < 0 || cy < 0 || (winW > 0 && cx > winW) || (winH > 0 && cy > winH)) && !(cx === 0 && cy === 0);
+        const dropEffect = e?.dataTransfer?.dropEffect || 'none';
         if (outside) {
           ns.apiCall?.('/api/terminal/ls-rpc', {
             method: 'InjectQuoteDrop',
@@ -575,7 +576,16 @@
             terminalId: payload.terminalId,
             title: payload.cleanName,
             selectionContent: payload.selectionContent,
-          })?.catch?.(() => {});
+          })
+            ?.then?.((r) => {
+              if ((r?.reason || r?.hostSync?.reason) === 'no-cdp-port' && dropEffect === 'none') {
+                ns.showTerminalQuoteToast(
+                  hostEl,
+                  `Quoted "${payload.cleanName}" — press ${isMac ? '⌘V' : 'Ctrl+V'} in chat`
+                );
+              }
+            })
+            ?.catch?.(() => {});
         }
       }
       hide();
@@ -618,13 +628,23 @@
     const effCid = conversationId && conversationId !== '_new' ? conversationId : (term?.conversationId || '');
     if (type === 'hangar-jetbox-quote-dragend') {
       if (payload.outsideFrame && payload.selectionContent) {
-        ns.apiCall('/api/terminal/ls-rpc', {
-          method: 'InjectQuoteDrop',
-          conversationId: effCid,
-          terminalId: term.terminalId,
-          title,
-          selectionContent: payload.selectionContent,
-        }).catch(() => {});
+        const dropEffect = payload.dropEffect || 'none';
+        const pasteChord = /Mac|iPhone|iPad/i.test(window.navigator?.platform || '') ? '⌘V' : 'Ctrl+V';
+        Promise.resolve(
+          ns.apiCall?.('/api/terminal/ls-rpc', {
+            method: 'InjectQuoteDrop',
+            conversationId: effCid,
+            terminalId: term.terminalId,
+            title,
+            selectionContent: payload.selectionContent,
+          })
+        )
+          .then((r) => {
+            if ((r?.reason || r?.hostSync?.reason) === 'no-cdp-port' && dropEffect === 'none') {
+              ns.showTerminalQuoteToast(rootEl, `Quoted "${title}" — press ${pasteChord} in chat`);
+            }
+          })
+          .catch(() => {});
       }
       return;
     }
