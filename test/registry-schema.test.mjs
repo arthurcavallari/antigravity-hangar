@@ -95,7 +95,7 @@ describe('registry.json validation', () => {
     );
   });
 
-  it('SH-18: bumps Hangar to 1.5.5, pins antigravity-sidecar-kit ^1.8.0, and ships a clean lockfileVersion 3 package-lock.json', () => {
+  it('SH-18: keeps package.json, registry.json, and lockfileVersion 3 package-lock.json aligned on sidecar-kit ^1.9.0 and agy-plugin-porter ^0.4.0', () => {
     const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
     const lockRaw = readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8');
     const pkg = JSON.parse(pkgRaw);
@@ -103,16 +103,16 @@ describe('registry.json validation', () => {
     const reg = read('registry.json');
     const installedKit = read('node_modules/antigravity-sidecar-kit/package.json');
 
-    assert.equal(pkg.version, '1.5.5');
-    assert.equal(reg.hangar.latestVersion, '1.5.5');
-    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.8.0');
-    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.3.2');
-    assert.equal(installedKit.version, '1.8.0');
+    assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+    assert.equal(reg.hangar.latestVersion, pkg.version);
+    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.9.0');
+    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.4.0');
+    assert.match(installedKit.version, /^1\.9\./);
     assert.equal(lock.lockfileVersion, 3);
-    assert.equal(lock.version, '1.5.5');
-    assert.equal(lock.packages[''].version, '1.5.5');
-    assert.equal(lock.packages['node_modules/antigravity-sidecar-kit']?.version, '1.8.0');
-    assert.equal(lock.packages['node_modules/agy-plugin-porter']?.version, '0.3.2');
+    assert.equal(lock.version, pkg.version);
+    assert.equal(lock.packages[''].version, pkg.version);
+    assert.match(lock.packages['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.9\./);
+    assert.match(lock.packages['node_modules/agy-plugin-porter']?.version || '', /^0\.4\./);
     assert.equal(pkgRaw.includes('file:'), false, 'package.json must not contain file: specifiers');
     assert.equal(lockRaw.includes('file:'), false, 'package-lock.json must not contain file: specifiers');
     assert.equal(lockRaw.includes('"link":'), false, 'package-lock.json must not contain link entries');
