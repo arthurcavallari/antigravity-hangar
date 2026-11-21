@@ -1,7 +1,7 @@
 /** @fileoverview Antigravity terminal quoting, Lexical/Cider drag-to-chat, selection popup, and mini composer. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const getSc = () => ns._sc || { threads: [], poppedIds: new Set(), groupMap: {}, boxes: new Map() };
+  const getSc = () => ns._sc || { threads: [], boxes: new Map() };
   const mkEl = (tag, cls, { html: h, ...props } = {}, ds = {}, onClick = null) => {
     if (ns._mkSideChatEl) {
       return ns._mkSideChatEl(tag, cls, { html: h, ...props }, ds, onClick);
@@ -210,17 +210,24 @@
       promptText: String(rawPayload?.promptText || opts.promptText || ''),
       autoSubmit: Boolean(rawPayload?.autoSubmit ?? opts.autoSubmit),
     };
-    const existing = opts.targetCascadeId ? sc.threads.find((t) => t.cascadeId === opts.targetCascadeId) : null;
+    let existing = opts.targetCascadeId ? sc.threads.find((t) => t.cascadeId === opts.targetCascadeId) : null;
+    if (!existing && opts.targetCascadeId && ns.reopenSideChat) {
+      existing = ns.reopenSideChat(opts.targetCascadeId);
+    }
     const targetTabId = ns.SIDECHAT_TAB_ID;
     const box = ns.ensureSideChatBox(targetTabId, root);
+    const resolvedConvId = opts.conversationId !== undefined
+      ? String(opts.conversationId === '_new' ? '' : opts.conversationId || '')
+      : (box._convId || '');
     Object.assign(box, {
       _toastRoot: hostEl || root,
       _payload: payload,
-      _convId: opts.conversationId || box._convId || '',
+      _convId: resolvedConvId,
     });
     if (hostEl && hostEl !== root) {
       hostEl._hangarQuoteComposer = box;
     }
+    const targetPane = opts.pane || (sc.isOpen && box.dataset?.slot === 'bottom' ? 'bottom' : '');
     const openMain = () => {
       Object.assign(sc, { isOpen: true, isDocked: true });
       Object.assign(box.dataset, { dockMode: 'docked' });
@@ -229,10 +236,9 @@
     if (existing) {
       openMain();
       box._syncThreadsUi?.(existing.cascadeId, hasQuote ? payload : null);
-      ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: opts.pane || '' });
+      ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: targetPane });
       return box;
     }
-    ns._syncSideChatPreview?.(box._els, payload.selectionContent);
     openMain();
     Promise.resolve(
       ns.ensureSideChatThread({
@@ -245,23 +251,13 @@
       if (th?.cascadeId) {
         openMain();
         box._syncThreadsUi?.(th.cascadeId, hasQuote ? payload : null);
-        ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: opts.pane || '' });
+        ns.notifySideChatState({ activateTab: !opts.skipActivate, targetTabId, pane: targetPane });
       }
     });
     if (!opts.skipActivate) {
-      ns.notifySideChatState({ activateTab: true, targetTabId, pane: opts.pane || '' });
+      ns.notifySideChatState({ activateTab: true, targetTabId, pane: targetPane });
     }
     return box;
-  };
-
-  ns.toggleTerminalSideChat = (hostEl, opts = {}) => {
-    const isVis = Boolean(getSc().isOpen && ns._sideChatBox && !ns._sideChatBox.classList?.contains?.('hidden'));
-    if (isVis) {
-      ns.closeSideChatDrawer({ deleteAll: true, notify: true });
-    } else {
-      ns.openTerminalQuoteComposer(hostEl, {}, opts);
-    }
-    return !isVis;
   };
 
   ns.openTerminalMiniComposer = function openTerminalMiniComposer(hostEl, rawPayload = {}, opts = {}) {
@@ -292,7 +288,7 @@
       const input = mkEl('textarea', 'term-quote-composer-input term-mini-input', {
         rows: 2,
         ariaLabel: 'Ask about terminal output',
-        placeholder: `Ask about this terminal output… (Enter to send to Main Chat, ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} for Side Chat)`,
+        placeholder: `Ask about this terminal output… (Enter to send to Main Chat, ${isMac ? '⌘+Enter' : 'Ctrl+Enter'} for Side Question)`,
       });
       input.setAttribute?.('aria-label', 'Ask about terminal output');
       const syncHeight = ns._bindAutoTextarea(input, 36, 110);
@@ -312,9 +308,9 @@
         'agy-btn agy-btn-outline term-mini-sidechat-pick',
         {
           type: 'button',
-          title: 'Choose Side Chat thread (New Side Chat by default)',
-          ariaLabel: 'Choose Side Chat thread',
-          html: ns.iconSvg?.('expand_more', 14) || '▾',
+          title: 'Choose Side Question thread (New Side Question by default)',
+          ariaLabel: 'Choose Side Question thread',
+          html: ns.iconSvg?.('expand_more', 16) || '▾',
         },
         { role: 'mini-pick-sidechat' },
         (e) => {
@@ -323,7 +319,7 @@
             {
               id: 'new-sidechat-target',
               icon: 'add',
-              label: 'New Side Chat',
+              label: 'New Side Question',
               checked: !mini._targetCascadeId,
               onClick: () => mini._setTargetCascadeId(''),
             },
@@ -346,7 +342,7 @@
           );
         }
       );
-      sideChatPickBtn.setAttribute?.('aria-label', 'Choose Side Chat thread');
+      sideChatPickBtn.setAttribute?.('aria-label', 'Choose Side Question thread');
       const sendBtn = mkEl(
         'button',
         'agy-btn agy-btn-primary term-mini-send-btn',
@@ -367,7 +363,7 @@
         }
         sideChatPickBtn.classList?.toggle?.('hidden', !sc.threads.length);
         sideChatBtn.classList?.toggle?.('has-picker', sc.threads.length > 0);
-        const label = th ? `Ask in ${ns.resolveSideChatTitle(th)}` : 'Ask in Side Chat';
+        const label = th ? `Ask in ${ns.resolveSideChatTitle(th)}` : 'Ask in Side Question';
         sideChatBtn.title = `${label} (${isMac ? '⌘+Enter' : 'Ctrl+Enter'})`;
         sideChatBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Meta+Enter' : 'Control+Enter');
         ns.setHtml(
@@ -437,10 +433,13 @@
       !activeEl.closest?.('.selection-popup')
         ? activeEl
         : root?.querySelector?.('.term-input-sink, .term-screen, .term-jetbox-frame') || activeEl || null);
+    const resolvedMiniConv = opts.conversationId !== undefined
+      ? String(opts.conversationId === '_new' ? '' : opts.conversationId || '')
+      : (mini._convId || '');
     Object.assign(mini, {
       _toastRoot: root,
       _payload: payload,
-      _convId: opts.conversationId || mini._convId || '',
+      _convId: resolvedMiniConv,
       _targetCascadeId: '',
       _prevFocus: prevFocus,
     });
@@ -532,7 +531,7 @@
       'term-quote-btn term-quote-ask-btn',
       {
         type: 'button',
-        title: `Open tool-enabled Side Chat with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`,
+        title: `Open tool-enabled Side Question with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`,
         html: '<span class="term-quote-label">Quote & Ask</span>',
       },
       {},

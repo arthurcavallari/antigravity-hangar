@@ -14,7 +14,6 @@
     pluginDiagnostics: [],
     suggestions: [],
     registryPackages: [],
-    activeTabId: '',
     bottomActiveTabId: '',
     isResizingSplit: false,
   };
@@ -81,6 +80,7 @@
   } = layoutCtrl;
 
   function renderAll() {
+    ns.setHideHangarSideQuestions?.(state.layout?.hideHangarSideQuestions === true);
     rememberWindowActiveTab(state.layout.pinnedTopSidecarId);
     ns.reconcileIframeDeck?.({ state, els, onRefreshState: refreshHangarState });
     const visibleTerminals = state.layout.showExternalTerminals === false
@@ -312,10 +312,12 @@
         }
       }
       const effHydrateConvId = state.activeWorkspace?.conversationId || hangarConversationId;
+      ns.setHideHangarSideQuestions?.(targetLayout?.hideHangarSideQuestions === true);
       ns.hydrateTerminalStateFromLayout?.(targetLayout, state.terminals, wsPath, effHydrateConvId);
       ns.hydrateSideChatStateFromLayout?.(targetLayout, wsPath, effHydrateConvId);
       const scSynced = Boolean(
-        data.nativeSideQuestions && ns.syncNativeSideQuestions?.(data.nativeSideQuestions, targetLayout),
+        (data.nativeSideQuestions || data.sideQuestionMeta || targetLayout?.showExternalSideQuestions === false) &&
+          ns.syncNativeSideQuestions?.(data.nativeSideQuestions, targetLayout, data.sideQuestionMeta),
       );
       if (wsFirstResolved && userTabDuringBoot) {
         rememberWindowActiveTab(userTabDuringBoot, nextWsKey);
@@ -326,7 +328,8 @@
         state.layout = withWindowActiveTab(state.layout, nextWsKey);
       }
       if (scSynced) {
-        buildSideChatLayoutPatch();
+        const scPatch = buildSideChatLayoutPatch();
+        saveLayoutUpdate(scPatch);
         document.querySelector?.('.term-mini-composer')?._syncSideChatBtn?.();
       }
       renderAll();

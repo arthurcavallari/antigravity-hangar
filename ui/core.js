@@ -57,7 +57,25 @@
     'q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108' +
     'q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76' +
     'q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z';
-  ui.registerIcons?.({ favorite: FAVORITE_PATH });
+  const PROMOTE_TO_CHAT_PATH =
+    'M100-118.46V-787.69Q100-818 121-839t51.31-21H787.69Q818-860 839-839t21,51.31v455.38Q860-302 839-281t-51.31,21H241.54L100-118.46Z' +
+    'M216-320H787.69q4.62,0 8.46-3.85t3.85-8.46V-787.69q0-4.62-3.85-8.46T787.69-800H172.31q-4.62,0-8.46,3.85T160-787.69v523.08L216-320Z' +
+    'M450-413.85V-590.62l-74,74L333.85-560L480-706.15L626.15-560L584-516.62l-74-74v176.77H450Z';
+  ui.registerIcons?.({
+    favorite: FAVORITE_PATH,
+    promote_to_chat: PROMOTE_TO_CHAT_PATH,
+  });
+  ns.openHostConversation = ns.openHostConversation || ((conversationId) => {
+    const cid = String(conversationId || '').trim();
+    if (!cid) return;
+    if (typeof window.sidecar?.ui?.toggleConversation === 'function') {
+      window.sidecar.ui.toggleConversation(cid);
+    } else if (typeof window.sidecar?.toggleConversation === 'function') {
+      window.sidecar.toggleConversation(cid);
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage?.({ type: 'toggle-conversation', payload: { conversationId: cid } }, '*');
+    }
+  });
   ns.DEFAULT_SPONSOR_URL = 'https://github.com/sponsors/arthurcavallari';
   ns.sanitizeHttpsUrl = (raw = '') => {
     const s = String(raw || '').trim();
@@ -112,9 +130,12 @@
   };
   ns.el = ns.el || ui.el;
   ns.clear = ns.clear || ui.clear || ((target) => ns.setHtml(target, ''));
-  const baseIconSvg = ui.iconSvg || ((name, size = 16, cls = '') => (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="${name === 'favorite' ? FAVORITE_PATH : 'M120-240v-80h720v80H120Z'}"/></svg>`
-  ));
+  const baseIconSvg = ui.iconSvg || ((name, size = 16, cls = '') => {
+    const pathD = name === 'favorite'
+      ? FAVORITE_PATH
+      : (name === 'promote_to_chat' ? PROMOTE_TO_CHAT_PATH : 'M120-240v-80h720v80H120Z');
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 -960 960 960" fill="currentColor" class="${['agy-icon', cls].filter(Boolean).join(' ')}" aria-hidden="true" data-icon="${name}"><path d="${pathD}"/></svg>`;
+  });
   ns.iconSvg = ns.iconSvg || ((name, size = 16, cls = '') => rawHtml(baseIconSvg(name, size, cls)));
   ns.iconEl = ns.iconEl || ui.iconEl || ((name, size = 16, cls = '') => {
     const wrap = Object.assign(document.createElement('span'), { className: 'agy-icon-wrap' });
@@ -218,13 +239,16 @@
     return el && !el.closest?.('.hidden') ? el : null;
   }
   function cardSelectorsFor(id, targetTab, subTab, preferSidecar) {
-    const sidecarSel = `.agy-card[data-sidecar-id="${id}"]`;
+    const esc = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(id)
+      : String(id).replace(/["\\]/g, '\\$&');
+    const sidecarSel = `.agy-card[data-sidecar-id="${esc}"]`;
     const pluginSels = [
-      `.agy-card[data-plugin-dir="${id}"]`,
-      `.agy-card[data-plugin-id="${id}"]`,
-      `.agy-card[data-plugin-name="${id}"]`,
+      `.agy-card[data-plugin-dir="${esc}"]`,
+      `.agy-card[data-plugin-id="${esc}"]`,
+      `.agy-card[data-plugin-name="${esc}"]`,
     ];
-    const pkgSel = `.agy-card[data-pkg-id="${id}"]`;
+    const pkgSel = `.agy-card[data-pkg-id="${esc}"]`;
     if (subTab === 'discover' || targetTab === 'discover') {
       return [pkgSel, ...pluginSels, sidecarSel];
     }
@@ -250,7 +274,9 @@
     const targetTab = (typeof data.targetTab === 'string' && data.targetTab)
       ? data.targetTab
       : ((typeof data.tab === 'string' && data.tab) ? data.tab : 'plugins');
-    const subTab = targetTab === 'plugins' || targetTab === 'sidecars' ? 'installed' : targetTab;
+    const rawSubTab = targetTab === 'plugins' || targetTab === 'sidecars' ? 'installed' : targetTab;
+    const VALID_SUBTABS = new Set(['installed', 'discover', 'sideload', 'settings']);
+    const subTab = VALID_SUBTABS.has(rawSubTab) ? rawSubTab : 'installed';
     ns.activeNavigatedPluginId = rawId;
     ns.activeNavigationTarget = { targetTab, pluginId: rawId, sidecarId: effectiveSidecarId };
     if (typeof document !== 'undefined') {

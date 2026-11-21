@@ -246,6 +246,7 @@
       const created = await ns.apiCall?.('/api/terminal/create', {
         workspacePath: state.activeWorkspace?.workspacePath || '',
         conversationId: hangarConversationId,
+        hideHangarTerminals: state.layout?.hideHangarTerminals !== false,
       });
       if (created?.terminalId) {
         const formattedTitle = ns.formatTermTitle?.(created.title || 'pwsh') || created.title || 'pwsh';
@@ -296,18 +297,23 @@
       await renderAndSaveFull();
     }
 
+    const getVisibleTerminals = () =>
+      state.layout.showExternalTerminals === false
+        ? (state.terminals || []).filter((t) => !t?.isExternal)
+        : (state.terminals || []);
+
     async function handleSideChatDock(scState) {
-      const scPatch = buildSideChatLayoutPatch(scState?.sideChatState);
       const targetTabId = scState?.targetTabId || ns.SIDECHAT_TAB_ID;
       const removedId = scState?.removedSidecarId || scState?.closedSidecarId || '';
       if (scState?.openTerminal) {
         const toBot = (scState.pane || 'top') !== 'bottom';
         const srcId = scState.sourceTabId || ns.SIDECHAT_TAB_ID;
-        if (!(ns.getInstanceTerminals?.(state.terminals, '') || []).length) {
+        if (!(ns.getInstanceTerminals?.(getVisibleTerminals(), '') || []).length) {
           const created = await createWorkspaceTerminal().catch(() => null);
           if (created?.terminalId) ns.setActiveGroupId?.(ns.TERMINAL_TAB_ID, created.terminalId);
         }
         bumpLayoutSeq();
+        const scPatch = buildSideChatLayoutPatch(scState?.sideChatState);
         ns.setMainTerminalOpen?.(true);
         const topSet = new Set(
           Array.isArray(state.layout.topSplitTabIds)
@@ -326,6 +332,7 @@
         await renderAndSaveFull({ splitViewEnabled: true, ...scPatch });
         return;
       }
+      const scPatch = buildSideChatLayoutPatch(scState?.sideChatState);
       if (scState?.activateTab || scState?.closedTab || scState?.closedSidecarId || !scState?.isOpen) {
         bumpLayoutSeq();
         const isAct = Boolean(scState?.activateTab);
@@ -381,7 +388,7 @@
         Object.assign(state.layout, { pinnedTabIds: [...pinned], closedTabIds: [...closed] });
         if (sidecarId === ns.TERMINAL_TAB_ID) {
           ns.setMainTerminalOpen?.(true);
-          const mainTerms = ns.getInstanceTerminals?.(state.terminals, '') || [];
+          const mainTerms = ns.getInstanceTerminals?.(getVisibleTerminals(), '') || [];
           if (!mainTerms.length) {
             const created = await createWorkspaceTerminal();
             if (created?.terminalId) ns.setActiveGroupId?.(ns.TERMINAL_TAB_ID, created.terminalId);
@@ -419,6 +426,19 @@
         return;
       }
       if (action === 'delete-sidechat') {
+        const scList = ns.getInstanceSideChats?.() || [];
+        if (scList.some((t) => ns.isSideChatNonEmpty?.(t))) {
+          if (ns._sc) ns._sc.isOpen = true;
+          closed.delete(ns.SIDECHAT_TAB_ID);
+          state.layout.closedTabIds = [...closed];
+          activateTabInPane(ns.SIDECHAT_TAB_ID, pane);
+          renderAll();
+          ns.requestDeleteSideChats?.(
+            scList.map((t) => t.cascadeId),
+            { deleteAll: true },
+          );
+          return;
+        }
         ns.closeSideChatDrawer?.({ deleteAll: true, notify: true });
         return;
       }
@@ -433,7 +453,7 @@
         return;
       }
       if (action === 'new-terminal') {
-        const mainTerms = ns.getInstanceTerminals?.(state.terminals, '') || [];
+        const mainTerms = ns.getInstanceTerminals?.(getVisibleTerminals(), '') || [];
         const wasMainOpen = Boolean(ns.isMainTerminalOpen?.() && !closed.has(ns.TERMINAL_TAB_ID));
         ns.setMainTerminalOpen?.(true);
         let targetTabId = ns.TERMINAL_TAB_ID;
@@ -515,6 +535,26 @@
         targetPane: pane,
       });
     }
+
+    ns.onPrunePromotedWorkspaceThread = (wsKey, cid) => {
+      if (!wsKey || !cid) return;
+      const map = state.layout.sideChatStateByWorkspace;
+      const prev = map && typeof map === 'object' ? map[wsKey] : null;
+      if (!prev || typeof prev !== 'object') return;
+      const nextThreads = Array.isArray(prev.threads) ? prev.threads.filter((t) => t?.cascadeId !== cid) : [];
+      const nextClosed = Array.isArray(prev.closedThreads) ? prev.closedThreads.filter((t) => t?.cascadeId !== cid) : [];
+      const nextHangarIds = Array.isArray(prev.hangarCascadeIds) ? prev.hangarCascadeIds.filter((id) => id !== cid) : [];
+      const nextState = {
+        ...prev,
+        threads: nextThreads,
+        closedThreads: nextClosed,
+        hangarCascadeIds: nextHangarIds,
+        activeCascadeId: prev.activeCascadeId === cid ? (nextThreads[0]?.cascadeId || '') : prev.activeCascadeId,
+        isOpen: nextThreads.length > 0 || nextClosed.length > 0 ? prev.isOpen : false,
+      };
+      state.layout.sideChatStateByWorkspace = { ...(map || {}), [wsKey]: nextState };
+      saveLayoutUpdate({ sideChatStateByWorkspace: { [wsKey]: nextState } });
+    };
 
     return {
       getWsStateKey,

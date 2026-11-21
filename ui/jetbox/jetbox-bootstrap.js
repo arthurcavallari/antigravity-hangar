@@ -19,6 +19,27 @@
   const uiToken = params.uiToken || '';
   const safeTheme = params.safeTheme === 'light' ? 'light' : 'dark';
   const themeQuery = 'hostTheme=' + safeTheme + '&defaultThemeMode=' + safeTheme;
+  const CHAT_MENDEL_FLAGS = [
+    'enable-aux-pane-redesign',
+    'enable-split-view',
+    'enable-conversation-selection-quoting',
+    'enable-conversation-forking',
+    'enable-new-themes',
+    'enable-plugins',
+    'enable-plugin-auth',
+    'enable-marketplace-card-status',
+    'enable-audio-transcription',
+    'enable-sidecars',
+    'enable-ui-sidecars',
+    'markdown-table-v2',
+    'enable-notebook-rendering',
+  ];
+  const TERM_MENDEL_FLAGS = [
+    'enable-jetbox-terminal-v2',
+    'enable-aux-pane-redesign',
+    'enable-split-view',
+    'enable-new-themes',
+  ];
 
   let userFocusAllowed = false;
   ['pointerdown', 'mousedown', 'keydown'].forEach((ev) => {
@@ -133,27 +154,10 @@
       'jetski.developer.customFlagOverrides',
       JSON.stringify(
         mode === 'chat'
-          ? {
-              'enable-aux-pane-redesign': true,
-              'enable-split-view': true,
-              'enable-conversation-selection-quoting': true,
-              'enable-conversation-forking': true,
-              'enable-new-themes': true,
-              'enable-plugins': true,
-              'enable-plugin-auth': true,
-              'enable-marketplace-card-status': true,
-              'enable-audio-transcription': true,
-              'enable-sidecars': true,
-              'enable-ui-sidecars': true,
-              'markdown-table-v2': true,
-              'enable-notebook-rendering': true,
-            }
+          ? Object.fromEntries(CHAT_MENDEL_FLAGS.map((k) => [k, true]))
           : {
-              'enable-jetbox-terminal-v2': true,
-              'enable-aux-pane-redesign': true,
+              ...Object.fromEntries(TERM_MENDEL_FLAGS.map((k) => [k, true])),
               'enable-bottom-terminal-panel': false,
-              'enable-split-view': true,
-              'enable-new-themes': true,
             }
       )
     );
@@ -741,6 +745,13 @@
                       hasActiveChildren,
                     };
                     changedCount += 1;
+                    if (mode === 'chat' && cid === effectiveCascadeId) {
+                      postToParent('hangar-sidechat-run-state', {
+                        cascadeId: cid,
+                        isRunning: notFullyIdle,
+                        hasActivity: Boolean(notFullyIdle),
+                      });
+                    }
                   }
                 }
                 if (Array.isArray(data?.deletedIds)) {
@@ -1169,6 +1180,18 @@
       if (mode === 'chat' && VCS_MUTATION_RE.test(method)) {
         wakePollWaiters();
       }
+      if (mode === 'chat' && (method === 'SendUserCascadeMessage' || method === 'SendAgentMessage')) {
+        postToParent('hangar-sidechat-run-state', {
+          cascadeId: effectiveCascadeId,
+          isRunning: true,
+          hasActivity: true,
+        });
+      } else if (mode === 'chat' && (method === 'CancelCascadeInvocation' || method === 'ForceStopCascadeTree')) {
+        postToParent('hangar-sidechat-run-state', {
+          cascadeId: effectiveCascadeId,
+          isRunning: false,
+        });
+      }
       if (method === 'GetMendelFlags') {
         const rawExps = Array.isArray(rpcPayload?.experimentConfig?.experiments)
           ? rpcPayload.experimentConfig.experiments
@@ -1179,28 +1202,7 @@
         if (mode !== 'chat') {
           exps.push({ keyString: 'enable-bottom-terminal-panel', disabled: true });
         }
-        const enabledFlags = mode === 'chat'
-          ? [
-              'enable-aux-pane-redesign',
-              'enable-split-view',
-              'enable-conversation-selection-quoting',
-              'enable-conversation-forking',
-              'enable-new-themes',
-              'enable-plugins',
-              'enable-plugin-auth',
-              'enable-marketplace-card-status',
-              'enable-audio-transcription',
-              'enable-sidecars',
-              'enable-ui-sidecars',
-              'markdown-table-v2',
-              'enable-notebook-rendering',
-            ]
-          : [
-              'enable-jetbox-terminal-v2',
-              'enable-aux-pane-redesign',
-              'enable-split-view',
-              'enable-new-themes',
-            ];
+        const enabledFlags = mode === 'chat' ? CHAT_MENDEL_FLAGS : TERM_MENDEL_FLAGS;
         for (const flagKey of enabledFlags) {
           if (!exps.some((x) => x?.keyString === flagKey)) {
             exps.push({ keyString: flagKey, disabled: false });
@@ -1835,7 +1837,7 @@
       askBtn.className = ((quoteBtn.className || '') + ' border-l border-border whitespace-nowrap').trim();
       askBtn.setAttribute?.('data-hangar-ask', 'true');
       askBtn.setAttribute?.('aria-keyshortcuts', isMac ? 'Shift+Meta+L' : 'Alt+Shift+L');
-      askBtn.title = `Open tool-enabled Side Chat with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`;
+      askBtn.title = `Open tool-enabled Side Question with this selection (or send to Main Chat) (${isMac ? '⇧⌘L' : 'Alt+Shift+L'})`;
       askBtn.draggable = false;
       askBtn.setAttribute?.('draggable', 'false');
       askBtn.innerHTML = '<span>Quote &amp; Ask</span>';

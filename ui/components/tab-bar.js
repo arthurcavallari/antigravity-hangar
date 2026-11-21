@@ -28,7 +28,7 @@
   };
   const SIDECHAT_TAB = {
     sidecarId: ns.SIDECHAT_TAB_ID,
-    displayName: 'Side Chat',
+    displayName: 'Side Questions',
     statusBadge: 'RUNNING',
     isVirtual: true,
     isSideChat: true,
@@ -102,10 +102,15 @@
     });
     const scState = ns.getSideChatState?.();
     const allScThreads = scState?.threads || [];
+    const closedScThreads = scState?.closedThreads || [];
     const isTermBtn = layout?.terminalDisplayMode === 'button';
     const isExtBtn = layout?.extensionsDisplayMode === 'button';
     const hasSideChat = Boolean(
-      scState?.isOpen || closedSet.has(ns.SIDECHAT_TAB_ID) || pinnedSet.has(ns.SIDECHAT_TAB_ID) || allScThreads.length > 0,
+      scState?.isOpen ||
+        closedSet.has(ns.SIDECHAT_TAB_ID) ||
+        pinnedSet.has(ns.SIDECHAT_TAB_ID) ||
+        allScThreads.length > 0 ||
+        closedScThreads.length > 0,
     );
     const hasMainTerm = typeof ns.isMainTerminalOpen === 'function'
       ? Boolean(ns.isMainTerminalOpen() || closedSet.has(ns.TERMINAL_TAB_ID) || pinnedSet.has(ns.TERMINAL_TAB_ID))
@@ -166,7 +171,7 @@
     const title = sc.isTerminal
       ? `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${sc.isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${pinSuffix}`
       : sc.isSideChat
-        ? `${sc.displayName} (Tool-Enabled Terminal Side Chat)${pinSuffix}`
+        ? `${sc.displayName} (Tool-Enabled Side Question Threads)${pinSuffix}`
         : sc.isVirtual
           ? `${updCount > 0 ? `${sc.displayName} (${updCount} update${updCount === 1 ? '' : 's'} available)` : sc.displayName}${pinSuffix}`
           : `${sc.displayName} (${badgeInfo.label} · ${sc.scope === 'global' ? 'Global' : 'Workspace'}${pinSuffix})`;
@@ -189,7 +194,7 @@
       displayName: sc.displayName,
       label: sc.displayName,
       icon,
-      iconSize: sc.isTerminal || (sc.isVirtual && !sc.isSideChat) ? 16 : 15,
+      iconSize: 16,
       active: sc.sidecarId === activeId,
       pinned: Boolean(sc.isPinned),
       closable: Boolean(sc.canClose && !sc.isPinned),
@@ -220,7 +225,7 @@
       addButton: {
         role: 'hub-add-tab',
         testId: 'hangar-new-tab-button',
-        title: 'Open Terminal or Side Chat',
+        title: 'Open Terminal or Side Question',
         onClick: (e, addBtn) => {
           e?.stopPropagation?.();
           const r = addBtn?.getBoundingClientRect?.() || { left: e?.clientX || 40, bottom: e?.clientY || 36 };
@@ -229,7 +234,7 @@
             { clientX: r.left, clientY: (r.bottom || 36) + 4, target: addBtn, preventDefault() {}, stopPropagation() {} },
             [
               { id: 'new-terminal', icon: 'terminal', label: 'New Terminal', onClick: () => act({ action: 'new-terminal', pane }) },
-              { id: 'new-sidechat', icon: 'chat', label: 'New Side Chat', onClick: () => act({ action: 'new-sidechat', pane }) },
+              { id: 'new-sidechat', icon: 'chat', label: 'New Side Question', onClick: () => act({ action: 'new-sidechat', pane }) },
             ],
           );
         },
@@ -280,9 +285,6 @@
             disabled: isPinned,
             onClick: () => act({ action: 'close', targetIds: [curId], pane }),
           },
-          ...(curSc.isSideChat
-            ? [{ id: 'delete-sidechat', label: 'Delete Side Chat', onClick: () => act({ action: 'delete-sidechat', pane }) }]
-            : []),
           {
             id: 'close-other-tabs',
             label: 'Close Other Tabs',

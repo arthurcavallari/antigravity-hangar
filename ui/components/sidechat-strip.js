@@ -1,10 +1,12 @@
-/** @fileoverview Side Chat session tab-strip controller, inline rename, and within-strip reordering. */
+/** @fileoverview Side Question session tab-strip controller, inline rename, overflow reopen, and within-strip reordering. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
   const sc = ns.sideChatStore?.state || ns._sc;
 
   ns.createSideChatStripController = function createSideChatStripController(ctx) {
     let isRenaming = false;
+    let latestItems = [];
+
     const applyRename = (t, rawNext) => {
       if (!t?.cascadeId) return;
       const cid = t.cascadeId;
@@ -12,17 +14,16 @@
       const rawParent = String(t.parentConversationId || ctx.getConversationId?.() || '').trim();
       const parentConversationId = rawParent === '_new' ? '' : rawParent;
       ns.recordSideChatRename?.(cid, next);
-      if (next) {
-        ns.apiCall?.('/api/sidechat/rename', {
-          cascadeId: cid,
-          parentConversationId,
-          title: next,
-        })?.catch?.(() => {});
-      }
+      ns.apiCall?.('/api/sidechat/rename', {
+        cascadeId: cid,
+        parentConversationId,
+        title: next,
+      })?.catch?.(() => {});
       isRenaming = false;
       renderSessionStrip();
       ns.notifySideChatState();
     };
+
     const finishRename = (lbl, t, rawNext, commit) => {
       if (commit) {
         applyRename(t, rawNext);
@@ -34,17 +35,45 @@
         renderSessionStrip();
       }
     };
+
     const startInlineRename = (pill, t) => {
-      const lbl = pill?._slots?.labelEl || pill?.querySelector?.('.agy-tab-label');
-      if (isRenaming || !t || !lbl) return;
+      const lbl = pill?.querySelector?.('.agy-tab-label');
+      if (!lbl || isRenaming) return;
       isRenaming = true;
-      (window.AgyUI?.startInlineRename || ns.startInlineRename)?.(pill, lbl, {
-        initialValue: ns.resolveSideChatTitle(t),
-        inputClassName: 'agy-rename-input',
-        onCommit: (rawNext) => finishRename(lbl, t, rawNext, true),
-        onCancel: () => finishRename(lbl, t, '', false),
-      });
+      (window.AgyUI?.startInlineRename || ns.startInlineRename)?.(
+        pill,
+        ns.resolveSideChatTitle(t),
+        (rawNext, commit) => finishRename(lbl, t, rawNext, commit)
+      );
     };
+
+    const selectThread = (cid) => {
+      ns.setActiveSideChatId(cid);
+      ctx.syncThreadsUi(cid, null);
+      ns.notifySideChatState();
+    };
+
+    const scrollFn = window.AgyUI?.setupStripScroll || ns.setupStripScroll;
+    if (ctx.overflowBtn && ctx.overflowPopover) {
+      scrollFn?.(
+        ctx.sessionsEl,
+        ctx.overflowBtn,
+        () => latestItems,
+        (id) => selectThread(id),
+        ctx.overflowPopover,
+        () =>
+          (ns.getClosedSideChats?.() || []).map((ct) => ({
+            id: ct.cascadeId,
+            label: ns.resolveSideChatTitle(ct),
+            icon: 'chat',
+            iconSize: 14,
+            externalBadge: Boolean(ct.isExternal),
+            dataset: { cascadeId: ct.cascadeId },
+          })),
+        (cid) => ns.reopenSideChat?.(cid),
+        { idDatasetKey: 'cascadeId' }
+      );
+    }
 
     function renderSessionStrip() {
       const curTabId = ns.SIDECHAT_TAB_ID;
@@ -53,13 +82,11 @@
       const actCid = ns.getActiveSideChatId() || instThreads[0]?.cascadeId || '';
       const togglePin = (t) => {
         t.pinned = !t.pinned;
+        if (t.isExternal) {
+          sc.externalMetaById?.set?.(t.cascadeId, { pinned: Boolean(t.pinned) });
+        }
         sc.threads = [...sc.threads.filter((x) => x.pinned), ...sc.threads.filter((x) => !x.pinned)];
         renderSessionStrip();
-        ns.notifySideChatState();
-      };
-      const selectThread = (cid) => {
-        ns.setActiveSideChatId(cid);
-        ctx.syncThreadsUi(cid, null);
         ns.notifySideChatState();
       };
       const items = instThreads.map((t, idx) => ({
@@ -71,18 +98,25 @@
         iconSize: 14,
         active: t.cascadeId === actCid,
         pinned: Boolean(t.pinned),
+        externalBadge: Boolean(t.isExternal),
+        externalTitle: 'Opened outside Hangar (shared with Antigravity)',
         closable: !t.pinned,
-        closeTitle: 'Delete Side Chat',
+        closeTitle: 'Close Side Question',
         renamable: true,
-        title: `${ns.resolveSideChatTitle(t)}${t.pinned ? ' · Pinned' : ''} (Drag to reorder, double-click to rename)`,
-        dataset: { cascadeId: t.cascadeId, pinned: t.pinned ? 'true' : 'false' },
+        title: `${ns.resolveSideChatTitle(t)}${t.pinned ? ' · Pinned' : ''}${t.isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''} (Drag to reorder, double-click to rename)`,
+        dataset: {
+          cascadeId: t.cascadeId,
+          pinned: t.pinned ? 'true' : 'false',
+          external: t.isExternal ? 'true' : 'false',
+        },
       }));
+      latestItems = items;
       window.AgyUI?.reconcileTabStrip?.(ctx.sessionsEl, items, {
         idDatasetKey: 'cascadeId',
-        closeTitle: 'Delete Side Chat',
+        closeTitle: 'Close Side Question',
         addButton: {
           role: 'sidechat-strip-add',
-          title: 'New Side Chat',
+          title: 'New Side Question',
           onClick: () => ctx.spawnNewInInstance(),
         },
         onSelect: (id) => {
@@ -90,7 +124,7 @@
             selectThread(id);
           }
         },
-        onClose: (id) => ns.deleteSideChatsByIds([id]),
+        onClose: (id) => ns.closeSideChatsByIds?.([id]),
         onUnpin: (_id, item) => togglePin(item.thread),
         onRenameStart: () => {
           isRenaming = true;
@@ -108,30 +142,45 @@
             .slice(item.idx + 1)
             .filter((x) => !x.pinned)
             .map((x) => x.cascadeId);
+          const reqDel = ns.requestDeleteSideChats || ns.deleteSideChatsByIds;
           ns.openTabContextMenu?.(e, [
             { id: t.pinned ? 'unpin-tab' : 'pin-tab', label: t.pinned ? 'Unpin Tab' : 'Pin Tab', onClick: () => togglePin(t) },
-            { id: 'rename-tab', label: 'Rename Side Chat…', onClick: () => startInlineRename(pill, t) },
+            { id: 'rename-tab', label: 'Rename Side Question…', onClick: () => startInlineRename(pill, t) },
+            {
+              id: 'promote-tab',
+              icon: 'promote_to_chat',
+              label: 'Promote to Conversation',
+              disabled: Boolean(t.isRunning || sc.promotingIds?.has?.(t.cascadeId)),
+              onClick: () => ns.promoteSideChat?.(t.cascadeId),
+            },
             { separator: true },
             {
               id: 'close-tab',
-              label: 'Delete Side Chat',
+              label: 'Close Side Question',
               disabled: Boolean(t.pinned),
-              onClick: () => ns.deleteSideChatsByIds([t.cascadeId]),
+              onClick: () => ns.closeSideChatsByIds?.([t.cascadeId]),
             },
             {
               id: 'close-other-tabs',
-              label: 'Delete Other Side Chats',
+              label: 'Close Other Side Questions',
               disabled: !others.length,
               onClick: () => {
-                ns.setActiveSideChatId(t.cascadeId);
-                ns.deleteSideChatsByIds(others);
+                selectThread(t.cascadeId);
+                ns.closeSideChatsByIds?.(others);
               },
             },
             {
               id: 'close-tabs-to-the-right',
-              label: 'Delete Side Chats to the Right',
+              label: 'Close Side Questions to the Right',
               disabled: !right.length,
-              onClick: () => ns.deleteSideChatsByIds(right),
+              onClick: () => ns.closeSideChatsByIds?.(right),
+            },
+            { separator: true },
+            {
+              id: 'delete-tab',
+              icon: 'delete',
+              label: 'Delete Side Question',
+              onClick: () => reqDel([t.cascadeId]),
             },
           ]);
         },
@@ -167,6 +216,7 @@
           });
         },
       });
+      ctx.sessionsEl._updateOverflow?.();
     }
 
     return { renderSessionStrip };

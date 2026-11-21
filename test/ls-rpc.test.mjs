@@ -415,4 +415,44 @@ describe('hangarRpc shared state reads', () => {
     assert.equal(snap2.ok, true);
     assert.equal(calls, 1, 'second snapshot read within 10s must serve cached result');
   });
+
+  it('invalidates GetAllCascadeTrajectories on SendUserCascadeMessage/Cancel, clears lastTrajectories, and guards fetchJetboxSummaries against pre-invalidation write-back', async () => {
+    let trajStatus = 1;
+    let failTraj = false;
+    const calls = {};
+    const options = {
+      lsAddress: '127.0.0.1:59994',
+      csrfToken: 'tok',
+      fetchFn: async (url) => {
+        const method = url.slice(url.lastIndexOf('/') + 1);
+        calls[method] = (calls[method] || 0) + 1;
+        if (method === 'GetAllCascadeTrajectories') {
+          if (failTraj) return { ok: false, status: 503, text: async () => 'err' };
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ trajectorySummaries: { 'sq-1': { status: trajStatus } } }),
+          };
+        }
+        return { ok: true, status: 200, text: async () => '{}' };
+      },
+    };
+    invalidateStateReads();
+    const first = await hangarRpc('GetAllCascadeTrajectories', {}, options);
+    assert.equal(first.trajectorySummaries['sq-1'].status, 1);
+
+    trajStatus = 2;
+    await hangarRpc('SendUserCascadeMessage', { cascadeId: 'sq-1' }, options);
+    const afterSend = await hangarRpc('GetAllCascadeTrajectories', {}, options);
+    assert.equal(afterSend.trajectorySummaries['sq-1'].status, 2, 'SendUserCascadeMessage must bust cached trajectories');
+
+    await hangarRpc('DeleteCascadeTrajectory', { cascadeId: 'sq-1' }, options);
+    failTraj = true;
+    const fallbackAfterDel = await hangarRpc('GetAllCascadeTrajectories', {}, options);
+    assert.equal(
+      fallbackAfterDel.trajectorySummaries['sq-1'],
+      undefined,
+      'DeleteCascadeTrajectory must scrub deleted cascadeId from lastTrajectories fallback',
+    );
+  });
 });

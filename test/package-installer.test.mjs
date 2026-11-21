@@ -664,4 +664,42 @@ describe('Hangar package installer, local linker, and capability inspector', () 
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('selfUpdateHangar rejects incomplete Hangar bundle missing required runtime files without replacing live install', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-selfupdate-incomplete-'));
+    try {
+      const sidecarsDir = join(dir, 'sidecars');
+      const packagesDir = join(dir, 'packages');
+      const agyCfgPath = join(dir, 'config.json');
+      const liveDir = join(packagesDir, 'hangar@9.1.0');
+      mkdirSync(liveDir, { recursive: true });
+      writeJsonNoBom(join(liveDir, 'sidecar.json'), { command: 'node', args: ['launch.mjs'] });
+      writeJsonNoBom(join(liveDir, 'package.json'), { name: 'antigravity-hangar', version: '9.1.0' });
+
+      await assert.rejects(
+        () =>
+          selfUpdateHangar({
+            version: '9.1.0',
+            packagesDir,
+            sidecarsDir,
+            agyConfigPath: agyCfgPath,
+            delayMs: 0,
+            verifyRequiredFiles: true,
+            execFn: (cmd, args) => {
+              if (cmd === 'git' && args[0] === 'clone') {
+                const dest = args[args.length - 1];
+                mkdirSync(dest, { recursive: true });
+                writeJsonNoBom(join(dest, 'sidecar.json'), { command: 'node', args: ['launch.mjs'] });
+                writeJsonNoBom(join(dest, 'package.json'), { name: 'antigravity-hangar', version: '9.2.0' });
+              }
+            },
+            rpcFn: async () => ({}),
+          }),
+        /Missing required Hangar runtime file/i,
+      );
+      assert.equal(readJsonSafe(join(liveDir, 'package.json'), {}).version, '9.1.0');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

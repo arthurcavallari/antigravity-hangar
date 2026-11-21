@@ -39,8 +39,22 @@ describe('config-store and child iframe URL normalization', () => {
         { scope: 'project', workspaces: ['c:/Projects/App', 'c:/Test'], autoHibernate: true },
         { configPath: cfgPath, sidecarsDir: dir }
       );
+      const initial = loadHangarConfig(cfgPath);
+      assert.equal(initial.layout.hideHangarTerminals, true);
+      assert.equal(initial.layout.showExternalSideQuestions, true);
+      assert.equal(initial.layout.hideHangarSideQuestions, false);
+
       updateHangarLayout(
-        { splitViewEnabled: true, pinnedTopHeightPx: 210, autoUpdate: true, extensionsDisplayMode: 'button', terminalDisplayMode: 'button' },
+        {
+          splitViewEnabled: true,
+          pinnedTopHeightPx: 210,
+          autoUpdate: true,
+          extensionsDisplayMode: 'button',
+          terminalDisplayMode: 'button',
+          hideHangarTerminals: 0,
+          showExternalSideQuestions: 0,
+          hideHangarSideQuestions: 1,
+        },
         cfgPath
       );
 
@@ -50,7 +64,17 @@ describe('config-store and child iframe URL normalization', () => {
       assert.equal(loaded.layout.autoUpdate, true);
       assert.equal(loaded.layout.extensionsDisplayMode, 'button');
       assert.equal(loaded.layout.terminalDisplayMode, 'button');
+      assert.equal(loaded.layout.hideHangarTerminals, false);
+      assert.equal(loaded.layout.showExternalSideQuestions, false);
+      assert.equal(loaded.layout.hideHangarSideQuestions, true);
       assert.deepEqual(loaded.sidecars['db-inspector'].workspaces, ['c:/Projects/App', 'c:/Test']);
+
+      updateHangarLayout({ workspaceLayouts: ['bad'], sideChatStateByWorkspace: ['bad'] }, cfgPath);
+      const afterBadArrays = loadHangarConfig(cfgPath);
+      assert.equal(Array.isArray(afterBadArrays.layout.workspaceLayouts), false);
+      assert.equal(Array.isArray(afterBadArrays.layout.sideChatStateByWorkspace), false);
+      assert.equal(afterBadArrays.layout.workspaceLayouts['0'], undefined);
+      assert.equal(afterBadArrays.layout.sideChatStateByWorkspace['0'], undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

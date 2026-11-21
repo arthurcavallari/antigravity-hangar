@@ -12,10 +12,10 @@ import { manageSidecar } from 'antigravity-sidecar-kit/rpc';
 import { removeLinkOrDir, runSidecarSetup } from 'antigravity-sidecar-kit/setup';
 import {
   CONFIG_JSON_PATH,
-  DEFAULT_HANGAR_CONFIG,
   GLOBAL_SIDECARS_DIR,
   HANGAR_CONFIG_PATH,
   HANGAR_DATA_DIR,
+  HANGAR_REQUIRED_FILES,
   HANGAR_VERSION,
   LEGACY_HUB_CONFIG_PATH,
   LEGACY_HUB_DATA_DIR,
@@ -107,6 +107,7 @@ runSidecarSetup({
     'lib/jetbox-audio.mjs',
     'lib/jetbox-proxy.mjs',
     'lib/jetbox-rpc-policy.mjs',
+    'lib/jetbox-sidechat.mjs',
     'lib/jetbox-vcs.mjs',
     'lib/ls-rpc.mjs',
     'lib/package-installer.mjs',
@@ -147,7 +148,6 @@ runSidecarSetup({
     syncLocalSidecarKit();
     await migrateLegacySidecarHub();
     if (!existsSync(HANGAR_CONFIG_PATH)) {
-      writeJsonNoBom(HANGAR_CONFIG_PATH, DEFAULT_HANGAR_CONFIG);
       loadHangarConfig(HANGAR_CONFIG_PATH);
       console.log(`[${SIDECAR_ID}] Initialized default ${HANGAR_CONFIG_PATH}`);
     }

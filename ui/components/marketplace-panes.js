@@ -221,7 +221,7 @@
           });
           ns.setHtml(
             btn,
-            ns.html`${ns.iconSvg(isInstalled ? 'check' : 'download', 13)}<span>${isInstalled ? 'Installed' : 'Install'}</span>`,
+            ns.html`${ns.iconSvg(isInstalled ? 'check' : 'download', 16)}<span>${isInstalled ? 'Installed' : 'Install'}</span>`,
           );
           if (isInstalled) btn.removeAttribute('title');
         }

@@ -121,7 +121,7 @@
       );
       const actBtn = ns.setHtml(
         Object.assign(document.createElement('button'), { type: 'button', className: 'agy-btn agy-btn-primary has-icon' }),
-        ns.html`${ns.iconSvg(isInstall ? 'download' : 'check', 13)}<span>${isInstall ? 'Install…' : 'Enable'}</span>`,
+        ns.html`${ns.iconSvg(isInstall ? 'download' : 'check', 16)}<span>${isInstall ? 'Install…' : 'Enable'}</span>`,
       );
       if (isInstall) actBtn.title = 'Opens this sidecar in Discover to review its capability tier before installing';
       actBtn.addEventListener('click', () => sugEl._onApplySuggestion?.(sug));
@@ -470,7 +470,7 @@
       const wsBtnSig = `${alreadyHasCurrent}:${wsBtnLabel}`;
       if (addWsBtn.dataset.sig !== wsBtnSig) {
         addWsBtn.dataset.sig = wsBtnSig;
-        ns.setHtml(addWsBtn, ns.html`${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 13)}<span>${ns.escHtml(wsBtnLabel)}</span>`);
+        ns.setHtml(addWsBtn, ns.html`${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 16)}<span>${ns.escHtml(wsBtnLabel)}</span>`);
       }
       addWsBtn.disabled = !currentWs;
       globalBtn.closest?.('agy-toggle-group')?.sync?.();

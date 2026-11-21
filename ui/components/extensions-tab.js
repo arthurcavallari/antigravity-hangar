@@ -37,13 +37,20 @@
       onUpdateSettings: async (patch) => {
         if (!apiCall) return;
         bumpLayoutSeq?.();
-        const modeKeys = ['extensionsDisplayMode', 'terminalDisplayMode', 'showExternalTerminals'].filter(
-          (k) => patch?.[k] !== undefined,
-        );
+        const modeKeys = [
+          'extensionsDisplayMode',
+          'terminalDisplayMode',
+          'showExternalTerminals',
+          'hideHangarTerminals',
+          'showExternalSideQuestions',
+          'hideHangarSideQuestions',
+        ].filter((k) => patch?.[k] !== undefined);
         if (modeKeys.length) {
           for (const k of modeKeys) state.layout[k] = patch[k];
-          state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
-          patch = { ...patch, pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID };
+          if (!state.layout.splitViewEnabled || state.bottomActiveTabId !== ns.EXTENSIONS_TAB_ID) {
+            state.layout.pinnedTopSidecarId = ns.EXTENSIONS_TAB_ID;
+            patch = { ...patch, pinnedTopSidecarId: ns.EXTENSIONS_TAB_ID };
+          }
         }
         await saveLayoutUpdate(patch);
         await (patch?.autoUpdate ? syncStore() : refreshHangarState());
@@ -201,6 +208,37 @@
                 <button type="button" data-role="ext-terms-hide" data-value="hide" class="agy-toggle-item">Hangar Only</button>
               </agy-toggle-group>
             </div>
+            <div class="manager-section-bar">
+              <span class="manager-section-label">Hangar Terminals in Antigravity (Visibility in Antigravity's native Terminal panel)</span>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Hangar Terminals in Antigravity">
+                <button type="button" data-role="hangar-terms-hide" data-value="hide" class="agy-toggle-item">Hidden</button>
+                <button type="button" data-role="hangar-terms-show" data-value="show" class="agy-toggle-item">Shared</button>
+              </agy-toggle-group>
+            </div>
+          </div>
+          <div class="agy-card">
+            <div class="agy-card-header">
+              <div class="manager-card-title-group">
+                <div class="manager-card-title-row">
+                  <span class="manager-card-title">Side Questions</span>
+                </div>
+                <div class="agy-card-meta">Configure how Hangar syncs and isolates Side Question threads with Antigravity</div>
+              </div>
+            </div>
+            <div class="manager-section-bar">
+              <span class="manager-section-label">External Side Questions (Threads opened in Antigravity via /btw or Aux Pane)</span>
+              <agy-toggle-group class="agy-toggle-group" aria-label="External Side Questions">
+                <button type="button" data-role="ext-sq-show" data-value="show" class="agy-toggle-item">Show External</button>
+                <button type="button" data-role="ext-sq-hide" data-value="hide" class="agy-toggle-item">Hangar Only</button>
+              </agy-toggle-group>
+            </div>
+            <div class="manager-section-bar">
+              <span class="manager-section-label">Hangar Side Questions in Antigravity (Hidden starts standalone threads without main-chat history)</span>
+              <agy-toggle-group class="agy-toggle-group" aria-label="Hangar Side Questions in Antigravity">
+                <button type="button" data-role="hangar-sq-show" data-value="show" class="agy-toggle-item">Shared</button>
+                <button type="button" data-role="hangar-sq-hide" data-value="hide" class="agy-toggle-item">Hidden</button>
+              </agy-toggle-group>
+            </div>
           </div>
           <div class="agy-card">
             <div class="agy-card-header">
@@ -259,6 +297,12 @@
         ['term-mode-button', { terminalDisplayMode: 'button' }, 'Showing Terminal as a top-bar icon button.'],
         ['ext-terms-show', { showExternalTerminals: true }, 'Showing external workspace terminals inside Hangar.'],
         ['ext-terms-hide', { showExternalTerminals: false }, 'Hiding external terminals (showing Hangar terminals only).'],
+        ['hangar-terms-hide', { hideHangarTerminals: true }, 'Hiding newly created Hangar terminals from Antigravity.'],
+        ['hangar-terms-show', { hideHangarTerminals: false }, 'Sharing newly created Hangar terminals with Antigravity.'],
+        ['ext-sq-show', { showExternalSideQuestions: true }, 'Showing external Antigravity Side Questions inside Hangar.'],
+        ['ext-sq-hide', { showExternalSideQuestions: false }, 'Hiding external Side Questions (showing Hangar threads only).'],
+        ['hangar-sq-show', { hideHangarSideQuestions: false }, 'Sharing Hangar Side Questions with Antigravity (inherits main chat context).'],
+        ['hangar-sq-hide', { hideHangarSideQuestions: true }, 'Hiding newly created Hangar Side Questions from Antigravity (standalone threads).'],
       ]) {
         bindToggle(role, patch, msg);
       }
@@ -293,6 +337,9 @@
       ['term-mode-button', 'term-mode-tab', opts.layout?.terminalDisplayMode === 'button'],
       ['engine-direct', 'engine-jetbox', ns.readEngineMode?.() === 'direct'],
       ['ext-terms-show', 'ext-terms-hide', opts.layout?.showExternalTerminals !== false],
+      ['hangar-terms-hide', 'hangar-terms-show', opts.layout?.hideHangarTerminals !== false],
+      ['ext-sq-show', 'ext-sq-hide', opts.layout?.showExternalSideQuestions !== false],
+      ['hangar-sq-hide', 'hangar-sq-show', opts.layout?.hideHangarSideQuestions === true],
     ]) {
       q(onRole)?.classList.toggle('active', Boolean(isOn));
       q(offRole)?.classList.toggle('active', !isOn);

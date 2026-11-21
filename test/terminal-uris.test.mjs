@@ -4,8 +4,18 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { registerJetboxProxyRoutes } from '../lib/jetbox-proxy.mjs';
-import { createWorkspaceTerminal, listWorkspaceTerminals } from '../lib/terminal-manager.mjs';
-import { fromHangarTerminalUri, toHangarTerminalUris } from '../lib/terminal-uris.mjs';
+import { createWorkspaceTerminal, listWorkspaceTerminals, registerTerminalRoutes } from '../lib/terminal-manager.mjs';
+import {
+  fromHangarTerminalUri,
+  isHangarOwnedTerminal,
+  loadPersistedHangarTerminalIds,
+  markHangarTerminalId,
+  toHangarTerminalUris,
+  withSharedWorkspaceUris,
+} from '../lib/terminal-uris.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const WS = 'file:///c:/Users/arthu/IdeaProjects/lastwar-client';
 
@@ -77,5 +87,191 @@ describe('terminal workspace URIs', () => {
       workspaceUri: 'hangar+file:///c:/Users/arthu/IdeaProjects/lastwar-client', projectId: `hangar:${WS}`, conversationId: 'hangar:conv-1',
     });
     assert.deepEqual(sent[1].body, { projectId: 'outside-of-project', workspaceUri: 'outside-of-project', conversationId: 'hangar:conv-2' }, 'non-workspace ids pass through as before');
+  });
+
+  it('shares Hangar terminals with Antigravity when hideHangarTerminals is false while keeping isExternal false inside Hangar', async () => {
+    const calls = [];
+    const liveTerminals = [];
+    let seq = 1;
+    const rpcFn = async (method, body) => {
+      calls.push({ method, body });
+      if (method === 'CreateTerminal') {
+        const created = { terminalId: `t-shared-${seq++}`, pid: 100 + seq, title: 'pwsh', ...body };
+        liveTerminals.push(created);
+        return { terminal: created };
+      }
+      if (method === 'ListTerminals') {
+        return {
+          terminals: [
+            ...liveTerminals,
+            { terminalId: 't-truly-native', pid: 999, title: 'pwsh', conversationId: 'conv-1', workspaceUri: WS },
+          ],
+        };
+      }
+      return {};
+    };
+    const fetchFn = async () => ({ ok: false });
+
+    const createdWs = await createWorkspaceTerminal({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      conversationId: 'conv-1',
+      hideHangarTerminals: false,
+      rpcFn,
+      fetchFn,
+    });
+    assert.deepEqual(calls[0].body, {
+      workspaceUri: WS,
+      conversationId: 'conv-1',
+    });
+    assert.equal(createdWs.workspaceUri, WS);
+    assert.equal(createdWs.conversationId, 'conv-1');
+
+    // _new conversationId must not leak into shared CreateTerminal
+    await createWorkspaceTerminal({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      conversationId: '_new',
+      hideHangarTerminals: false,
+      rpcFn,
+      fetchFn,
+    });
+    assert.deepEqual(calls[1].body, {
+      workspaceUri: WS,
+    });
+
+    // Embedded Jetbox split when getHideHangarTerminals returns false also uses file: URI and marks terminal Hangar-owned
+    const apis = new Map();
+    registerJetboxProxyRoutes(
+      { page() {}, api: (p, fn) => apis.set(p, fn) },
+      { rpcFn, getHideHangarTerminals: () => false },
+    );
+    await apis.get('/api/terminal/ls-rpc')({
+      method: 'CreateTerminal',
+      body: {
+        workspaceUri: 'hangar+file:///c:/Users/arthu/IdeaProjects/lastwar-client',
+        projectId: `hangar:${WS}`,
+        conversationId: 'hangar:conv-1',
+        splitFromTerminalId: 't-shared-1',
+      },
+    });
+    assert.deepEqual(calls[2].body, {
+      workspaceUri: WS,
+      conversationId: 'conv-1',
+      splitFromTerminalId: 't-shared-1',
+    });
+
+    const listed = await listWorkspaceTerminals({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      showExternalTerminals: true,
+      rpcFn,
+    });
+    const byId = new Map(listed.map((t) => [t.terminalId, t]));
+    assert.equal(byId.get('t-shared-1')?.isExternal, false, 'Hangar-created shared terminal stays isExternal: false');
+    assert.equal(byId.get('t-shared-2')?.isExternal, false);
+    assert.equal(byId.get('t-shared-3')?.isExternal, false, 'Jetbox split terminal stays isExternal: false');
+    assert.equal(byId.get('t-truly-native')?.isExternal, true, 'Native Antigravity terminal stays isExternal: true');
+
+    const hangarOnly = await listWorkspaceTerminals({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      showExternalTerminals: false,
+      rpcFn,
+    });
+    assert.deepEqual(hangarOnly.map((t) => t.terminalId), ['t-shared-1', 't-shared-2', 't-shared-3']);
+  });
+
+  it('respects getHideHangarTerminals on /api/terminal/create, retains projectless _new terminals, sets outside-of-project on shared projectless URIs, and persists Hangar terminal ownership', async () => {
+    // 1. withSharedWorkspaceUris sets projectId: 'outside-of-project' when no workspace file URI exists and conversationId is present
+    assert.deepEqual(
+      withSharedWorkspaceUris({ conversationId: 'hangar:conv-projless-1' }),
+      { projectId: 'outside-of-project', conversationId: 'conv-projless-1' },
+    );
+
+    // 2. /api/terminal/create consults options.getHideHangarTerminals directly without waiting for listWorkspaceTerminals
+    const routeApis = new Map();
+    const createdBodies = [];
+    registerTerminalRoutes(
+      { page() {}, api: (p, fn) => routeApis.set(p, fn) },
+      { getHideHangarTerminals: () => false, rpcFn: async () => ({}) },
+    );
+    await routeApis.get('/api/terminal/create')({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      conversationId: 'conv-direct',
+      fetchFn: async () => ({ ok: false }),
+      rpcFn: async (method, body) => {
+        if (method === 'CreateTerminal') {
+          createdBodies.push(body);
+          return { terminal: { terminalId: 't-route-shared', pid: 400, title: 'pwsh', ...body } };
+        }
+        return {};
+      },
+    });
+    assert.deepEqual(createdBodies[0], { workspaceUri: WS, conversationId: 'conv-direct' });
+
+    // 3. Projectless _new terminals remain visible on listWorkspaceTerminals({ workspacePath: '', conversationId: '' })
+    const liveProjless = [];
+    const projlessRpc = async (method, body) => {
+      if (method === 'CreateTerminal') {
+        const t = { terminalId: `t-pl-${liveProjless.length + 1}`, pid: 500, title: 'pwsh', ...body };
+        liveProjless.push(t);
+        return { terminal: t };
+      }
+      if (method === 'ListTerminals') {
+        return {
+          terminals: [
+            ...liveProjless,
+            { terminalId: 't-foreign-ws', pid: 501, title: 'pwsh', workspaceUri: WS },
+          ],
+        };
+      }
+      return {};
+    };
+    await createWorkspaceTerminal({ workspacePath: '', conversationId: '', hideHangarTerminals: false, rpcFn: projlessRpc, fetchFn: async () => ({ ok: false }) });
+    await createWorkspaceTerminal({ workspacePath: '', conversationId: '_new', hideHangarTerminals: true, rpcFn: projlessRpc, fetchFn: async () => ({ ok: false }) });
+    const listedProjless = await listWorkspaceTerminals({ workspacePath: '', conversationId: '', rpcFn: projlessRpc });
+    assert.deepEqual(listedProjless.map((t) => t.terminalId), ['t-pl-1', 't-pl-2']);
+
+    // 4. Splitting an existing hidden terminal after toggling hideHangarTerminals to false inherits parent's hidden URI scheme
+    const splitCalls = [];
+    const splitRpc = async (method, body) => {
+      splitCalls.push({ method, body });
+      if (method === 'CreateTerminal') {
+        return { terminal: { terminalId: `t-split-${splitCalls.length}`, pid: 600, title: 'pwsh', ...body } };
+      }
+      return {};
+    };
+    const hiddenParent = await createWorkspaceTerminal({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      conversationId: 'conv-split-1',
+      hideHangarTerminals: true,
+      rpcFn: splitRpc,
+      fetchFn: async () => ({ ok: false }),
+    });
+    await createWorkspaceTerminal({
+      workspacePath: 'C:\\Users\\arthu\\IdeaProjects\\lastwar-client',
+      conversationId: 'conv-split-1',
+      splitFromTerminalId: hiddenParent.terminalId,
+      hideHangarTerminals: false,
+      rpcFn: splitRpc,
+      fetchFn: async () => ({ ok: false }),
+    });
+    assert.deepEqual(splitCalls[1].body, {
+      workspaceUri: 'hangar+file:///c:/Users/arthu/IdeaProjects/lastwar-client',
+      projectId: `hangar:${WS}`,
+      conversationId: 'hangar:conv-split-1',
+      splitFromTerminalId: hiddenParent.terminalId,
+    });
+
+    // 5. Persisted Hangar terminal IDs survive in-memory reset (Hangar restart)
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-term-own-'));
+    try {
+      const storePath = join(dir, 'hangar-terminals.json');
+      const emptyPath = join(dir, 'empty.json');
+      markHangarTerminalId('t-restart-survive', Date.now(), storePath);
+      loadPersistedHangarTerminalIds(emptyPath);
+      assert.equal(isHangarOwnedTerminal({ terminalId: 't-restart-survive', workspaceUri: WS }), false);
+      loadPersistedHangarTerminalIds(storePath);
+      assert.equal(isHangarOwnedTerminal({ terminalId: 't-restart-survive', workspaceUri: WS }), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -238,11 +238,29 @@ describe('Hangar Extensions tab and Settings pane', () => {
     settingsPane.querySelector('[data-role="engine-direct"]').click();
     assert.equal(currentEngine, 'direct');
 
+    // Verify defaults and toggles for Hangar Terminals in Antigravity and Side Questions settings
+    assert.equal(settingsPane.querySelector('[data-role="hangar-terms-hide"]').classList.contains('active'), true);
+    assert.equal(settingsPane.querySelector('[data-role="hangar-terms-show"]').classList.contains('active'), false);
+    assert.equal(settingsPane.querySelector('[data-role="ext-sq-show"]').classList.contains('active'), true);
+    assert.equal(settingsPane.querySelector('[data-role="ext-sq-hide"]').classList.contains('active'), false);
+    assert.equal(settingsPane.querySelector('[data-role="hangar-sq-show"]').classList.contains('active'), true);
+    assert.equal(settingsPane.querySelector('[data-role="hangar-sq-hide"]').classList.contains('active'), false);
+
+    settingsPane.querySelector('[data-role="hangar-terms-show"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="ext-sq-hide"]').click();
+    await flush();
+    settingsPane.querySelector('[data-role="hangar-sq-hide"]').click();
+    await flush();
+
     assert.deepEqual(JSON.parse(JSON.stringify(settingsPatches)), [
       { autoUpdate: true },
       { hibernateAfterIdleMinutes: 30 },
       { extensionsDisplayMode: 'button' },
       { terminalDisplayMode: 'button' },
+      { hideHangarTerminals: false },
+      { showExternalSideQuestions: false },
+      { hideHangarSideQuestions: true },
     ]);
 
     settingsBtn.click();
@@ -294,5 +312,29 @@ describe('Hangar Extensions tab and Settings pane', () => {
     await flush();
     assert.equal(selfUpdateCalls, 2);
     assert.equal(reloaded, 1);
+
+    // Toggling settings when Extensions is in the bottom split pane must not clobber pinnedTopSidecarId
+    const splitSaved = [];
+    const splitState = {
+      layout: {
+        splitViewEnabled: true,
+        pinnedTopSidecarId: '__sidechat__',
+        showExternalSideQuestions: true,
+      },
+      bottomActiveTabId: window.Hangar.EXTENSIONS_TAB_ID,
+    };
+    const extActions = window.Hangar.createExtensionsActions({
+      state: splitState,
+      apiCall: async () => ({}),
+      bumpLayoutSeq: () => {},
+      saveLayoutUpdate: async (patch) => splitSaved.push(patch),
+      reopenClosed: async () => {},
+      refreshRegistry: async () => {},
+      refreshHangarState: async () => {},
+      renderAll: () => {},
+    });
+    await extActions.onUpdateSettings({ showExternalSideQuestions: false });
+    assert.equal(splitState.layout.pinnedTopSidecarId, '__sidechat__');
+    assert.deepEqual(splitSaved, [{ showExternalSideQuestions: false }]);
   });
 });

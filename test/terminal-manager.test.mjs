@@ -9,6 +9,7 @@ import { DEFAULT_HANGAR_CONFIG } from '../lib/constants.mjs';
 import { encodeConnectFrame as kitEncodeConnectFrame, parseConnectFrames as kitParseConnectFrames } from 'antigravity-sidecar-kit/rpc';
 import { buildAgyUiJs } from 'antigravity-sidecar-kit';
 import { buildJetboxChatHtml, buildJetboxTerminalHtml, checkJetboxAuth, closeTerminalSideChatStreams, deleteTerminalSideChat, evictStaleChatStreams, pollChatStream, registerJetboxProxyRoutes, renameTerminalSideChat, startTerminalSideChat, syncQuoteWithHostWindow, writeQuoteFile } from '../lib/jetbox-proxy.mjs';
+import { markHangarSideChatId } from '../lib/jetbox-sidechat.mjs';
 import { evictStaleVcsStreams, pollVcsStream } from '../lib/jetbox-vcs.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
@@ -572,15 +573,13 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       autoSubmit: true,
     });
     const dockedTabs = windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs;
-    assert.ok(dockedTabs.some((t) => t.sidecarId === '__sidechat__' && t.displayName === 'Side Chat' && t.canClose === true));
+    assert.ok(dockedTabs.some((t) => t.sidecarId === '__sidechat__' && t.displayName === 'Side Questions' && t.canClose === true));
     const vpEl = makeEl();
     windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: '__sidechat__', bottomSlotId: '', splitEnabled: false });
     assert.ok(composer.classList.contains('slot-top') && !composer.classList.contains('hidden'));
-    windowObj.Hangar.closeSideChatDrawer({ deleteAll: false, notify: false });
-    const hiddenPart = windowObj.Hangar.partitionSplitTabs([], { closedTabIds: ['__sidechat__'] }, allTerms);
-    assert.equal(hiddenPart.workspaceTabs.some((t) => t.sidecarId === '__sidechat__'), false);
-    assert.equal(hiddenPart.closedTabs.some((t) => t.sidecarId === '__sidechat__'), true);
     composer._els.deleteBtn.emit('click', { stopPropagation() {} });
+    assert.equal(composer._els.confirmBar.classList.contains('hidden'), false);
+    composer._els.confirmDeleteBtn.emit('click', { stopPropagation() {} });
     assert.equal(windowObj.Hangar.getSideChatState().isOpen, false);
     assert.equal(windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs.some((t) => t.sidecarId === '__sidechat__'), false);
     windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: '__sidechat__', bottomSlotId: '', splitEnabled: false });
@@ -588,10 +587,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     windowObj.Hangar.closeSideChatDrawer({ deleteAll: true, notify: false });
     windowObj.Hangar.openTerminalQuoteComposer(vpEl, {}, { conversationId: 'conv-host-1' });
     await new Promise((r) => setTimeout(r, 15));
-    assert.equal(composer._els.badge.classList.contains('hidden'), true);
-    assert.equal(composer._els.mainToggleBtn.classList.contains('hidden'), true);
-    assert.ok(composer._els.newThreadBtn.className.includes('hidden'));
-    assert.ok(composer._els.deleteBtn.className.includes('hidden'));
+    assert.equal(composer._els.deleteBtn.className.includes('hidden'), false);
     assert.equal(composer._els.overviewBtn.classList.contains('active'), false);
     composer._els.overviewBtn.emit('click', { stopPropagation() {} });
     assert.equal(composer._els.overviewBtn.classList.contains('active'), true);
@@ -622,11 +618,9 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(lastScDockEvt?.sourceTabId, '__sidechat__');
     windowObj.Hangar.renderSideChatSlot({ viewportEl: vpEl, topSlotId: '__sidechat__', bottomSlotId: '', splitEnabled: false });
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
-    assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Chat #1');
+    assert.equal(windowObj.Hangar.getSideChatState().threads[0].title, 'Side Question #1');
     miniComposer._setTargetCascadeId(windowObj.Hangar.getSideChatState().threads[0].cascadeId);
-    assert.ok(miniComposer._els.sideChatBtn.innerHTML.includes('Ask in Side Chat #1'));
-    assert.ok(composer._els.threadSelect.innerHTML.includes('<option value="'), 'threadSelect options must not be HTML-escaped');
-    assert.equal(composer._els.threadSelect.innerHTML.includes('&lt;option'), false);
+    assert.ok(miniComposer._els.sideChatBtn.innerHTML.includes('Ask in Side Question #1'));
     miniComposer._els.input.value = 'Follow-up in existing thread';
     miniComposer._submitSideChat();
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 1);
@@ -637,7 +631,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     windowObj.Hangar.openTerminalQuoteComposer(vpEl, {}, { conversationId: 'conv-host-1', forceNewThread: true });
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(windowObj.Hangar.getSideChatState().threads.length, 2);
-    assert.equal(windowObj.Hangar.getSideChatState().threads[1].title, 'Side Chat #2');
+    assert.equal(windowObj.Hangar.getSideChatState().threads[1].title, 'Side Question #2');
     assert.ok(composer._els.chatFrame.src.includes(encodeURIComponent(windowObj.Hangar.getSideChatState().threads[1].cascadeId)));
     // Background pooled frame in sc.frames must still be trusted by isTrustedSideChatMessage
     lastScDockEvt = null;
@@ -866,8 +860,9 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.equal(fallbackRpcCalls.length, 2);
       assert.equal(fallbackRpcCalls[1].body.baseTrajectoryIdentifier, undefined);
 
-      // When StreamAgentStateUpdates returns not_found for a valid UUID, pollChatStream auto-calls StartCascade instead of locking closed=true
+      // When StreamAgentStateUpdates returns not_found for a Hangar-owned cold UUID, pollChatStream auto-calls StartCascade instead of locking closed=true
       const missingUuid = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+      markHangarSideChatId(missingUuid);
       const autoStartCalls = [];
       const notFoundFrame = encodeConnectFrame({ error: { code: 'not_found', message: 'not_found: trajectory not found' } }, 2);
       pollChatStream({

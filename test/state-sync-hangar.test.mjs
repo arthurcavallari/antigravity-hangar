@@ -49,7 +49,7 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(quoteJs, /mini\.setAttribute\?\.\('aria-label',\s*'Ask about terminal output'\)/);
     assert.match(quoteJs, /closeBtn\.setAttribute\?\.\('aria-label',\s*'Cancel \(Esc\)'\)/);
     assert.match(quoteJs, /input\.setAttribute\?\.\('aria-label',\s*'Ask about terminal output'\)/);
-    assert.match(quoteJs, /sideChatPickBtn\.setAttribute\?\.\('aria-label',\s*'Choose Side Chat thread'\)/);
+    assert.match(quoteJs, /sideChatPickBtn\.setAttribute\?\.\('aria-label',\s*'Choose Side Question thread'\)/);
     assert.match(quoteJs, /mini\._prevFocus\?\.focus\?\.\(\)/);
     assert.match(quoteJs, /toast\.setAttribute\?\.\('role',\s*isErr\s*\?\s*'alert'\s*:\s*'status'\)/);
     assert.match(quoteJs, /toast\.setAttribute\?\.\('aria-live',\s*isErr\s*\?\s*'assertive'\s*:\s*'polite'\)/);
@@ -144,16 +144,32 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
     assert.match(extSrc, /ns\.notifyAgent\?\.\(msg,\s*convId/);
   });
 
-  it('enforces readable multi-line CSS and JS formatting across Hangar UI modules', () => {
-    for (const cssRel of ['ui/styles.css', 'ui/components.css']) {
+  it('enforces readable multi-line CSS and JS formatting and complete requiredFiles manifests across Hangar modules', async () => {
+    for (const cssRel of [
+      'ui/styles.css',
+      'ui/components.css',
+      'ui/jetbox/jetbox-shared.css',
+      'ui/jetbox/jetbox-chat.css',
+      'ui/jetbox/jetbox-terminal.css',
+    ]) {
       const css = readFileSync(join(ROOT, cssRel), 'utf8');
       const packedCss = css.split(/\r?\n/).filter((l) => (l.match(/;/g) || []).length >= 3);
       assert.deepEqual(packedCss, [], `${cssRel} contains packed multi-property single-line rules`);
     }
 
     for (const rel of [
+      'server.mjs',
+      'setup.mjs',
+      'lib/jetbox-sidechat.mjs',
+      'lib/jetbox-proxy.mjs',
+      'lib/jetbox-rpc-policy.mjs',
+      'lib/jetbox-audio.mjs',
+      'lib/ls-rpc.mjs',
+      'lib/terminal-uris.mjs',
+      'lib/terminal-manager.mjs',
       'ui/app.js',
       'ui/core.js',
+      'ui/jetbox/jetbox-bootstrap.js',
       'ui/components/tab-bar.js',
       'ui/components/iframe-deck.js',
       'ui/components/layout-controller.js',
@@ -178,9 +194,20 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
       assert.deepEqual(commaDecls, [], `${rel} contains comma-chained variable declarations`);
       const multiStmt = src
         .split(/\r?\n/)
-        .filter((l) => !l.includes('for (') && (l.match(/;/g) || []).length >= 3);
+        .filter((l) => {
+          if (l.includes('for (')) return false;
+          const stripped = l.replace(/'[^']*'|"[^"]*"|`[^`]*`|\/(?![/*])(?:\\.|[^/\\\r\n])+\/[gimsuy]*/g, '""');
+          return (stripped.match(/;/g) || []).length >= 2;
+        });
       assert.deepEqual(multiStmt, [], `${rel} contains packed multi-statement lines`);
     }
+
+    const { HANGAR_REQUIRED_FILES } = await import('../lib/constants.mjs');
+    const setupSrc = readFileSync(join(ROOT, 'setup.mjs'), 'utf8');
+    const setupArrMatch = setupSrc.match(/requiredFiles:\s*\[([\s\S]*?)\]/);
+    assert.ok(setupArrMatch, 'setup.mjs must declare literal requiredFiles array');
+    const setupFiles = Array.from(setupArrMatch[1].matchAll(/'([^']+)'/g), (m) => m[1]);
+    assert.deepEqual([...HANGAR_REQUIRED_FILES].sort(), [...setupFiles].sort(), 'HANGAR_REQUIRED_FILES must stay in sync with setup.mjs requiredFiles');
   });
 
   it('SH-15: steps up UI typography tokens for 2.31.0 and syncs jetski.fontSize to --app-font-scale', async () => {

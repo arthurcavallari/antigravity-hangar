@@ -462,7 +462,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     const termPaneSrc = readFileSync(join(UI_DIR, 'components/terminal-pane.js'), 'utf8');
     assert.match(termPaneSrc, /const frameTitle = `Interactive Terminal \(\$\{cleanTitle\}\)`/);
     const sidechatPaneSrc = readFileSync(join(UI_DIR, 'components/sidechat-pane.js'), 'utf8');
-    assert.match(sidechatPaneSrc, /title:\s*'Docked Side Chat'/);
+    assert.match(sidechatPaneSrc, /title:\s*'Docked Side Question'/);
 
     let enableClickHandler = null;
     const enableBtnStub = {
@@ -559,14 +559,13 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(compCssSrc, /\.term-pane-close\s*\{[\s\S]*?width:\s*20px;\s*height:\s*20px;/);
     assert.match(compCssSrc, /\.term-pane-dot\.active\s*\{[\s\S]*?background:\s*var\(--status-ok-dot,\s*var\(--agy-ok\)\);/);
     assert.doesNotMatch(compCssSrc, /\.term-quote-composer\[data-slot="top"\]/);
-    assert.match(sidechatPaneSrc, /threadSelect\.setAttribute\?\.\('aria-label', 'Select Side Chat thread'\)/);
-    assert.match(sidechatPaneSrc, /input\.setAttribute\?\.\('aria-label', 'Note for Main Chat'\)/);
-    assert.match(sidechatPaneSrc, /mainToggleBtn\.setAttribute\?\.\('aria-expanded', String\(nextShow\)\)/);
-    assert.match(sidechatPaneSrc, /newThreadBtn\.setAttribute\?\.\('aria-label', 'New Side Chat'\)/);
-    assert.match(sidechatPaneSrc, /deleteBtn\.setAttribute\?\.\('aria-label', 'Delete Side Chat'\)/);
+    assert.match(sidechatPaneSrc, /ariaLabel:\s*'Delete Side Question'/);
+    assert.match(sidechatPaneSrc, /ariaLabel:\s*'Promote to conversation'/);
+    assert.match(sidechatPaneSrc, /ariaLabel:\s*'More Side Questions'/);
+    assert.match(sidechatPaneSrc, /ariaLabel:\s*'Confirm Delete Side Question'/);
     assert.match(sidechatPaneSrc, /overviewBtn\.setAttribute\?\.\('aria-pressed', String\(Boolean\(box\._overviewOpen\)\)\)/);
     assert.doesNotMatch(sidechatPaneSrc, /sidechat-popout/);
-    assert.match(sidechatPaneSrc, /closeBtn\.setAttribute\?\.\('aria-label', 'Close Side Chat'\)/);
+    assert.doesNotMatch(sidechatPaneSrc, /threadSelect/);
   });
 
   it('cycles top or bottom split tab strip on Ctrl+Tab / Ctrl+Shift+Tab and forwards shortcuts from jetbox-bootstrap', async () => {

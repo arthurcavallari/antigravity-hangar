@@ -14,8 +14,8 @@ import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { registerStateSyncRoutes } from 'antigravity-sidecar-kit/state-sync';
 import { UI_SCRIPTS } from './lib/constants.mjs';
 import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
-import { updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
-import { hangarRpc } from './lib/ls-rpc.mjs';
+import { loadHangarConfig, updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
+import { promoteTerminalSideChat, renameTerminalSideChat } from './lib/jetbox-sidechat.mjs';
 import {
   inspectSidecarDirectory,
   installRemoteSidecar,
@@ -26,7 +26,6 @@ import {
 import { installRemotePlugin, pluginRequest, previewPluginPort, uninstallPlugin } from './lib/plugin-installer.mjs';
 import { inspectInstalledPluginHealth, isAuthorizedSidecarRequest } from './lib/plugin-diagnostics.mjs';
 import { fetchRegistry } from './lib/registry-catalog.mjs';
-import { renameTerminalSideChat } from './lib/jetbox-proxy.mjs';
 import { registerTerminalRoutes } from './lib/terminal-manager.mjs';
 
 const UI_DIR = join(realpathSync(dirname(fileURLToPath(import.meta.url))), 'ui');
@@ -68,6 +67,8 @@ app.api('/api/rules/update', withMutate((d) => updateSidecarRule(String(d?.sidec
 })), 'POST');
 app.api('/api/layout/update', withMutate((d) => updateHangarLayout(d || {})), 'POST');
 app.api('/api/sidecar/manage', withMutate((d) => manageChildSidecar(String(d?.sidecarId || ''), String(d?.action || ''))), 'POST');
+app.api('/api/sidechat/rename', withMutate((d) => renameTerminalSideChat(d || {})), 'POST');
+app.api('/api/sidechat/promote', withMutate((d) => promoteTerminalSideChat(d || {})), 'POST');
 app.api('/api/store/registry', guardApi(async () => fetchRegistry()), 'POST');
 app.api('/api/store/inspect', guardApi(async (d) => inspectSidecarDirectory(String(d?.folderPath || ''))), 'POST');
 app.api('/api/store/link-local', guardApi(async (d) => linkLocalSidecar({
@@ -97,15 +98,15 @@ app.api('/api/store/self-update', guardApi(async (d) => selfUpdateHangar({
   version: d?.version ? String(d.version) : 'latest',
   sha256: d?.sha256 ? String(d.sha256) : '',
   deferRestart: true,
-})), 'POST');
-app.api('/api/sidechat/rename', guardApi(async (ctx) => renameTerminalSideChat({
-  cascadeId: String(ctx?.body?.cascadeId ?? ctx?.cascadeId ?? ''),
-  parentConversationId: String(ctx?.body?.parentConversationId ?? ctx?.parentConversationId ?? ''),
-  title: String(ctx?.body?.title ?? ctx?.title ?? ''),
-  rpcFn: hangarRpc,
+  verifyRequiredFiles: true,
 })), 'POST');
 
-registerTerminalRoutes(app, { ResponseClass: Response });
+registerTerminalRoutes(app, {
+  ResponseClass: Response,
+  onMutate: () => stateSync?.mutate({ lastMutationTs: Date.now() }),
+  getHideHangarTerminals: () => loadHangarConfig().layout?.hideHangarTerminals !== false,
+  getHideHangarSideQuestions: () => loadHangarConfig().layout?.hideHangarSideQuestions === true,
+});
 const stateSync = registerStateSyncRoutes(app, {
   sidecarId: 'hangar',
   initialState: () => ({ status: 'running', lastMutationTs: 0 }),
