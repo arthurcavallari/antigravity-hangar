@@ -94,6 +94,7 @@
   const CHILD_HOST_RELAY_TYPES = new Set([
     'toggle-aux-pane',
     'toggle-conversation',
+    'new-conversation',
     'add-artifact-comment',
     'sidecar-key-event',
     'request-credential-refresh',

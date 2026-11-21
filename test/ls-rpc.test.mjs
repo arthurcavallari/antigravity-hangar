@@ -455,4 +455,56 @@ describe('hangarRpc shared state reads', () => {
       'DeleteCascadeTrajectory must scrub deleted cascadeId from lastTrajectories fallback',
     );
   });
+
+  it('JetboxReadState forwards orchestratorModel and orchestratorExecutorModel from config.json userSettings while keeping themeMode: 1', async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { registerJetboxProxyRoutes } = await import('../lib/jetbox-proxy.mjs');
+
+    const tmp = mkdtempSync(join(tmpdir(), 'hangar-jetbox-cfg-'));
+    try {
+      const cfgPath = join(tmp, 'config.json');
+      writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          userSettings: {
+            themeMode: 2,
+            orchestratorModel: 1018,
+            orchestratorExecutorModel: 1026,
+            unrelatedSetting: 'ignored',
+          },
+        }),
+        'utf8',
+      );
+      const apis = new Map();
+      registerJetboxProxyRoutes(
+        { page() {}, api: (p, fn) => apis.set(p, fn) },
+        { configPath: cfgPath },
+      );
+      const lsRpc = apis.get('/api/terminal/ls-rpc');
+      assert.deepEqual(await lsRpc({ method: 'JetboxReadState' }), {
+        appState: { agentOnboardingCompleted: 2 },
+        userConfig: {
+          userSettings: {
+            themeMode: 1,
+            orchestratorModel: 1018,
+            orchestratorExecutorModel: 1026,
+          },
+        },
+      });
+
+      writeFileSync(cfgPath, JSON.stringify({ userSettings: { themeMode: 2 } }), 'utf8');
+      assert.deepEqual(await lsRpc({ method: 'JetboxReadState' }), {
+        appState: { agentOnboardingCompleted: 2 },
+        userConfig: {
+          userSettings: {
+            themeMode: 1,
+          },
+        },
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

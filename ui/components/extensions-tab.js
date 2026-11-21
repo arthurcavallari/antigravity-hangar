@@ -1,6 +1,7 @@
 /** @fileoverview Renders and reconciles the Sidecar Extension Manager tab shell and Settings pane. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
+  const VALID_SUBTABS = new Set(['installed', 'discover', 'sideload', 'settings']);
   let activeSubTab = 'installed';
   let settingsFeedback = null;
   ns.canUninstallSidecar = (sc) => (
@@ -9,8 +10,9 @@
     !sc.parentPluginId &&
     !String(sc.source || '').startsWith('plugin:')
   );
+  ns.getExtensionsSubTab = () => activeSubTab;
   ns.setExtensionsSubTab = (tab) => {
-    activeSubTab = tab;
+    activeSubTab = VALID_SUBTABS.has(tab) ? tab : 'installed';
     settingsFeedback = null;
   };
   ns.createExtensionsActions = function createExtensionsActions({
@@ -22,6 +24,7 @@
     refreshRegistry,
     refreshHangarState,
     renderAll,
+    onSubTabChange,
   }) {
     const syncStore = async () => {
       await refreshRegistry();
@@ -101,6 +104,7 @@
           ns.setExtensionsSubTab?.('discover');
           ns.setDiscoverQuery?.(sug.sidecarId);
           renderAll?.();
+          onSubTabChange?.('discover');
           return;
         }
         await reopenClosed?.(sug.sidecarId);
@@ -417,10 +421,12 @@
       shell = storeViewEl.querySelector('[data-role="store-shell"]');
       const q = (role) => shell.querySelector(`[data-role="${role}"]`);
       const switchSubTab = (nextTab) => {
-        activeSubTab = nextTab;
+        activeSubTab = VALID_SUBTABS.has(nextTab) ? nextTab : 'installed';
         settingsFeedback = null;
         ns.clearSideloadFeedback?.();
-        ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
+        const curOpts = storeViewEl._lastOpts || opts;
+        ns.renderExtensionsTab(curOpts);
+        curOpts?.onSubTabChange?.(activeSubTab);
       };
       shell.querySelectorAll('[data-subtab]').forEach((btn) => {
         btn.addEventListener('click', () => switchSubTab(btn.dataset.subtab));
@@ -529,9 +535,11 @@
       q(`pane-${tab}`)?.classList.toggle('hidden', activeSubTab !== tab);
     }
     const switchTab = (tab) => {
-      activeSubTab = tab;
+      activeSubTab = VALID_SUBTABS.has(tab) ? tab : 'installed';
       settingsFeedback = null;
-      ns.renderExtensionsTab(storeViewEl._lastOpts || opts);
+      const curOpts = storeViewEl._lastOpts || opts;
+      ns.renderExtensionsTab(curOpts);
+      curOpts?.onSubTabChange?.(activeSubTab);
     };
     const installedPane = q('pane-installed');
     if (activeSubTab === 'installed') {

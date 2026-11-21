@@ -337,4 +337,51 @@ describe('Hangar Extensions tab and Settings pane', () => {
     assert.equal(splitState.layout.pinnedTopSidecarId, '__sidechat__');
     assert.deepEqual(splitSaved, [{ showExternalSideQuestions: false }]);
   });
+
+  it('exposes getExtensionsSubTab and notifies onSubTabChange across installed, discover, sideload, and settings', () => {
+    const { window, document, CustomEvent, HTMLElement, DocumentFragment, Node } = parseHTML(
+      '<!DOCTYPE html><html><body></body></html>',
+    );
+    const CSS = { escape: (s) => String(s) };
+    window.CSS = CSS;
+    const ctx = vm.createContext({ window, document, CustomEvent, HTMLElement, DocumentFragment, Node, CSS });
+    vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+    for (const rel of [
+      'core.js',
+      'components/plugin-panes.js',
+      'components/marketplace-panes.js',
+      'components/installed-pane.js',
+      'components/extensions-tab.js',
+    ]) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+
+    const ns = window.Hangar;
+    assert.equal(typeof ns.getExtensionsSubTab, 'function');
+    assert.equal(ns.getExtensionsSubTab(), 'installed');
+    ns.setExtensionsSubTab('discover');
+    assert.equal(ns.getExtensionsSubTab(), 'discover');
+    ns.setExtensionsSubTab('installed');
+
+    const storeViewEl = document.createElement('section');
+    document.body.appendChild(storeViewEl);
+    const seenSubTabs = [];
+    ns.renderExtensionsTab({
+      storeViewEl,
+      sidecars: [],
+      registryPackages: [],
+      onSubTabChange: (sub) => seenSubTabs.push(sub),
+    });
+
+    storeViewEl.querySelector('[data-subtab="discover"]').click();
+    assert.equal(ns.getExtensionsSubTab(), 'discover');
+    storeViewEl.querySelector('[data-subtab="sideload"]').click();
+    assert.equal(ns.getExtensionsSubTab(), 'sideload');
+    storeViewEl.querySelector('[data-role="settings-btn"]').click();
+    assert.equal(ns.getExtensionsSubTab(), 'settings');
+    storeViewEl.querySelector('[data-role="settings-btn"]').click();
+    assert.equal(ns.getExtensionsSubTab(), 'installed');
+
+    assert.deepEqual(seenSubTabs, ['discover', 'sideload', 'settings', 'installed']);
+  });
 });

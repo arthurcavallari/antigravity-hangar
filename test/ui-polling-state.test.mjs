@@ -344,4 +344,315 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     assert.equal(requests.length, 1);
     assert.deepEqual(requests[0].workspaceUris, ['file:///c%3A/Users/arthu/IdeaProjects/antigravity-sidecar-hub']);
   });
+
+  it('relays new-conversation from child and jetbox iframes to window.parent and drops untrusted sources', () => {
+    const parentPosted = [];
+    const msgListeners = [];
+    const jetboxWin = {};
+    const childWin = {};
+    const document = {
+      createElement: () => ({ ...fakeElement(), contentWindow: childWin, addEventListener() {}, remove() {} }),
+      querySelectorAll: () => [{ contentWindow: jetboxWin }],
+    };
+    const window = {
+      innerHeight: 800,
+      parent: { postMessage: (d) => parentPosted.push(d) },
+      addEventListener: (ev, fn) => {
+        if (ev === 'message') msgListeners.push(fn);
+      },
+    };
+    const ctx = vm.createContext({ window, document, URL });
+    for (const rel of ['core.js', 'components/tab-bar.js', 'components/iframe-deck.js']) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+    window.Hangar.initPostMessageRelayBridge();
+    window.Hangar.reconcileIframeDeck({
+      state: {
+        layout: { pinnedTopSidecarId: 'cm', topSplitTabIds: ['cm'] },
+        sidecars: [{ sidecarId: 'cm', matchesWorkspace: true, isRunning: true, iframeUrl: 'http://127.0.0.1:51001/' }],
+      },
+      els: {
+        mainViewport: fakeElement(),
+        splitDividerGroup: fakeElement(),
+        storeView: fakeElement(),
+        emptyTopState: fakeElement(),
+        emptyDeckState: fakeElement(),
+      },
+    });
+
+    const emit = (source, data) => msgListeners.forEach((fn) => fn({ source, data }));
+    emit(childWin, { type: 'new-conversation' });
+    emit(jetboxWin, { type: 'new-conversation' });
+    emit({}, { type: 'new-conversation' });
+    emit(window.parent, { type: 'new-conversation' });
+    emit(null, { type: 'new-conversation' });
+
+    assert.deepEqual(parentPosted, [
+      { type: 'new-conversation' },
+      { type: 'new-conversation' },
+    ]);
+  });
+
+  it('syncs ?urlSync=1 initSubpath, outbound tab/subtab pushes, echo-free host-url-change, Alt+Arrow history steps, and keeps sidecar.json AUX_PANE-only', async () => {
+    const { parseHTML } = await import('linkedom');
+    const { AGY_CLIENT_JS } = await import('antigravity-sidecar-kit/shell');
+    const { buildAgyUiJs } = await import('antigravity-sidecar-kit/ui');
+
+    const sidecarJson = JSON.parse(readFileSync(join(UI_DIR, '..', 'sidecar.json'), 'utf8'));
+    assert.deepEqual(
+      sidecarJson.ui_config?.views?.map((v) => v.entrypoint),
+      ['SIDECAR_UI_ENTRYPOINT_AUX_PANE'],
+    );
+
+    const mountHangar = async (search) => {
+      const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+      const { window, document, CustomEvent, Event, HTMLElement, DocumentFragment, Node } = parseHTML(indexHtml);
+      const parentPosted = [];
+      const winListeners = new Map();
+      const origWinAdd = window.addEventListener?.bind(window);
+      const origWinRemove = window.removeEventListener?.bind(window);
+      window.addEventListener = (type, fn, opts) => {
+        if (!winListeners.has(type)) winListeners.set(type, new Set());
+        winListeners.get(type).add(fn);
+        origWinAdd?.(type, fn, opts);
+      };
+      window.removeEventListener = (type, fn, opts) => {
+        winListeners.get(type)?.delete(fn);
+        origWinRemove?.(type, fn, opts);
+      };
+      const parentWin = {
+        postMessage: (msg) => parentPosted.push(msg),
+      };
+      Object.defineProperty(window, 'parent', { value: parentWin, configurable: true });
+      Object.defineProperty(window, 'location', {
+        value: {
+          search,
+          origin: 'http://127.0.0.1:51000',
+          href: `http://127.0.0.1:51000/${search}`,
+          protocol: 'http:',
+        },
+        configurable: true,
+      });
+      window.innerHeight = 800;
+      const CSS = { escape: (s) => String(s) };
+      window.CSS = CSS;
+      const store = new Map();
+      const makeStorage = () => ({
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      });
+      const sessionStorage = makeStorage();
+      const localStorage = makeStorage();
+      window.sessionStorage = sessionStorage;
+      window.localStorage = localStorage;
+
+      const ctx = vm.createContext({
+        window,
+        document,
+        CustomEvent,
+        Event,
+        HTMLElement,
+        DocumentFragment,
+        Node,
+        CSS,
+        URL,
+        URLSearchParams,
+        sessionStorage,
+        localStorage,
+        console,
+        Date,
+        setTimeout,
+        clearTimeout,
+        setInterval: () => 0,
+        clearInterval,
+      });
+
+      vm.runInContext(AGY_CLIENT_JS, ctx, { filename: 'shell.js' });
+      vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+      for (const rel of [
+        'core.js',
+        'components/tab-bar.js',
+        'components/marketplace-panes.js',
+        'components/plugin-panes.js',
+        'components/installed-pane.js',
+        'components/extensions-tab.js',
+        'components/iframe-deck.js',
+        'components/terminal-groups.js',
+        'components/sidechat-store.js',
+        'components/layout-controller.js',
+      ]) {
+        vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+      }
+
+      window.Hangar.apiCall = async (path) => {
+        if (path === '/api/state') {
+          return {
+            activeWorkspace: { workspacePath: 'C:/Proj/Hub', workspaceName: 'Hub' },
+            sidecars: [
+              {
+                sidecarId: 'context-monitor',
+                displayName: 'Context Monitor',
+                matchesWorkspace: true,
+                isRunning: true,
+                iframeUrl: 'http://127.0.0.1:51001/',
+              },
+              {
+                sidecarId: 'agy-plugin-porter/cockpit',
+                displayName: 'Porter Cockpit',
+                matchesWorkspace: true,
+                isRunning: true,
+                iframeUrl: 'http://127.0.0.1:51002/',
+              },
+            ],
+            terminals: [],
+            layout: {
+              pinnedTopSidecarId: 'context-monitor',
+              topSplitTabIds: ['context-monitor'],
+              closedTabIds: ['__extensions__'],
+              extensionsDisplayMode: 'tab',
+              splitViewEnabled: false,
+            },
+          };
+        }
+        if (path === '/api/store/registry') {
+          return { packages: [] };
+        }
+        return { ok: true };
+      };
+
+      vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+      await flush();
+
+      const emitParentMessage = (data) => {
+        for (const fn of [...(winListeners.get('message') || [])]) {
+          fn({ source: parentWin, data });
+        }
+      };
+
+      return { window, document, parentPosted, emitParentMessage };
+    };
+
+    const { window, document, parentPosted, emitParentMessage } = await mountHangar(
+      '?urlSync=1&initSubpath=extensions%2Fdiscover',
+    );
+    const ns = window.Hangar;
+    const toPlain = (v) => JSON.parse(JSON.stringify(v));
+
+    // Codec round-trips and WLc validation
+    assert.equal(ns.encodeHangarSubpath('__terminal__'), 'terminal');
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('terminal')), { activeTabId: '__terminal__' });
+    assert.equal(ns.encodeHangarSubpath('terminal__term-77'), 'terminal/term-77');
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('terminal/term-77')), { activeTabId: 'terminal__term-77' });
+    assert.equal(ns.encodeHangarSubpath('__sidechat__'), 'sidechat');
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('sidechat')), { activeTabId: '__sidechat__' });
+    assert.equal(ns.encodeHangarSubpath('__extensions__', 'installed'), 'extensions');
+    assert.equal(ns.encodeHangarSubpath('__extensions__', 'discover'), 'extensions/discover');
+    assert.equal(ns.encodeHangarSubpath('__extensions__', 'sideload'), 'extensions/sideload');
+    assert.equal(ns.encodeHangarSubpath('__extensions__', 'settings'), 'extensions/settings');
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('extensions')), {
+      activeTabId: '__extensions__',
+      extSubTab: 'installed',
+    });
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('extensions/discover')), {
+      activeTabId: '__extensions__',
+      extSubTab: 'discover',
+    });
+    assert.equal(ns.encodeHangarSubpath('agy-plugin-porter/cockpit'), 'tab/agy-plugin-porter%2Fcockpit');
+    assert.deepEqual(toPlain(ns.decodeHangarSubpath('tab/agy-plugin-porter%2Fcockpit')), {
+      activeTabId: 'agy-plugin-porter/cockpit',
+    });
+    assert.equal(ns.decodeHangarSubpath(''), null);
+    assert.equal(ns.decodeHangarSubpath('extensions/invalid'), null);
+    assert.equal(ns.decodeHangarSubpath('unknown/foo'), null);
+    assert.equal(ns.decodeHangarSubpath('tab/%E0%A4%A'), null);
+    assert.equal(ns.decodeHangarSubpath('tab/..'), null);
+    assert.equal(ns.decodeHangarSubpath('tab/~q=token=secret'), null);
+
+    // 1. Deep-linked initSubpath=extensions%2Fdiscover survives /api/state hydration (and un-closes closedTabIds) with 0 outbound url changes
+    const urlChanges = () => toPlain(parentPosted.filter((m) => m.type === 'sidecar-url-change'));
+    const storeView = document.getElementById('store-view');
+    assert.equal(storeView.classList.contains('hidden'), false);
+    assert.equal(ns.getExtensionsSubTab(), 'discover');
+    assert.equal(storeView.querySelector('[data-role="pane-discover"]').classList.contains('hidden'), false);
+    assert.equal(
+      document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      '__extensions__',
+    );
+    assert.deepEqual(urlChanges(), []);
+
+    // 2. Switching to agy-plugin-porter/cockpit posts sidecar-url-change with replace: false
+    document.querySelector('.agy-tab[data-sidecar-id="agy-plugin-porter/cockpit"]').click();
+    await flush();
+    assert.deepEqual(urlChanges(), [
+      {
+        type: 'sidecar-url-change',
+        payload: { subpath: 'tab/agy-plugin-porter%2Fcockpit', replace: false },
+      },
+    ]);
+
+    // 3. Receiving host-url-change { subpath: 'terminal' } switches active tab to __terminal__ with 0 echo messages
+    const beforeEchoCount = urlChanges().length;
+    emitParentMessage({ type: 'host-url-change', payload: { subpath: 'terminal' } });
+    await flush();
+    assert.equal(
+      document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      '__terminal__',
+    );
+    assert.equal(urlChanges().length, beforeEchoCount);
+
+    // 4. Inbound extensions/settings switches subtab with 0 echo, and user clicking sideload pushes replace: false
+    emitParentMessage({ type: 'host-url-change', payload: { subpath: 'extensions/settings' } });
+    await flush();
+    assert.equal(storeView.classList.contains('hidden'), false);
+    assert.equal(ns.getExtensionsSubTab(), 'settings');
+    assert.equal(urlChanges().length, beforeEchoCount);
+
+    storeView.querySelector('[data-subtab="sideload"]').click();
+    await flush();
+    assert.deepEqual(urlChanges().at(-1), {
+      type: 'sidecar-url-change',
+      payload: { subpath: 'extensions/sideload', replace: false },
+    });
+
+    // Top-bar extensions toggle button also pushes replace: false when toggling back to last non-extensions tab (__terminal__)
+    document.getElementById('extensions-toggle-btn').click();
+    await flush();
+    assert.deepEqual(urlChanges().at(-1), {
+      type: 'sidecar-url-change',
+      payload: { subpath: 'terminal', replace: false },
+    });
+
+    // 5. Alt+ArrowLeft / Alt+ArrowRight step history outside editable inputs, ignored inside inputs
+    const historySteps = () => toPlain(parentPosted.filter((m) => m.type === 'sidecar-history-step'));
+    const makeKeyEvent = (key) => {
+      const ev = new window.Event('keydown', { bubbles: true, cancelable: true });
+      return Object.assign(ev, { key, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false });
+    };
+    const backEv = makeKeyEvent('ArrowLeft');
+    document.body.dispatchEvent(backEv);
+    assert.equal(backEv.defaultPrevented, true);
+
+    const fwdEv = makeKeyEvent('ArrowRight');
+    document.body.dispatchEvent(fwdEv);
+    assert.equal(fwdEv.defaultPrevented, true);
+
+    const inputEl = document.createElement('input');
+    document.body.appendChild(inputEl);
+    const inputEv = makeKeyEvent('ArrowLeft');
+    inputEl.dispatchEvent(inputEv);
+    assert.equal(inputEv.defaultPrevented, false);
+
+    assert.deepEqual(historySteps(), [
+      { type: 'sidecar-history-step', payload: { delta: -1 } },
+      { type: 'sidecar-history-step', payload: { delta: 1 } },
+    ]);
+
+    // 6. Default hydration without initSubpath syncs active tab with replace: true
+    const defaultMount = await mountHangar('?urlSync=1');
+    assert.deepEqual(
+      toPlain(defaultMount.parentPosted.filter((m) => m.type === 'sidecar-url-change')),
+      [{ type: 'sidecar-url-change', payload: { subpath: 'tab/context-monitor', replace: true } }],
+    );
+  });
 });
