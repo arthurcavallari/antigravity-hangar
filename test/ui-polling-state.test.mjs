@@ -393,147 +393,168 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     ]);
   });
 
-  it('syncs ?urlSync=1 initSubpath, outbound tab/subtab pushes, echo-free host-url-change, Alt+Arrow history steps, and keeps sidecar.json AUX_PANE-only', async () => {
+  const mountUrlSyncHangar = async (search) => {
     const { parseHTML } = await import('linkedom');
     const { AGY_CLIENT_JS } = await import('antigravity-sidecar-kit/shell');
     const { buildAgyUiJs } = await import('antigravity-sidecar-kit/ui');
+    const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+    const { window, document, CustomEvent, Event, HTMLElement, DocumentFragment, Node } = parseHTML(indexHtml);
+    const parentPosted = [];
+    const winListeners = new Map();
+    const origWinAdd = window.addEventListener?.bind(window);
+    const origWinRemove = window.removeEventListener?.bind(window);
+    window.addEventListener = (type, fn, opts) => {
+      if (!winListeners.has(type)) winListeners.set(type, new Set());
+      winListeners.get(type).add(fn);
+      origWinAdd?.(type, fn, opts);
+    };
+    window.removeEventListener = (type, fn, opts) => {
+      winListeners.get(type)?.delete(fn);
+      origWinRemove?.(type, fn, opts);
+    };
+    const parentWin = {
+      postMessage: (msg) => parentPosted.push(msg),
+    };
+    Object.defineProperty(window, 'parent', { value: parentWin, configurable: true });
+    Object.defineProperty(window, 'location', {
+      value: {
+        search,
+        origin: 'http://127.0.0.1:51000',
+        href: `http://127.0.0.1:51000/${search}`,
+        protocol: 'http:',
+      },
+      configurable: true,
+    });
+    window.innerHeight = 800;
+    const CSS = { escape: (s) => String(s) };
+    window.CSS = CSS;
+    const store = new Map();
+    const makeStorage = () => ({
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    });
+    const sessionStorage = makeStorage();
+    const localStorage = makeStorage();
+    window.sessionStorage = sessionStorage;
+    window.localStorage = localStorage;
 
+    let now = 1000;
+    let pollTick = null;
+    const fakeDate = Object.assign(function DateProxy(...args) {
+      return new Date(...args);
+    }, { now: () => now });
+
+    const ctx = vm.createContext({
+      window,
+      document,
+      CustomEvent,
+      Event,
+      HTMLElement,
+      DocumentFragment,
+      Node,
+      CSS,
+      URL,
+      URLSearchParams,
+      sessionStorage,
+      localStorage,
+      console,
+      Date: fakeDate,
+      setTimeout,
+      clearTimeout,
+      setInterval: (fn) => {
+        pollTick ??= fn;
+        return 0;
+      },
+      clearInterval,
+    });
+
+    vm.runInContext(AGY_CLIENT_JS, ctx, { filename: 'shell.js' });
+    vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+    for (const rel of [
+      'core.js',
+      'components/tab-bar.js',
+      'components/marketplace-panes.js',
+      'components/plugin-panes.js',
+      'components/installed-pane.js',
+      'components/extensions-tab.js',
+      'components/iframe-deck.js',
+      'components/terminal-groups.js',
+      'components/sidechat-store.js',
+      'components/layout-controller.js',
+    ]) {
+      vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+    }
+
+    let onSessionChangeCb = null;
+    window.Hangar.renderTerminalSlots = (props) => {
+      onSessionChangeCb = props?.onSessionChange || null;
+    };
+
+    window.Hangar.apiCall = async (path) => {
+      if (path === '/api/state') {
+        return {
+          activeWorkspace: { workspacePath: 'C:/Proj/Hub', workspaceName: 'Hub' },
+          sidecars: [
+            {
+              sidecarId: 'context-monitor',
+              displayName: 'Context Monitor',
+              matchesWorkspace: true,
+              isRunning: true,
+              iframeUrl: 'http://127.0.0.1:51001/',
+            },
+            {
+              sidecarId: 'agy-plugin-porter/cockpit',
+              displayName: 'Porter Cockpit',
+              matchesWorkspace: true,
+              isRunning: true,
+              iframeUrl: 'http://127.0.0.1:51002/',
+            },
+          ],
+          terminals: [],
+          layout: {
+            pinnedTopSidecarId: 'context-monitor',
+            topSplitTabIds: ['context-monitor'],
+            closedTabIds: ['__extensions__'],
+            extensionsDisplayMode: 'tab',
+            splitViewEnabled: false,
+          },
+        };
+      }
+      if (path === '/api/store/registry') {
+        return { packages: [] };
+      }
+      return { ok: true };
+    };
+
+    vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
+    await flush();
+
+    const emitParentMessage = (data) => {
+      for (const fn of [...(winListeners.get('message') || [])]) {
+        fn({ source: parentWin, data });
+      }
+    };
+    const triggerSessionRender = () => {
+      onSessionChangeCb?.();
+    };
+    const triggerStatePoll = async () => {
+      now += 4000;
+      pollTick?.();
+      await flush();
+    };
+
+    return { window, document, parentPosted, emitParentMessage, triggerSessionRender, triggerStatePoll };
+  };
+
+  it('syncs ?urlSync=1 initSubpath, outbound tab/subtab pushes, echo-free host-url-change, Alt+Arrow history steps, and keeps sidecar.json AUX_PANE-only', async () => {
     const sidecarJson = JSON.parse(readFileSync(join(UI_DIR, '..', 'sidecar.json'), 'utf8'));
     assert.deepEqual(
       sidecarJson.ui_config?.views?.map((v) => v.entrypoint),
       ['SIDECAR_UI_ENTRYPOINT_AUX_PANE'],
     );
 
-    const mountHangar = async (search) => {
-      const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
-      const { window, document, CustomEvent, Event, HTMLElement, DocumentFragment, Node } = parseHTML(indexHtml);
-      const parentPosted = [];
-      const winListeners = new Map();
-      const origWinAdd = window.addEventListener?.bind(window);
-      const origWinRemove = window.removeEventListener?.bind(window);
-      window.addEventListener = (type, fn, opts) => {
-        if (!winListeners.has(type)) winListeners.set(type, new Set());
-        winListeners.get(type).add(fn);
-        origWinAdd?.(type, fn, opts);
-      };
-      window.removeEventListener = (type, fn, opts) => {
-        winListeners.get(type)?.delete(fn);
-        origWinRemove?.(type, fn, opts);
-      };
-      const parentWin = {
-        postMessage: (msg) => parentPosted.push(msg),
-      };
-      Object.defineProperty(window, 'parent', { value: parentWin, configurable: true });
-      Object.defineProperty(window, 'location', {
-        value: {
-          search,
-          origin: 'http://127.0.0.1:51000',
-          href: `http://127.0.0.1:51000/${search}`,
-          protocol: 'http:',
-        },
-        configurable: true,
-      });
-      window.innerHeight = 800;
-      const CSS = { escape: (s) => String(s) };
-      window.CSS = CSS;
-      const store = new Map();
-      const makeStorage = () => ({
-        getItem: (k) => (store.has(k) ? store.get(k) : null),
-        setItem: (k, v) => store.set(k, String(v)),
-        removeItem: (k) => store.delete(k),
-      });
-      const sessionStorage = makeStorage();
-      const localStorage = makeStorage();
-      window.sessionStorage = sessionStorage;
-      window.localStorage = localStorage;
-
-      const ctx = vm.createContext({
-        window,
-        document,
-        CustomEvent,
-        Event,
-        HTMLElement,
-        DocumentFragment,
-        Node,
-        CSS,
-        URL,
-        URLSearchParams,
-        sessionStorage,
-        localStorage,
-        console,
-        Date,
-        setTimeout,
-        clearTimeout,
-        setInterval: () => 0,
-        clearInterval,
-      });
-
-      vm.runInContext(AGY_CLIENT_JS, ctx, { filename: 'shell.js' });
-      vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
-      for (const rel of [
-        'core.js',
-        'components/tab-bar.js',
-        'components/marketplace-panes.js',
-        'components/plugin-panes.js',
-        'components/installed-pane.js',
-        'components/extensions-tab.js',
-        'components/iframe-deck.js',
-        'components/terminal-groups.js',
-        'components/sidechat-store.js',
-        'components/layout-controller.js',
-      ]) {
-        vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
-      }
-
-      window.Hangar.apiCall = async (path) => {
-        if (path === '/api/state') {
-          return {
-            activeWorkspace: { workspacePath: 'C:/Proj/Hub', workspaceName: 'Hub' },
-            sidecars: [
-              {
-                sidecarId: 'context-monitor',
-                displayName: 'Context Monitor',
-                matchesWorkspace: true,
-                isRunning: true,
-                iframeUrl: 'http://127.0.0.1:51001/',
-              },
-              {
-                sidecarId: 'agy-plugin-porter/cockpit',
-                displayName: 'Porter Cockpit',
-                matchesWorkspace: true,
-                isRunning: true,
-                iframeUrl: 'http://127.0.0.1:51002/',
-              },
-            ],
-            terminals: [],
-            layout: {
-              pinnedTopSidecarId: 'context-monitor',
-              topSplitTabIds: ['context-monitor'],
-              closedTabIds: ['__extensions__'],
-              extensionsDisplayMode: 'tab',
-              splitViewEnabled: false,
-            },
-          };
-        }
-        if (path === '/api/store/registry') {
-          return { packages: [] };
-        }
-        return { ok: true };
-      };
-
-      vm.runInContext(readFileSync(join(UI_DIR, 'app.js'), 'utf8'), ctx, { filename: 'app.js' });
-      await flush();
-
-      const emitParentMessage = (data) => {
-        for (const fn of [...(winListeners.get('message') || [])]) {
-          fn({ source: parentWin, data });
-        }
-      };
-
-      return { window, document, parentPosted, emitParentMessage };
-    };
-
-    const { window, document, parentPosted, emitParentMessage } = await mountHangar(
+    const { window, document, parentPosted, emitParentMessage } = await mountUrlSyncHangar(
       '?urlSync=1&initSubpath=extensions%2Fdiscover',
     );
     const ns = window.Hangar;
@@ -649,10 +670,69 @@ describe('Hangar UI polling load and iframe deck visibility', () => {
     ]);
 
     // 6. Default hydration without initSubpath syncs active tab with replace: true
-    const defaultMount = await mountHangar('?urlSync=1');
+    const defaultMount = await mountUrlSyncHangar('?urlSync=1');
     assert.deepEqual(
       toPlain(defaultMount.parentPosted.filter((m) => m.type === 'sidecar-url-change')),
       [{ type: 'sidecar-url-change', payload: { subpath: 'tab/context-monitor', replace: true } }],
+    );
+  });
+
+  it('reconciles urlForcedTabId when host-url-change or initSubpath targets a closed terminal or unavailable sidecar', async () => {
+    const toPlain = (v) => JSON.parse(JSON.stringify(v));
+
+    // (a) host-url-change for missing/closed terminal/term-dead followed by non-hydrating renderAll() emits 0 echo messages
+    const live = await mountUrlSyncHangar('?urlSync=1');
+    const liveUrlChanges = () => toPlain(live.parentPosted.filter((m) => m.type === 'sidecar-url-change'));
+    assert.deepEqual(liveUrlChanges(), [
+      { type: 'sidecar-url-change', payload: { subpath: 'tab/context-monitor', replace: true } },
+    ]);
+
+    live.document.querySelector('.agy-tab[data-sidecar-id="agy-plugin-porter/cockpit"]').click();
+    await flush();
+    const countBeforeHostBack = liveUrlChanges().length;
+    assert.equal(countBeforeHostBack, 2);
+
+    live.emitParentMessage({ type: 'host-url-change', payload: { subpath: 'terminal/term-dead' } });
+    await flush();
+    assert.equal(
+      live.document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      'context-monitor',
+    );
+    assert.equal(liveUrlChanges().length, countBeforeHostBack, 'no immediate echo on missing host-url-change tab');
+
+    live.triggerSessionRender();
+    await flush();
+    assert.equal(
+      liveUrlChanges().length,
+      countBeforeHostBack,
+      'no delayed echo when subsequent non-hydrating renderAll() runs',
+    );
+
+    await live.triggerStatePoll();
+    assert.equal(liveUrlChanges().length, countBeforeHostBack);
+    assert.equal(
+      live.document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      'context-monitor',
+    );
+
+    // (b) Booting with stale ?urlSync=1&initSubpath=terminal%2Fdead-term reconciles to fallback tab via replace: true
+    const staleBoot = await mountUrlSyncHangar('?urlSync=1&initSubpath=terminal%2Fdead-term');
+    const staleUrlChanges = () => toPlain(staleBoot.parentPosted.filter((m) => m.type === 'sidecar-url-change'));
+    assert.equal(
+      staleBoot.document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      'context-monitor',
+    );
+    assert.deepEqual(staleUrlChanges(), [
+      { type: 'sidecar-url-change', payload: { subpath: 'tab/context-monitor', replace: true } },
+    ]);
+
+    await staleBoot.triggerStatePoll();
+    staleBoot.triggerSessionRender();
+    await flush();
+    assert.equal(staleUrlChanges().length, 1, 'subsequent polls and renders do not stay stuck or emit replace: false');
+    assert.equal(
+      staleBoot.document.querySelector('.agy-tab.active[data-sidecar-id]')?.dataset?.sidecarId,
+      'context-monitor',
     );
   });
 });

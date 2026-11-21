@@ -142,6 +142,7 @@
   let isHydratingState = false;
   let hasHydratedState = false;
   let pendingWsReplaceSync = false;
+  let didInitialWorkspaceHydrate = false;
 
   async function refreshRegistry() {
     try {
@@ -199,7 +200,13 @@
       ns.setMainTerminalOpen?.(true);
     } else if (tabId.startsWith('terminal__')) {
       const tid = tabId.slice('terminal__'.length);
-      if (tid && ns.getPoppedTerminalIds && ns.setPoppedTerminalIds && !ns.getPoppedTerminalIds().has(tid)) {
+      if (
+        tid &&
+        state.terminals.some((t) => t?.terminalId === tid) &&
+        ns.getPoppedTerminalIds &&
+        ns.setPoppedTerminalIds &&
+        !ns.getPoppedTerminalIds().has(tid)
+      ) {
         ns.setPoppedTerminalIds(new Set([...ns.getPoppedTerminalIds(), tid]));
       }
     } else if (tabId === ns.SIDECHAT_TAB_ID && ns._sc) {
@@ -413,14 +420,27 @@
         ...extActions,
       });
     }
-    if (!isBootRender && !applyingHostSubpath && !isHydratingState && urlForcedTabId) {
-      if (effectiveTopId !== urlForcedTabId || state.layout.closedTabIds?.includes(urlForcedTabId)) {
+    const wsHydrated = hasHydratedState && Boolean(getWsStateKey() || !window.sidecar?.onWorkspaceChange || didInitialWorkspaceHydrate);
+    let reconciledStaleHydration = false;
+    if (!isBootRender && urlForcedTabId) {
+      if (applyingHostSubpath || isHydratingState) {
+        if (wsHydrated && effectiveTopId && effectiveTopId !== urlForcedTabId) {
+          urlForcedTabId = '';
+          state.layout.pinnedTopSidecarId = effectiveTopId;
+          rememberWindowActiveTab(effectiveTopId);
+          if (applyingHostSubpath) {
+            lastSyncedSubpath = ns.encodeHangarSubpath(effectiveTopId, ns.getExtensionsSubTab?.()) || lastSyncedSubpath;
+          } else {
+            reconciledStaleHydration = true;
+          }
+        }
+      } else if (effectiveTopId !== urlForcedTabId || state.layout.closedTabIds?.includes(urlForcedTabId)) {
         urlForcedTabId = '';
       }
     }
     if (urlSync.enabled && !isBootRender && !applyingHostSubpath) {
       if (isHydratingState) {
-        if (hasHydratedState && (!didInitialUrlSync || pendingWsReplaceSync)) {
+        if (reconciledStaleHydration || (hasHydratedState && (!didInitialUrlSync || pendingWsReplaceSync))) {
           pendingWsReplaceSync = false;
           syncUrlSubpath(effectiveTopId, { replace: true });
         }
@@ -702,7 +722,6 @@
       },
     },
   );
-  let didInitialWorkspaceHydrate = false;
   window.sidecar?.onWorkspaceChange?.((uris) => {
     didInitialWorkspaceHydrate = true;
     state.workspaceUris = Array.isArray(uris) ? uris : [];
@@ -780,6 +799,7 @@
       .catch(() => null)
       .then((uris) => {
         if (!didInitialWorkspaceHydrate) {
+          didInitialWorkspaceHydrate = true;
           if (Array.isArray(uris)) state.workspaceUris = uris;
           refreshHangarState();
         }
