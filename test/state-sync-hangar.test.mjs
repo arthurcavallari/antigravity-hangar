@@ -165,6 +165,7 @@ describe('Hangar launch.mjs, AGY shell contrast engine, StateSync routes, and Fi
       'lib/jetbox-rpc-policy.mjs',
       'lib/jetbox-audio.mjs',
       'lib/ls-rpc.mjs',
+      'lib/sidecar-icons.mjs',
       'lib/terminal-uris.mjs',
       'lib/terminal-manager.mjs',
       'ui/app.js',

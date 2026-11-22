@@ -524,13 +524,11 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.match(extTabSrc, /const raw = Number\.parseInt\(ttlInput\?\.value, 10\)/);
     assert.match(extTabSrc, /if \(!Number\.isFinite\(raw\) \|\| raw < 1\)/);
     const instPaneSrc = readFileSync(join(UI_DIR, 'components/installed-pane.js'), 'utf8');
-    assert.match(instPaneSrc, /aria-label="Add workspace path or glob"/);
+    assert.match(instPaneSrc, /aria-label="Auto-open glob pattern"/);
     assert.match(instPaneSrc, /q\('proc-btn'\)\.setAttribute\?\.\('aria-label', `Enable or disable \$\{scLabel\}`\)/);
     assert.match(instPaneSrc, /q\('restart-btn'\)\.setAttribute\?\.\('aria-label', `Restart \$\{scLabel\}`\)/);
     assert.match(instPaneSrc, /q\('uninstall-btn'\)\.setAttribute\?\.\('aria-label', `Uninstall \$\{scLabel\}`\)/);
-    assert.match(instPaneSrc, /role="group" aria-label="Workspace Scope"/);
     assert.match(instPaneSrc, /globalBtn\.setAttribute\?\.\('aria-pressed', String\(isGlobal\)\)/);
-    assert.match(instPaneSrc, /addWsBtn\.setAttribute\?\.\('aria-pressed', String\(alreadyHasCurrent\)\)/);
     assert.match(instPaneSrc, /async function runCardAction\(card, action, triggerBtn = null, spin = false\)/);
     assert.match(instPaneSrc, /runCardAction\(card, \(\) => onManageSidecar\(card\._sc\.sidecarId, 'SIDECAR_ACTION_RESTART'\), restartBtn, true\)/);
     assert.match(instPaneSrc, /data-role="uninstall-confirm-btn" class="agy-btn agy-btn-danger"/);
@@ -544,7 +542,6 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     const mktPaneSrc = readFileSync(join(UI_DIR, 'components/marketplace-panes.js'), 'utf8');
     assert.match(mktPaneSrc, /aria-label="Search sidecars and plugins"/);
     assert.match(mktPaneSrc, /aria-label="Filter by category"/);
-    assert.match(mktPaneSrc, /aria-label="Sideload workspace scope"/);
     assert.match(mktPaneSrc, /aria-label="Local sidecar directory path"/);
     assert.match(mktPaneSrc, /aria-label="GitHub repository URL or owner\/repo"/);
     assert.match(mktPaneSrc, /emptyEl\.className = 'agy-empty-state'/);

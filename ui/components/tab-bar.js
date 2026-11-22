@@ -11,6 +11,42 @@
   const normScTabList = ns.normalizeLegacySideChatTabList || ((arr) => (
     Array.isArray(arr) ? [...new Set(arr.map(normScTabId).filter(Boolean))] : []
   ));
+  const logoElCache = new Map();
+  const escAttrSel = (val = '') => (
+    typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(String(val))
+      : String(val).replace(/["\\]/g, '\\$&')
+  );
+  function getCachedLogoEl(cacheKey, rawIconUrl, fallbackIcon = 'extension') {
+    if (!rawIconUrl || typeof document?.createElement !== 'function') return null;
+    const src = ns.resolveSidecarAssetUrl ? ns.resolveSidecarAssetUrl(rawIconUrl) : String(rawIconUrl);
+    if (!src) return null;
+    const existing = logoElCache.get(cacheKey);
+    if (existing && existing.getAttribute?.('src') === src) {
+      return existing;
+    }
+    const img = document.createElement('img');
+    img.className = 'hangar-tab-logo';
+    img.setAttribute?.('src', src);
+    img.src = src;
+    img.setAttribute?.('alt', '');
+    img.alt = '';
+    img.width = 16;
+    img.height = 16;
+    img.decoding = 'async';
+    img.addEventListener?.(
+      'error',
+      () => {
+        logoElCache.delete(cacheKey);
+        const slot = img.parentElement;
+        if (slot) ns.setHtml?.(slot, ns.iconSvg(fallbackIcon, 16));
+      },
+      { once: true },
+    );
+    if (logoElCache.size >= 128) logoElCache.clear();
+    logoElCache.set(cacheKey, img);
+    return img;
+  }
   const TERMINAL_TAB = {
     sidecarId: ns.TERMINAL_TAB_ID,
     displayName: 'Terminal',
@@ -64,6 +100,7 @@
     const customTitles = ns.readCustomTermTitles?.() || {};
     const grpMap = ns.readGroupMap?.() || {};
     const pinnedSet = new Set(normScTabList(layout?.pinnedTabIds));
+    const openIdSet = new Set(Array.isArray(layout?.openTabIds) ? layout.openTabIds.filter(Boolean) : []);
     const closedSet = new Set(
       Array.isArray(layout?.closedTabIds)
         ? layout.closedTabIds
@@ -121,10 +158,13 @@
       ...(hasSideChat ? [SIDECHAT_TAB] : []),
       ...(isExtBtn ? [] : [EXTENSIONS_TAB]),
     ];
-    const allTabs = [...sidecars.filter((sc) => sc.matchesWorkspace), ...virtualTabs].map((sc) => ({
+    const eligibleSidecars = sidecars.filter(
+      (sc) => Boolean(openIdSet.has(sc.sidecarId) || pinnedSet.has(sc.sidecarId) || sc.matchesWorkspace),
+    );
+    const allTabs = [...eligibleSidecars, ...virtualTabs].map((sc) => ({
       ...sc,
       isPinned: pinnedSet.has(sc.sidecarId),
-      canClose: Boolean(sc.terminalId || sc.isTerminal || sc.isSideChat),
+      canClose: Boolean(!sc.isVirtual || sc.terminalId || sc.isTerminal || sc.isSideChat),
     }));
     const orderIndex = new Map(normScTabList(layout?.tabOrder).map((id, idx) => [id, idx]));
     if (orderIndex.size > 0) {
@@ -160,6 +200,7 @@
     const badgeInfo = !sc.isVirtual && !sc.isTerminal && !sc.isSideChat
       ? ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored)
       : null;
+    const isCustomSidecar = !sc.isVirtual && !sc.isTerminal && !sc.isSideChat;
     const icon = sc.isTerminal
       ? 'terminal'
       : sc.isSideChat
@@ -167,6 +208,9 @@
         : sc.isVirtual
           ? 'extension'
           : (sc.scope === 'global' ? 'globe' : 'folder');
+    const iconEl = isCustomSidecar && sc.iconUrl
+      ? getCachedLogoEl(`${opts.pane || 'single'}:${sc.sidecarId}`, sc.iconUrl, icon)
+      : null;
     const pinSuffix = sc.isPinned ? ' · Pinned' : '';
     const title = sc.isTerminal
       ? `${sc.terminalId ? `${sc.displayName} (Terminal Session)` : 'Interactive Terminal'}${sc.isExternal ? ' · Opened outside Hangar (shared with Antigravity)' : ''}${pinSuffix}`
@@ -194,6 +238,7 @@
       displayName: sc.displayName,
       label: sc.displayName,
       icon,
+      iconEl,
       iconSize: 16,
       active: sc.sidecarId === activeId,
       pinned: Boolean(sc.isPinned),
@@ -225,18 +270,44 @@
       addButton: {
         role: 'hub-add-tab',
         testId: 'hangar-new-tab-button',
-        title: 'Open Terminal or Side Question',
+        title: 'Open Tab',
+        ariaLabel: 'Open Tab',
         onClick: (e, addBtn) => {
           e?.stopPropagation?.();
           const r = addBtn?.getBoundingClientRect?.() || { left: e?.clientX || 40, bottom: e?.clientY || 36 };
           const pane = stripOpts.pane || 'single';
-          (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(
+          const allSidecars = stripOpts.allSidecars || [];
+          const sidecarItems = allSidecars.map((s) => {
+            const isOpenHere = ns.isSidecarOpenInLayout
+              ? ns.isSidecarOpenInLayout(s, stripOpts.layout)
+              : Boolean(s.matchesWorkspace);
+            return {
+              id: `open-sidecar:${s.sidecarId}`,
+              icon: s.scope === 'global' ? 'globe' : 'extension',
+              label: s.displayName || s.sidecarId,
+              checked: isOpenHere,
+              onClick: () => act({ action: 'open-sidecar', sidecarId: s.sidecarId, pane }),
+            };
+          });
+          const menuEl = (window.AgyUI?.openContextMenu || ns.openTabContextMenu)?.(
             { clientX: r.left, clientY: (r.bottom || 36) + 4, target: addBtn, preventDefault() {}, stopPropagation() {} },
             [
+              ...sidecarItems,
+              ...(sidecarItems.length ? [{ separator: true }] : []),
               { id: 'new-terminal', icon: 'terminal', label: 'New Terminal', onClick: () => act({ action: 'new-terminal', pane }) },
               { id: 'new-sidechat', icon: 'chat', label: 'New Side Question', onClick: () => act({ action: 'new-sidechat', pane }) },
+              { separator: true },
+              { id: 'browse-extensions', icon: 'extension', label: 'Browse Extensions…', onClick: () => act({ action: 'browse-extensions', pane }) },
             ],
           );
+          if (menuEl) {
+            for (const s of allSidecars) {
+              if (!s.iconUrl) continue;
+              const slot = menuEl.querySelector?.(`[data-menu-id="open-sidecar:${escAttrSel(s.sidecarId)}"] .agy-tab-icon`);
+              const logo = getCachedLogoEl(`menu:${s.sidecarId}`, s.iconUrl, 'extension')?.cloneNode?.(true);
+              if (slot && logo) ns.setHtml?.(slot, logo);
+            }
+          }
         },
       },
       onSelect: (id) => stripOpts.onClick?.(id),
@@ -262,8 +333,9 @@
           ? [
             {
               id: 'toggle-global',
-              label: isGlobal ? 'Restrict to Current Workspace' : 'Show in All Workspaces (Global)',
-              disabled: isGlobal && !stripOpts.hasActiveWorkspace,
+              icon: 'globe',
+              label: 'Show in All Workspaces',
+              checked: isGlobal,
               onClick: () => act({ action: 'toggle-global', sidecarId: curId }),
             },
             { separator: true },
@@ -368,6 +440,8 @@
     ns.syncUpdateIndicator(extensionsBtnEl, updateCount);
     const baseOpts = {
       updateCount,
+      allSidecars: sidecars || [],
+      layout,
       hasActiveWorkspace: Boolean(hasActiveWorkspace),
       onDropTab,
       onPreviewTerminalSlot,

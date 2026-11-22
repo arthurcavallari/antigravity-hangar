@@ -13,7 +13,7 @@ import { registerUiRoutes } from 'antigravity-sidecar-kit';
 import { exitWithLanguageServer } from 'antigravity-sidecar-kit/lifecycle';
 import { registerStateSyncRoutes } from 'antigravity-sidecar-kit/state-sync';
 import { UI_SCRIPTS } from './lib/constants.mjs';
-import { fetchHangarState, manageChildSidecar } from './lib/state-orchestrator.mjs';
+import { fetchHangarState, manageChildSidecar, serveSidecarIcon } from './lib/state-orchestrator.mjs';
 import { loadHangarConfig, updateSidecarRule, updateHangarLayout } from './lib/config-store.mjs';
 import { promoteTerminalSideChat, renameTerminalSideChat } from './lib/jetbox-sidechat.mjs';
 import {
@@ -21,6 +21,8 @@ import {
   installRemoteSidecar,
   linkLocalSidecar,
   selfUpdateHangar,
+  sidecarInstallRequest,
+  sidecarLinkRequest,
   uninstallSidecar,
 } from './lib/package-installer.mjs';
 import { installRemotePlugin, pluginRequest, previewPluginPort, uninstallPlugin } from './lib/plugin-installer.mjs';
@@ -29,7 +31,10 @@ import { fetchRegistry } from './lib/registry-catalog.mjs';
 import { registerTerminalRoutes } from './lib/terminal-manager.mjs';
 
 const UI_DIR = join(realpathSync(dirname(fileURLToPath(import.meta.url))), 'ui');
-const serveAsset = (rel, type) => createAssetHandler(UI_DIR, rel, type, { ResponseClass: Response });
+const serveAsset = (rel, type) => {
+  const h = createAssetHandler(UI_DIR, rel, type, { ResponseClass: Response });
+  return () => Object.assign(h(), { headers: { 'Cache-Control': 'no-cache' } });
+};
 const app = new SidecarApp();
 
 app.page('/', serveAsset('index.html', 'text/html; charset=utf-8'));
@@ -63,30 +68,18 @@ app.api('/api/state', guardApi(async (d) => fetchHangarState({
 app.api('/api/rules/update', withMutate((d) => updateSidecarRule(String(d?.sidecarId || ''), {
   scope: d?.scope,
   workspaces: d?.workspaces,
+  restoreSavedGlobs: Boolean(d?.restoreSavedGlobs),
   autoHibernate: d?.autoHibernate,
 })), 'POST');
 app.api('/api/layout/update', withMutate((d) => updateHangarLayout(d || {})), 'POST');
 app.api('/api/sidecar/manage', withMutate((d) => manageChildSidecar(String(d?.sidecarId || ''), String(d?.action || ''))), 'POST');
+app.api('/api/sidecar/icon', guardApi((d) => serveSidecarIcon(d?.id, { ResponseClass: Response })), 'GET');
 app.api('/api/sidechat/rename', withMutate((d) => renameTerminalSideChat(d || {})), 'POST');
 app.api('/api/sidechat/promote', withMutate((d) => promoteTerminalSideChat(d || {})), 'POST');
 app.api('/api/store/registry', guardApi(async () => fetchRegistry()), 'POST');
 app.api('/api/store/inspect', guardApi(async (d) => inspectSidecarDirectory(String(d?.folderPath || ''))), 'POST');
-app.api('/api/store/link-local', guardApi(async (d) => linkLocalSidecar({
-  folderPath: String(d?.folderPath || ''),
-  sidecarId: d?.sidecarId ? String(d.sidecarId) : '',
-  scope: d?.scope || 'project',
-  workspaces: Array.isArray(d?.workspaces) ? d.workspaces : [],
-})), 'POST');
-app.api('/api/store/install', guardApi(async (d) => installRemoteSidecar({
-  sidecarId: d?.sidecarId ? String(d.sidecarId) : '',
-  gitRepo: d?.gitRepo ? String(d.gitRepo) : '',
-  tarballUrl: d?.tarballUrl ? String(d.tarballUrl) : '',
-  version: d?.version ? String(d.version) : 'latest',
-  sha256: d?.sha256 ? String(d.sha256) : '',
-  scope: d?.scope || 'project',
-  workspaces: Array.isArray(d?.workspaces) ? d.workspaces : [],
-  acceptedTier: d?.acceptedTier ? String(d.acceptedTier) : '',
-})), 'POST');
+app.api('/api/store/link-local', guardApi(async (d) => linkLocalSidecar(sidecarLinkRequest(d))), 'POST');
+app.api('/api/store/install', guardApi(async (d) => installRemoteSidecar(sidecarInstallRequest(d))), 'POST');
 app.api('/api/store/uninstall', guardApi(async (d) => uninstallSidecar({ sidecarId: String(d?.sidecarId || '') })), 'POST');
 app.api('/api/store/port-preview', guardApi(async (d) => previewPluginPort(pluginRequest(d))), 'POST');
 app.api('/api/store/install-plugin', guardApi(async (d) => installRemotePlugin(pluginRequest(d))), 'POST');

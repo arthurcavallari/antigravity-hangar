@@ -115,6 +115,7 @@ runSidecarSetup({
     'lib/plugin-installer.mjs',
     'lib/registry-catalog.mjs',
     'lib/remote-source.mjs',
+    'lib/sidecar-icons.mjs',
     'lib/state-orchestrator.mjs',
     'lib/terminal-manager.mjs',
     'lib/terminal-uris.mjs',

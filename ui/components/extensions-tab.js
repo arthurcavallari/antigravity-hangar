@@ -20,6 +20,8 @@
     apiCall,
     bumpLayoutSeq,
     saveLayoutUpdate,
+    openSidecar,
+    handleTabContextAction,
     reopenClosed,
     refreshRegistry,
     refreshHangarState,
@@ -98,6 +100,31 @@
         });
         await refreshHangarState();
       },
+      onOpenSidecar: async (sidecarId) => {
+        if (!sidecarId) return;
+        if (typeof openSidecar === 'function') {
+          await openSidecar(sidecarId);
+          return;
+        }
+        await reopenClosed?.(sidecarId);
+        if (apiCall) {
+          await apiCall('/api/sidecar/manage', { sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
+          await refreshHangarState();
+        }
+      },
+      onToggleGlobalSidecar: async (sc) => {
+        if (!sc?.sidecarId) return;
+        if (typeof handleTabContextAction === 'function') {
+          await handleTabContextAction({ action: 'toggle-global', sidecarId: sc.sidecarId });
+          return;
+        }
+        if (!apiCall) return;
+        const isGlobal = sc.scope === 'global' || (sc.workspaces || []).includes('*');
+        await apiCall('/api/rules/update', isGlobal
+          ? { sidecarId: sc.sidecarId, scope: 'project', restoreSavedGlobs: true }
+          : { sidecarId: sc.sidecarId, scope: 'global', workspaces: ['*'] });
+        await refreshHangarState();
+      },
       onApplySuggestion: async (sug) => {
         if (!apiCall) return;
         if (sug.actionType === 'install') {
@@ -107,14 +134,11 @@
           onSubTabChange?.('discover');
           return;
         }
+        if (typeof openSidecar === 'function') {
+          await openSidecar(sug.sidecarId);
+          return;
+        }
         await reopenClosed?.(sug.sidecarId);
-        const curWs = (state.sidecars.find((s) => s.sidecarId === sug.sidecarId)?.workspaces || []).filter((w) => w !== '*');
-        const wsPath = state.activeWorkspace?.workspacePath || '';
-        await apiCall('/api/rules/update', {
-          sidecarId: sug.sidecarId,
-          scope: 'project',
-          workspaces: wsPath ? Array.from(new Set([...curWs, wsPath])) : ['*'],
-        });
         await apiCall('/api/sidecar/manage', { sidecarId: sug.sidecarId, action: 'SIDECAR_ACTION_ENABLE' });
         await refreshHangarState();
       },

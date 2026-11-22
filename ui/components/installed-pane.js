@@ -1,75 +1,49 @@
 /** @fileoverview Renders and reconciles workspace suggestions and installed sidecar cards. */
 (function () {
   const ns = (window.Hangar = window.Hangar || {});
-  const expandedScopeIds = new Set();
+  const expandedGlobIds = new Set();
 
-  function formatScopeSummary(sc) {
-    const patterns = Array.isArray(sc?.workspaces) ? sc.workspaces : [];
-    if (patterns.includes('*')) {
-      return { label: 'Global (*)', empty: false, extraCount: 0, tooltip: 'Active in all workspaces (*)' };
+  function getCardGlobPatterns(sc) {
+    const isGlobal = sc?.scope === 'global' || (sc?.workspaces || []).includes('*');
+    if (isGlobal) {
+      return Array.isArray(sc?.savedGlobs) ? sc.savedGlobs.filter((w) => w && w !== '*') : [];
     }
-    if (patterns.length === 0) {
-      return {
-        label: 'No workspace rules (hidden)',
-        empty: true,
-        extraCount: 0,
-        tooltip: 'No workspace rules — hidden in all workspaces',
-      };
-    }
-    const first = String(patterns[0] || '');
-    let label = first;
-    if (first.length > 32 && /[\\/]/.test(first)) {
-      const parts = first.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
-      if (parts.length >= 2) {
-        label = `…/${parts[parts.length - 1]}`;
-      }
-    }
-    return {
-      label,
-      empty: false,
-      extraCount: Math.max(0, patterns.length - 1),
-      tooltip: patterns.join(', '),
-    };
+    return Array.isArray(sc?.workspaces) ? sc.workspaces.filter((w) => w && w !== '*') : [];
   }
 
-  function syncCardScopeExpanded(card, isOpen) {
-    const toggleBtn = card.querySelector('[data-role="scope-toggle"]');
-    const drawerEl = card.querySelector('[data-role="scope-drawer"]');
-    const actionLbl = card.querySelector('[data-role="scope-action-label"]');
+  function syncCardGlobsExpanded(card, isOpen) {
+    const toggleBtn = card.querySelector('[data-role="globs-toggle"]');
+    const drawerEl = card.querySelector('[data-role="globs-drawer"]');
     card.classList.toggle('is-scope-open', Boolean(isOpen));
     toggleBtn?.setAttribute('aria-expanded', String(Boolean(isOpen)));
     drawerEl?.classList.toggle('hidden', !isOpen);
-    if (actionLbl) {
-      actionLbl.textContent = isOpen ? 'Hide' : 'Edit';
-    }
   }
 
-  function renderRuleList(ruleListEl, sc, onRemovePattern) {
-    const patterns = Array.isArray(sc.workspaces) ? sc.workspaces : [];
+  function renderRuleList(ruleListEl, patterns, onRemovePattern) {
     const sig = JSON.stringify(patterns);
     if (ruleListEl.dataset.sig === sig) return;
     ruleListEl.dataset.sig = sig;
     ns.setHtml(
       ruleListEl,
-      patterns.length ? '' : ns.html`<div class="store-subtitle">No workspace rules — hidden in all workspaces.</div>`,
+      patterns.length ? '' : ns.html`<div class="store-subtitle">No auto-open globs configured.</div>`,
     );
     for (const pattern of patterns) {
       const row = Object.assign(document.createElement('div'), { className: 'ws-rule-item' });
       const code = Object.assign(document.createElement('span'), {
         className: 'ws-rule-code',
-        textContent: pattern === '*' ? '* (All Workspaces)' : pattern,
+        textContent: pattern,
       });
       const rmBtn = ns.setHtml(
         Object.assign(document.createElement('button'), {
           type: 'button',
           className: 'ws-rule-remove',
-          title: `Remove rule "${pattern}"`,
+          title: `Remove glob "${pattern}"`,
         }),
         ns.iconSvg('close', 14),
       );
-      rmBtn.setAttribute('aria-label', `Remove rule ${pattern}`);
+      rmBtn.setAttribute('aria-label', `Remove glob ${pattern}`);
       rmBtn.addEventListener('click', () => onRemovePattern(pattern));
-      const iconName = pattern === '*' ? 'globe' : (pattern.includes('*') ? 'code_blocks' : 'folder');
+      const iconName = pattern.includes('*') ? 'code_blocks' : 'folder';
       row.append(ns.iconEl(iconName, 14), code, rmBtn);
       ruleListEl.appendChild(row);
     }
@@ -95,8 +69,7 @@
         if (spin) triggerBtn.classList?.remove?.('spinning');
         const keepDisabled =
           (triggerBtn.dataset?.role === 'proc-btn' && Boolean(card._sc?.builtin)) ||
-          (triggerBtn.dataset?.role === 'hibernate-btn' && Boolean(card._sc?.autoHibernateLocked)) ||
-          (triggerBtn.dataset?.role === 'add-ws-btn' && !card._activeWorkspace?.workspacePath);
+          (triggerBtn.dataset?.role === 'hibernate-btn' && Boolean(card._sc?.autoHibernateLocked));
         triggerBtn.disabled = keepDisabled;
       }
     }
@@ -121,7 +94,7 @@
       );
       const actBtn = ns.setHtml(
         Object.assign(document.createElement('button'), { type: 'button', className: 'agy-btn agy-btn-primary has-icon' }),
-        ns.html`${ns.iconSvg(isInstall ? 'download' : 'check', 16)}<span>${isInstall ? 'Install…' : 'Enable'}</span>`,
+        ns.html`${ns.iconSvg(isInstall ? 'download' : 'open_in_new', 16)}<span>${isInstall ? 'Install…' : 'Open'}</span>`,
       );
       if (isInstall) actBtn.title = 'Opens this sidecar in Discover to review its capability tier before installing';
       actBtn.addEventListener('click', () => sugEl._onApplySuggestion?.(sug));
@@ -132,15 +105,23 @@
 
   function createInstalledCard(
     scId,
-    { onManageSidecar, onSaveWorkspaces, onToggleAutoHibernate, onInstallRemote, onUninstallSidecar },
+    {
+      onManageSidecar,
+      onToggleGlobalSidecar,
+      onSaveWorkspaces,
+      onToggleAutoHibernate,
+      onInstallRemote,
+      onUninstallSidecar,
+    },
   ) {
     const card = Object.assign(document.createElement('div'), { className: 'agy-card' });
     card.dataset.sidecarId = scId;
-    const drawerId = `ws-scope-${String(scId).replace(/[^a-z0-9_-]/gi, '-')}`;
+    const drawerId = `ws-globs-${String(scId).replace(/[^a-z0-9_-]/gi, '-')}`;
     ns.setHtml(card, ns.html`
       <div class="agy-card-header">
         <div class="manager-card-title-group">
           <div class="manager-card-title-row">
+            <img data-role="card-logo" class="hangar-card-logo hidden" width="18" height="18" alt="" />
             <span data-role="title" class="manager-card-title"></span>
             <span data-role="status-badge" class="agy-badge"></span>
             <span data-role="builtin-badge" class="agy-badge hidden">Built-in</span>
@@ -181,41 +162,29 @@
       </div>
       <div data-role="card-error" class="agy-banner err hidden" role="alert"></div>
       <div data-role="desc" class="manager-card-desc"></div>
-      <button
-        type="button"
-        data-role="scope-toggle"
-        class="ws-scope-trigger"
-        aria-expanded="false"
-        aria-controls="${drawerId}"
-      >
-        <span class="ws-scope-trigger-left">
-          ${ns.iconSvg('expand_more', 16, 'ws-scope-chev')}
-          <span class="ws-scope-text">
-            <span class="ws-scope-prefix">Scope:</span>
-            <span data-role="scope-summary" class="ws-scope-val"></span>
-          </span>
-          <span data-role="scope-extra" class="agy-count-pill hidden"></span>
-        </span>
-        <span class="ws-scope-trigger-right">
-          <span data-role="scope-sleep-pill" class="ws-scope-sleep-pill hidden">
-            ${ns.iconSvg('bolt', 16)}<span>Auto-Sleep</span>
-          </span>
-          <span data-role="scope-action-label" class="ws-scope-edit-label">Edit</span>
-        </span>
-      </button>
-      <div id="${drawerId}" data-role="scope-drawer" class="ws-scope-drawer hidden">
-        <div class="manager-section-bar">
-          <div class="manager-scope-actions">
-            <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
-            <agy-toggle-group class="agy-toggle-group" role="group" aria-label="Workspace Scope">
-              <button type="button" data-role="global-btn" class="agy-toggle-item">${ns.iconSvg('globe', 16)}<span>Global (*)</span></button>
-              <button type="button" data-role="add-ws-btn" class="agy-toggle-item"></button>
-            </agy-toggle-group>
-          </div>
+      <div class="ws-card-footer">
+        <div class="manager-scope-actions">
+          <button type="button" data-role="global-btn" class="agy-btn has-icon">
+            ${ns.iconSvg('globe', 16)}<span>All Workspaces</span>
+          </button>
+          <button type="button" data-role="hibernate-btn" class="agy-btn has-icon"></button>
         </div>
+        <button
+          type="button"
+          data-role="globs-toggle"
+          class="ws-globs-toggle"
+          aria-expanded="false"
+          aria-controls="${drawerId}"
+        >
+          ${ns.iconSvg('expand_more', 16, 'ws-scope-chev')}
+          <span>Auto-open globs</span>
+          <span data-role="globs-count" class="agy-count-pill hidden"></span>
+        </button>
+      </div>
+      <div id="${drawerId}" data-role="globs-drawer" class="ws-scope-drawer hidden">
         <div data-role="rule-list" class="ws-rule-list"></div>
         <div class="ws-add-row">
-          <input type="text" class="ws-input" aria-label="Add workspace path or glob" placeholder="Add workspace path or glob (e.g. C:/Projects/app, *backend*)…" />
+          <input type="text" class="ws-input" aria-label="Auto-open glob pattern" placeholder="Auto-open when workspace matches glob (e.g. *backend*, *api*)…" />
           <button type="button" data-role="add-rule-btn" class="agy-btn agy-btn-secondary has-icon">
             ${ns.iconSvg('add', 16)}<span>Add</span>
           </button>
@@ -223,26 +192,30 @@
       </div>
     `);
     const q = (role) => card.querySelector(`[data-role="${role}"]`);
-    q('scope-toggle').addEventListener('click', () => {
+    q('card-logo')?.addEventListener?.('error', () => {
+      q('card-logo')?.classList?.add?.('hidden');
+    });
+    q('globs-toggle').addEventListener('click', () => {
       const id = card._sc?.sidecarId || scId;
-      const nextOpen = !expandedScopeIds.has(id);
+      const nextOpen = !expandedGlobIds.has(id);
       if (nextOpen) {
-        expandedScopeIds.add(id);
+        expandedGlobIds.add(id);
       } else {
-        expandedScopeIds.delete(id);
+        expandedGlobIds.delete(id);
       }
-      syncCardScopeExpanded(card, nextOpen);
+      syncCardGlobsExpanded(card, nextOpen);
     });
     const wsInput = card.querySelector('.ws-input');
     const commitNewPattern = () => {
       const raw = wsInput.value.trim();
       if (!raw) return;
-      const incoming = raw.split(',').map((s) => s.trim()).filter(Boolean);
-      const existing = (card._sc.workspaces || []).filter((w) => w !== '*' || incoming.includes('*'));
+      const incoming = raw.split(',').map((s) => s.trim()).filter((s) => s && s !== '*');
+      if (!incoming.length) return;
+      const existing = getCardGlobPatterns(card._sc);
       wsInput.value = '';
       runCardAction(
         card,
-        () => onSaveWorkspaces(card._sc, Array.from(new Set([...existing, ...incoming]))),
+        () => onSaveWorkspaces?.(card._sc, Array.from(new Set([...existing, ...incoming]))),
         q('add-rule-btn'),
       );
     };
@@ -260,21 +233,14 @@
     });
     const globalBtnEl = q('global-btn');
     globalBtnEl.addEventListener('click', () => {
-      const isGlobal = (card._sc.workspaces || []).includes('*');
-      const fallback = card._activeWorkspace?.workspacePath ? [card._activeWorkspace.workspacePath] : [];
-      runCardAction(card, () => onSaveWorkspaces(card._sc, isGlobal ? fallback : ['*']), globalBtnEl);
-    });
-    const addWsBtnEl = q('add-ws-btn');
-    addWsBtnEl.addEventListener('click', () => {
-      const currentWs = card._activeWorkspace?.workspacePath || '';
-      if (!currentWs) return;
-      const existing = (card._sc.workspaces || []).filter((w) => w !== '*');
-      const hasCurrent = !(card._sc.workspaces || []).includes('*') &&
-        existing.some((w) => w.toLowerCase() === currentWs.toLowerCase());
-      const next = hasCurrent
-        ? existing.filter((w) => w.toLowerCase() !== currentWs.toLowerCase())
-        : Array.from(new Set([...existing, currentWs]));
-      runCardAction(card, () => onSaveWorkspaces(card._sc, next), addWsBtnEl);
+      if (!card._sc) return;
+      if (typeof onToggleGlobalSidecar === 'function') {
+        runCardAction(card, () => onToggleGlobalSidecar(card._sc), globalBtnEl);
+        return;
+      }
+      const isGlobal = card._sc.scope === 'global' || (card._sc.workspaces || []).includes('*');
+      const fallback = getCardGlobPatterns(card._sc);
+      runCardAction(card, () => onSaveWorkspaces?.(card._sc, isGlobal ? fallback : ['*']), globalBtnEl);
     });
     const procBtn = q('proc-btn');
     const syncSwitch = (el, on, dis) => {
@@ -292,7 +258,7 @@
       syncSwitch(procBtn, nextOn, true);
       await runCardAction(
         card,
-        () => onManageSidecar(card._sc.sidecarId, nextOn ? 'SIDECAR_ACTION_ENABLE' : 'SIDECAR_ACTION_DISABLE'),
+        () => onManageSidecar?.(card._sc.sidecarId, nextOn ? 'SIDECAR_ACTION_ENABLE' : 'SIDECAR_ACTION_DISABLE'),
       );
       syncSwitch(procBtn, Boolean(card._sc.isRunning), false);
     });
@@ -403,6 +369,17 @@
         : `v${sc.installedVersion || '1.0.0'}`;
       const badgeInfo = ns.formatStatusBadge(sc.statusBadge, sc.isRunning, sc.isErrored);
       const scLabel = sc.displayName || sc.sidecarId;
+      const logoEl = q('card-logo');
+      const logoSrc = sc.iconUrl
+        ? (ns.resolveSidecarAssetUrl ? ns.resolveSidecarAssetUrl(sc.iconUrl) : String(sc.iconUrl))
+        : '';
+      if (logoEl) {
+        logoEl.classList.toggle('hidden', !logoSrc);
+        if (logoSrc && logoEl.getAttribute('src') !== logoSrc) {
+          logoEl.setAttribute('src', logoSrc);
+          logoEl.src = logoSrc;
+        }
+      }
       q('title').textContent = sc.displayName;
       q('restart-btn').title = `Restart ${scLabel}`;
       q('restart-btn').setAttribute?.('aria-label', `Restart ${scLabel}`);
@@ -412,6 +389,7 @@
         ? 'Built-in Antigravity sidecar — managed by the IDE'
         : `Enable or disable ${scLabel}`;
       q('proc-btn').setAttribute?.('aria-label', `Enable or disable ${scLabel}`);
+
       const metaParts = [sc.sidecarId];
       if (!sc.builtin) metaParts.push(verLabel, sc.source);
       if (sc.webPort) metaParts.push(`:${sc.webPort}`);
@@ -425,24 +403,16 @@
         ns.setHtml(statusBadge, ns.html`<span class="agy-badge-dot"></span><span>${ns.escHtml(badgeInfo.label)}</span>`);
       }
       q('desc').textContent = sc.description || 'No description provided.';
-      const scopeInfo = formatScopeSummary(sc);
-      const scopeSummaryEl = q('scope-summary');
-      scopeSummaryEl.textContent = scopeInfo.label;
-      scopeSummaryEl.classList.toggle('is-empty', scopeInfo.empty);
-      const scopeExtraEl = q('scope-extra');
-      scopeExtraEl.textContent = scopeInfo.extraCount > 0 ? `+${scopeInfo.extraCount}` : '';
-      scopeExtraEl.classList.toggle('hidden', scopeInfo.extraCount === 0);
-      q('scope-sleep-pill')?.classList.toggle('hidden', !sc.autoHibernate);
-      q('scope-toggle').title = `Workspace Scope: ${scopeInfo.tooltip}`;
-      syncCardScopeExpanded(card, expandedScopeIds.has(sc.sidecarId));
-      const canUninstall = ns.canUninstallSidecar
-        ? ns.canUninstallSidecar(sc)
-        : (!sc.sidecarId.includes('/') && !sc.parentPluginId && !String(sc.source || '').startsWith('plugin:'));
-      q('uninstall-btn').classList.toggle('hidden', !canUninstall);
-      q('fix-agent-btn')?.classList.toggle('hidden', !sc.isErrored);
-      const upBtn = q('update-btn');
-      upBtn.classList.toggle('hidden', !hasUpdate);
-      if (hasUpdate && latestVer) upBtn.title = `Update ${sc.displayName} to v${latestVer}`;
+
+      const isGlobal = sc.scope === 'global' || (sc.workspaces || []).includes('*');
+      const globalBtn = q('global-btn');
+      globalBtn.className = `agy-btn has-icon ${isGlobal ? 'agy-btn-secondary' : 'agy-btn-outline'}`;
+      globalBtn.classList.toggle('active', isGlobal);
+      globalBtn.setAttribute?.('aria-pressed', String(isGlobal));
+      globalBtn.title = isGlobal
+        ? 'Shown across all workspaces — click to keep open per project instead'
+        : 'Show this sidecar tab across all workspaces';
+
       const hibBtn = q('hibernate-btn');
       const hibSig = `${Boolean(sc.autoHibernate)}:${Boolean(sc.autoHibernateLocked)}`;
       if (hibBtn.dataset.sig !== hibSig) {
@@ -451,32 +421,29 @@
         ns.setHtml(hibBtn, ns.html`${ns.iconSvg('bolt', 16)}<span>Auto-Sleep</span>`);
         hibBtn.title = sc.autoHibernateLocked
           ? "A plugin's sidecar starts and stops with its plugin, so it never hibernates"
-          : 'Automatically hibernate process when workspace is inactive';
+          : 'Automatically hibernate process when tab is closed or workspace is inactive';
         hibBtn.disabled = Boolean(sc.autoHibernateLocked);
         hibBtn.setAttribute('aria-pressed', String(Boolean(sc.autoHibernate)));
       }
-      const isGlobal = (sc.workspaces || []).includes('*');
-      const globalBtn = q('global-btn');
-      globalBtn.classList.toggle('active', isGlobal);
-      globalBtn.setAttribute?.('aria-pressed', String(isGlobal));
-      const addWsBtn = q('add-ws-btn');
-      const currentWs = activeWorkspace?.workspacePath || '';
-      const alreadyHasCurrent = Boolean(
-        currentWs && !isGlobal && (sc.workspaces || []).some((w) => w.toLowerCase() === currentWs.toLowerCase()),
-      );
-      addWsBtn.classList.toggle('active', alreadyHasCurrent);
-      addWsBtn.setAttribute?.('aria-pressed', String(alreadyHasCurrent));
-      const wsBtnLabel = activeWorkspace?.workspaceName || 'Workspace';
-      const wsBtnSig = `${alreadyHasCurrent}:${wsBtnLabel}`;
-      if (addWsBtn.dataset.sig !== wsBtnSig) {
-        addWsBtn.dataset.sig = wsBtnSig;
-        ns.setHtml(addWsBtn, ns.html`${ns.iconSvg(alreadyHasCurrent ? 'check' : 'add', 16)}<span>${ns.escHtml(wsBtnLabel)}</span>`);
-      }
-      addWsBtn.disabled = !currentWs;
-      globalBtn.closest?.('agy-toggle-group')?.sync?.();
-      renderRuleList(q('rule-list'), sc, (pat) => {
-        runCardAction(card, () => onSaveWorkspaces(card._sc, (card._sc.workspaces || []).filter((w) => w !== pat)));
+
+      const globPatterns = getCardGlobPatterns(sc);
+      const globsCountEl = q('globs-count');
+      globsCountEl.textContent = globPatterns.length > 0 ? String(globPatterns.length) : '';
+      globsCountEl.classList.toggle('hidden', globPatterns.length === 0);
+      syncCardGlobsExpanded(card, expandedGlobIds.has(sc.sidecarId));
+      renderRuleList(q('rule-list'), globPatterns, (pat) => {
+        runCardAction(card, () => onSaveWorkspaces?.(card._sc, getCardGlobPatterns(card._sc).filter((w) => w !== pat)));
       });
+
+      const canUninstall = ns.canUninstallSidecar
+        ? ns.canUninstallSidecar(sc)
+        : (!sc.sidecarId.includes('/') && !sc.parentPluginId && !String(sc.source || '').startsWith('plugin:'));
+      q('uninstall-btn').classList.toggle('hidden', !canUninstall);
+      q('fix-agent-btn')?.classList.toggle('hidden', !sc.isErrored);
+      const upBtn = q('update-btn');
+      upBtn.classList.toggle('hidden', !hasUpdate);
+      if (hasUpdate && latestVer) upBtn.title = `Update ${sc.displayName} to v${latestVer}`;
+
       const procBtn = q('proc-btn');
       if (sc.builtin) {
         if (window.AgyUI?.syncSwitchState) {
@@ -498,7 +465,7 @@
     }
     for (const child of Array.from(paneEl.querySelectorAll('.agy-card'))) {
       if (!seenIds.has(child.dataset.sidecarId)) {
-        expandedScopeIds.delete(child.dataset.sidecarId);
+        expandedGlobIds.delete(child.dataset.sidecarId);
         child.remove();
       }
     }

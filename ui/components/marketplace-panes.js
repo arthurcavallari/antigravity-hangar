@@ -3,7 +3,6 @@
   const ns = (window.Hangar = window.Hangar || {});
   let searchQuery = '';
   let activeCategory = 'all';
-  let sideloadScope = 'project';
   let sideloadFeedback = null;
   ns.clearSideloadFeedback = () => {
     sideloadFeedback = null;
@@ -78,7 +77,6 @@
       try {
         const curPkg = card._pkg;
         const ctx = paneEl._ctx || {};
-        const wsPath = ctx.activeWorkspace?.workspacePath;
         const isGlobalPkg = (curPkg.workspaceTriggers?.files || []).includes('*');
         const res = await ctx.onInstallRemote?.({
           sidecarId: curPkg.id,
@@ -87,7 +85,7 @@
           sha256: curPkg.release?.sha256 || '',
           version: curPkg.latestVersion || '1.0.0',
           scope: isGlobalPkg ? 'global' : 'project',
-          workspaces: isGlobalPkg ? ['*'] : (wsPath ? [wsPath] : ['*']),
+          workspaces: isGlobalPkg ? ['*'] : [],
           acceptedTier: card._acceptedTier || curPkg.capabilityTier || 'TIER_1_TELEMETRY',
         });
         card._isInstalling = false;
@@ -98,7 +96,11 @@
           resetInstallBtn('Install');
           return;
         }
-        ctx.onSwitchTab?.('installed');
+        if (typeof ctx.onOpenSidecar === 'function') {
+          await ctx.onOpenSidecar(curPkg.id);
+        } else {
+          ctx.onSwitchTab?.('installed');
+        }
       } catch (err) {
         card._isInstalling = false;
         resetInstallBtn('Retry Install');
@@ -300,7 +302,6 @@
   function syncSideloadState(paneEl) {
     const shell = paneEl?.querySelector('[data-role="sideload-shell"]');
     if (!shell) return;
-    const wsName = paneEl._ctx?.activeWorkspace?.workspaceName || 'Current Workspace';
     const bannerEl = shell.querySelector('[data-role="sideload-banner"]');
     if (bannerEl) {
       bannerEl.className = sideloadFeedback
@@ -308,11 +309,6 @@
         : 'agy-banner hidden';
       bannerEl.textContent = sideloadFeedback ? sideloadFeedback.text : '';
     }
-    const wsLabelEl = shell.querySelector('[data-role="ws-scope-label"]');
-    if (wsLabelEl && wsLabelEl.textContent !== wsName) wsLabelEl.textContent = wsName;
-    shell.querySelectorAll('[data-scope]').forEach((btn) => btn.classList.toggle('active', btn.dataset.scope === sideloadScope));
-    const scopeGroup = shell.querySelector('agy-toggle-group');
-    if (scopeGroup) scopeGroup.value = sideloadScope;
   }
 
   ns.renderSideloadPane = function renderSideloadPane(paneEl, ctx = {}) {
@@ -330,16 +326,8 @@
                   <span class="manager-card-title">Link Local Sidecar Folder</span>
                   <span class="agy-badge running">Development</span>
                 </div>
-                <div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json</div>
+                <div class="agy-card-meta">Creates a live NTFS junction / symlink to a local directory containing sidecar.json and opens it in the tab bar</div>
               </div>
-              <agy-toggle-group class="agy-toggle-group" aria-label="Sideload workspace scope">
-                <button type="button" data-scope="project" class="agy-toggle-item">
-                  ${ns.iconSvg('folder', 16)}<span data-role="ws-scope-label"></span>
-                </button>
-                <button type="button" data-scope="global" class="agy-toggle-item">
-                  ${ns.iconSvg('globe', 16)}<span>Global (*)</span>
-                </button>
-              </agy-toggle-group>
             </div>
             <div class="ws-add-row">
               <input type="text" data-role="local-path-input" class="ws-input" aria-label="Local sidecar directory path" placeholder="Local directory path (e.g. C:/path/to/my/agy-sidecar)…" />
@@ -402,12 +390,6 @@
         }
         syncSideloadState(paneEl);
       };
-      shell.querySelectorAll('[data-scope]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          sideloadScope = btn.dataset.scope;
-          syncSideloadState(paneEl);
-        });
-      });
       const localInput = q('local-path-input');
       validateBtn.addEventListener('click', () => {
         const folderPath = localInput.value.trim();
@@ -425,15 +407,18 @@
         const folderPath = localInput.value.trim();
         if (!folderPath) return;
         runSideload(async (curCtx) => {
-          const wsPath = curCtx.activeWorkspace?.workspacePath || '';
           const res = await curCtx.onLinkLocal?.({
             folderPath,
-            scope: sideloadScope,
-            workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']),
+            scope: 'project',
+            workspaces: [],
           });
           localInput.value = '';
           sideloadFeedback = { tone: 'ok', text: `Linked ${res.sidecarId} and enabled via Language Server.` };
-          curCtx.onSwitchTab?.('installed');
+          if (res?.sidecarId && typeof curCtx.onOpenSidecar === 'function') {
+            await curCtx.onOpenSidecar(res.sidecarId);
+          } else {
+            curCtx.onSwitchTab?.('installed');
+          }
         });
       };
       linkBtn.addEventListener('click', triggerLinkLocal);
@@ -467,11 +452,10 @@
         if (!gitRepo) return;
         ghConsentBar.classList.add('hidden');
         runSideload(async (curCtx) => {
-          const wsPath = curCtx.activeWorkspace?.workspacePath || '';
           const res = await curCtx.onInstallRemote?.({
             gitRepo,
-            scope: sideloadScope,
-            workspaces: sideloadScope === 'global' ? ['*'] : (wsPath ? [wsPath] : ['*']),
+            scope: 'project',
+            workspaces: [],
             acceptedTier: ghPendingTier || 'TIER_1_TELEMETRY',
           });
           if (res?.needsConsent) {
@@ -483,7 +467,11 @@
           ghPendingTier = '';
           ghInput.value = '';
           sideloadFeedback = { tone: 'ok', text: `Installed ${res.sidecarId} from GitHub.` };
-          curCtx.onSwitchTab?.('installed');
+          if (res?.sidecarId && typeof curCtx.onOpenSidecar === 'function') {
+            await curCtx.onOpenSidecar(res.sidecarId);
+          } else {
+            curCtx.onSwitchTab?.('installed');
+          }
         });
       });
     }

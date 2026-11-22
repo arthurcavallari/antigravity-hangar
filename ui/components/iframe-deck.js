@@ -280,11 +280,12 @@
 
   ns.reconcileIframeDeck = function reconcileIframeDeck({ state, els, onRefreshState }) {
     const splitEnabled = Boolean(state.layout?.splitViewEnabled);
-    const { bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
+    const { workspaceTabs, bottomTabs, activeSingleId, activeTopId } = ns.partitionSplitTabs(
       state.sidecars || [],
       state.layout,
       state.terminals || [],
     );
+    const openSidecarIds = new Set((workspaceTabs || []).map((t) => t.sidecarId));
     els.mainViewport.classList.toggle('is-split', splitEnabled);
     els.splitDividerGroup?.classList.toggle('hidden', !splitEnabled);
     if (splitEnabled && !state.isResizingSplit) {
@@ -300,7 +301,7 @@
     const topSlotId = splitEnabled ? activeTopId : activeSingleId;
     const bottomSlotId = splitEnabled ? state.bottomActiveTabId : '';
     for (const sc of state.sidecars || []) {
-      if (!sc.matchesWorkspace || !sc.isRunning || !sc.iframeUrl) {
+      if (!openSidecarIds.has(sc.sidecarId) || !sc.isRunning || !sc.iframeUrl) {
         deckFrames.get(sc.sidecarId)?.remove();
         deckFrames.delete(sc.sidecarId);
         continue;

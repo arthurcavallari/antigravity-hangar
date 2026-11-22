@@ -185,6 +185,7 @@
     handleDropIntoTerminal,
     handleSideChatDock,
     handleTabContextAction,
+    openSidecar,
     reopenClosed,
   } = layoutCtrl;
 
@@ -192,6 +193,10 @@
     if (!tabId || !layoutObj) return;
     if (Array.isArray(layoutObj.closedTabIds) && layoutObj.closedTabIds.includes(tabId)) {
       layoutObj.closedTabIds = layoutObj.closedTabIds.filter((id) => id !== tabId);
+    }
+    const routeSc = (state.sidecars || []).find((s) => s.sidecarId === tabId);
+    if (routeSc && !routeSc.matchesWorkspace) {
+      layoutObj.openTabIds = [...new Set([...(layoutObj.openTabIds || []), tabId])];
     }
     if (layoutObj.splitViewEnabled && Array.isArray(layoutObj.topSplitTabIds) && !layoutObj.topSplitTabIds.includes(tabId)) {
       layoutObj.topSplitTabIds = [...layoutObj.topSplitTabIds, tabId];
@@ -400,6 +405,8 @@
         apiCall: ns.apiCall,
         bumpLayoutSeq,
         saveLayoutUpdate,
+        openSidecar,
+        handleTabContextAction,
         reopenClosed,
         refreshRegistry,
         refreshHangarState,

@@ -215,6 +215,63 @@
   min-width: 0;
 }
 
+.hangar-tab-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+.hangar-card-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.ws-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hub-border);
+}
+
+.ws-globs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md, 0.375rem);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--hub-muted);
+  font-family: var(--hub-font-sans);
+  font-size: var(--text-sm, 0.75rem);
+  line-height: 1.25;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--dur-agy) var(--ease-agy),
+    color var(--dur-agy) var(--ease-agy);
+}
+
+.ws-globs-toggle:hover {
+  background: var(--hub-secondary);
+  color: var(--hub-fg);
+}
+
+.ws-globs-toggle:focus-visible {
+  outline: 2px solid var(--nux-focus-ring, var(--hub-primary));
+  outline-offset: 2px;
+}
+
 .manager-card-title {
   font-size: var(--text-base, 0.875rem);
   font-weight: var(--font-weight-medium, 500);

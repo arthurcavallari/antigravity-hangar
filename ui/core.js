@@ -81,6 +81,23 @@
     const s = String(raw || '').trim();
     return /^https:\/\/[^\s"'<>]+$/i.test(s) ? s : '';
   };
+  ns.resolveSidecarAssetUrl = (raw = '') => {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    if (/^https:\/\//i.test(s)) return ns.sanitizeHttpsUrl(s);
+    if (!s.startsWith('/api/sidecar/icon?')) return '';
+    const tok = ns.getUiToken?.() || '';
+    if (!tok || /[?&]token=/i.test(s)) return s;
+    return `${s}&token=${encodeURIComponent(tok)}`;
+  };
+  ns.isSidecarOpenInLayout = function isSidecarOpenInLayout(sc, layout = {}) {
+    if (!sc || sc.isVirtual) return true;
+    const id = sc.sidecarId;
+    if (Array.isArray(layout?.pinnedTabIds) && layout.pinnedTabIds.includes(id)) return true;
+    if (Array.isArray(layout?.closedTabIds) && layout.closedTabIds.includes(id)) return false;
+    if (Array.isArray(layout?.openTabIds) && layout.openTabIds.includes(id)) return true;
+    return Boolean(sc.matchesWorkspace);
+  };
   const trustedHtml = new Set();
   const rawHtml = (str = '') => {
     const s = String(str ?? '');
