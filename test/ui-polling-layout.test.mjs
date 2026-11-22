@@ -170,7 +170,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__extensions__');
   });
 
-  it('isolates terminals and side chats when viewing conversations that do not belong to a project', async () => {
+  it('isolates terminals and side questions when viewing conversations that do not belong to a project', async () => {
     const sharedSession = new Map();
     const sessionStorage = {
       getItem: (k) => sharedSession.get(k) || '',
@@ -189,7 +189,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
       activeCascadeId: '11111111-1111-4111-8111-111111111111',
       sideChatCounter: 2,
       threads: [
-        { cascadeId: '11111111-1111-4111-8111-111111111111', title: 'Proj 1 Side Chat', parentConversationId: 'conv-proj-1', pinned: false },
+        { cascadeId: '11111111-1111-4111-8111-111111111111', title: 'Proj 1 Side Question', parentConversationId: 'conv-proj-1', pinned: false },
         { cascadeId: '22222222-2222-4222-8222-222222222222', title: 'Proj 1 Popped Chat', parentConversationId: 'conv-proj-1', pinned: false },
       ],
       poppedIds: ['22222222-2222-4222-8222-222222222222'],
@@ -288,7 +288,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(projWin.Hangar.getSideChatState().threads.length, 2);
     assert.equal(lastTabBarProps.layout.tabOrder.some((id) => id.startsWith('sidechat__')), false);
 
-    // 2. Switching to a projectless conversation in the same window clears project terminals and side chats
+    // 2. Switching to a projectless conversation in the same window clears project terminals and side questions
     currentWsPath = '';
     onWorkspaceChange([]);
     await flush();
@@ -298,7 +298,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
     assert.equal(lastTabBarProps.hasActiveWorkspace, false);
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
 
-    // 3. Opening a fresh projectless conversation does not inherit any project's terminals or side chats
+    // 3. Opening a fresh projectless conversation does not inherit any project's terminals or side questions
     const noProjWin = await bootWindow('conv-no-proj-2');
     assert.equal(noProjWin.Hangar.isMainTerminalOpen(), false);
     assert.equal(noProjWin.Hangar.getSideChatState().isOpen, false);
@@ -405,7 +405,7 @@ describe('Hangar workspace layout scoping, hidden cadence, and AgyUI integration
       querySelector: () => null,
       appendChild: (c) => customContainerChildren.push(c),
     };
-    window.AgyUI.showToast('Sent to Side Chat', { container: hostContainer });
+    window.AgyUI.showToast('Sent to Side Question', { container: hostContainer });
     assert.equal(customContainerChildren.length, 1);
     // The toast stays in its container. From sidecar-kit 1.7, the message is announced from hidden live regions in
     // the body (as Antigravity's toasts do), so those are the only thing the body may gain.

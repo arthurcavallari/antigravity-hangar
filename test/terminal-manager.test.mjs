@@ -557,7 +557,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
 
     for (const fn of winListeners.message || []) fn({ data: { type: 'hangar-jetbox-quote-clicked', payload: { terminalId: 't1', title: 'pwsh-1', selectionContent: 'ERR_SIDECHAT', copied: true, askAgent: true } } });
     assert.equal(miniComposer.classList.contains('hidden'), false);
-    miniComposer._els.input.value = 'Investigate this in Side Chat';
+    miniComposer._els.input.value = 'Investigate this in Side Question';
     const composer = miniComposer._submitSideChat();
     await new Promise((r) => setTimeout(r, 15));
     assert.equal(miniComposer.classList.contains('hidden'), true);
@@ -569,7 +569,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       terminalId: 't1',
       title: 'committed-name',
       selectionContent: 'ERR_SIDECHAT',
-      promptText: 'Investigate this in Side Chat',
+      promptText: 'Investigate this in Side Question',
       autoSubmit: true,
     });
     const dockedTabs = windowObj.Hangar.partitionSplitTabs([], {}, allTerms).workspaceTabs;
@@ -657,7 +657,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     scRenameInp.emit('blur', {});
     const secondCid = windowObj.Hangar.getSideChatState().threads[1].cascadeId;
     assert.equal(windowObj.Hangar.readCustomSideChatTitles()[secondCid], 'Bug Triage Chat');
-    // Issue #2: foreign-nav state ("Back to Side Chat" button) must persist per thread across tab switches
+    // Issue #2: foreign-nav state ("Back to Side Question" button) must persist per thread across tab switches
     for (const fn of winListeners.message || []) {
       fn({
         source: bgFrameWin,
@@ -688,7 +688,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       });
     }
     assert.equal(composer._els.backBtn.classList.contains('hidden'), true);
-    assert.equal(composer._els.popoutBtn, undefined, 'Side Chat companion pane must not render redundant top-bar popout button');
+    assert.equal(composer._els.popoutBtn, undefined, 'Side Question companion pane must not render redundant top-bar popout button');
     const renameCall = apiCalls.find((c) => c.path === '/api/sidechat/rename');
     assert.deepEqual(JSON.parse(JSON.stringify(renameCall?.body || null)), {
       cascadeId: secondCid,
@@ -961,7 +961,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     const mockTargets = [
       { id: 'page-devtools', type: 'page', title: 'DevTools', url: 'devtools://devtools/bundled/inspector.html', webSocketDebuggerUrl: 'ws://127.0.0.1:54818/devtools/page/page-devtools' },
       { id: 'page-other', type: 'page', title: 'Other Task - repo - Antigravity', url: 'https://127.0.0.1:50000/c/other-conv', webSocketDebuggerUrl: 'ws://127.0.0.1:54818/devtools/page/page-other' },
-      { id: 'page-match', type: 'page', title: 'Antigravity Side Chat Support - antigravity-hangar - Antigravity', url: 'https://127.0.0.1:50000/c/conv-target-1?tab=sidecar__hangar__%2F', webSocketDebuggerUrl: 'ws://127.0.0.1:54818/devtools/page/page-match' },
+      { id: 'page-match', type: 'page', title: 'Antigravity Side Question Support - antigravity-hangar - Antigravity', url: 'https://127.0.0.1:50000/c/conv-target-1?tab=sidecar__hangar__%2F', webSocketDebuggerUrl: 'ws://127.0.0.1:54818/devtools/page/page-match' },
       { id: 'frame-hangar', type: 'iframe', parentId: 'page-match', url: 'plugin://hangar-53555/?token=abc&conversationId=conv-target-1' },
     ];
     class MockWs {
@@ -1141,7 +1141,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       assert.ok(setupSrc.includes(`'${reqFile}'`), `setup.mjs requiredFiles must include ${reqFile}`);
     }
 
-    // HGR-AUD-03: Side-Chat session-strip inline rename routes through /api/sidechat/rename instead of /api/terminal/ls-rpc
+    // HGR-AUD-03: Side Question session-strip inline rename routes through /api/sidechat/rename instead of /api/terminal/ls-rpc
     const quoteAndSideChatSrc = [
       'ui/components/terminal-quote.js',
       'ui/components/sidechat-store.js',
@@ -1159,7 +1159,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.ok(sidechatRenameMatches.length >= 1, 'session-strip inline rename handler must call /api/sidechat/rename');
   });
 
-  it('deduplicates cumulative SendTerminalInput buffers, reverts title on ConPTY cursor-positioned prompts, and gates Side Chat quote auto-submit on model readiness', async () => {
+  it('deduplicates cumulative SendTerminalInput buffers, reverts title on ConPTY cursor-positioned prompts, and gates Side Question quote auto-submit on model readiness', async () => {
     const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
     const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
     process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:59999';
@@ -1623,7 +1623,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(
       parentPosts.some((m) => m?.type === 'hangar-sidechat-foreign-nav'),
       false,
-      'Aux Pane subagent stream must not fire hangar-sidechat-foreign-nav while pathname is still the root Side Chat'
+      'Aux Pane subagent stream must not fire hangar-sidechat-foreign-nav while pathname is still the root Side Question'
     );
     assert.equal(chatDoc._attrs?.get('data-hangar-foreign-nav'), undefined);
 
@@ -2005,7 +2005,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     }
   });
 
-  it('collapses 2.31.2 sidebar-split column, sash, inset-shell card, and aux-sidebar toggle in Side Chat [SC-01]', () => {
+  it('collapses 2.31.2 sidebar-split column, sash, inset-shell card, and aux-sidebar toggle in Side Question [SC-01]', () => {
     const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc01', hostTheme: 'dark', uiToken: 'tok-sc01' });
     const termHtml = buildJetboxTerminalHtml({ cascadeId: 'conv-sc01', terminalId: 'term-sc01', hostTheme: 'dark', uiToken: 'tok-sc01' });
     for (const sel of [
@@ -2052,7 +2052,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(forwarded.length, 8);
   });
 
-  it('allows 2.31.2 Side Chat RPCs, bridges SubscribeToMcpServerStates/SubscribeToPlugins, no-ops telemetry, and strictly surfaces mutation failures [SC-04]', async () => {
+  it('allows 2.31.2 Side Question RPCs, bridges SubscribeToMcpServerStates/SubscribeToPlugins, no-ops telemetry, and strictly surfaces mutation failures [SC-04]', async () => {
     const forwarded = [];
     const apis = new Map();
     registerTerminalRoutes(
@@ -2392,7 +2392,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     }
   });
 
-  it('flags non-/c/ foreign routes, posts hangar-jetbox-pane-focused in Side Chat, and routes Forked-from clicks via hangar-sidechat-open-parent [SC-08]', async () => {
+  it('flags non-/c/ foreign routes, posts hangar-jetbox-pane-focused in Side Question, and routes Forked-from clicks via hangar-sidechat-open-parent [SC-08]', async () => {
     const chatHtml = buildJetboxChatHtml({ cascadeId: 'conv-sc08', hostTheme: 'dark', uiToken: 'tok-sc08' });
     assert.ok(chatHtml.includes('div[title="Open side-by-side view"] button'));
     assert.ok(chatHtml.includes('pointer-events: auto !important'));
@@ -2862,7 +2862,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
     assert.equal(chatMendelExps.find((x) => x.keyString === 'enable-notebook-rendering')?.disabled, false);
   });
 
-  it('SC-14: streams WatchVersionControlState for Side Chat Review panel, forwards strict VCS actions, and aborts on cancel or close-stream', async () => {
+  it('SC-14: streams WatchVersionControlState for Side Question Review panel, forwards strict VCS actions, and aborts on cancel or close-stream', async () => {
     const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
     const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
     const prevSid = process.env.ANTIGRAVITY_SIDECAR_ID;
@@ -3036,7 +3036,7 @@ describe('Terminal Manager Connect framing, PTY RPCs, Quoting, and VT100 Emulato
       await new Promise((r) => setTimeout(r, 20));
       assert.equal(upstreamAborted, 1, 'cancelling client WatchVersionControlState reader must abort upstream LS stream');
 
-      // 3. closeTerminalSideChatStreams also aborts active WatchVersionControlState streams for that Side Chat
+      // 3. closeTerminalSideChatStreams also aborts active WatchVersionControlState streams for that Side Question
       const streamRes2 = await chatWin.fetch('/exa.language_server_pb.LanguageServerService/WatchVersionControlState', {
         method: 'POST',
         body: encodeConnectFrame({ workspaceUri: 'file:///c:/repo', conversationId: 'conv-sc14' }),

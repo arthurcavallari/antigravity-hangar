@@ -23,8 +23,8 @@ const flush = async () => {
   for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
 };
 
-describe('Hangar Side Chat openTerminal split-pane routing and poll race protection', () => {
-  it('opens Terminal in the opposite Top/Bottom Split Pane and auto-enables Split View when triggered from Side Chat', async () => {
+describe('Hangar Side Question openTerminal split-pane routing and poll race protection', () => {
+  it('opens Terminal in the opposite Top/Bottom Split Pane and auto-enables Split View when triggered from Side Question', async () => {
     const sharedSession = new Map();
     const sessionStorage = {
       getItem: (k) => sharedSession.get(k) || '',
@@ -54,8 +54,8 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
           mainTermOpen = Boolean(v);
         },
         getInstanceTerminals: (terms) => terms || [],
-        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
-        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Question #1' }] }),
+        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Question #1' }] }),
         serializeTerminalState: () => ({ mainTerminalOpen: mainTermOpen }),
         setSideChatDockCallback: (cb) => {
           sideChatDockCb = cb;
@@ -176,8 +176,8 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
           const closed = new Set(layout?.closedTabIds || []);
           mainTermOpen = !closed.has('__terminal__') && (terms || []).length > 0;
         },
-        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
-        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Chat #1' }] }),
+        getSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Question #1' }] }),
+        serializeSideChatState: () => ({ isOpen: true, isDocked: true, threads: [{ cascadeId: 'sc-1', title: 'Side Question #1' }] }),
         serializeTerminalState: () => ({ mainTerminalOpen: mainTermOpen }),
         setSideChatDockCallback: (cb) => {
           sideChatDockCb = cb;
@@ -256,7 +256,7 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
     assert.deepEqual(Array.from(lastTabBarProps.terminals, (t) => t.terminalId), ['term-race-1']);
   });
 
-  it('keeps Side Chat tab active and open when Quote & Ask races with /api/state or when clicking the Side Chat tab directly (Issue #4)', async () => {
+  it('keeps Side Questions tab active and open when Quote & Ask races with /api/state or when clicking the Side Questions tab directly (Issue #4)', async () => {
     const sharedSession = new Map([['hangar.activeTabId:c:/proj/theme', 'context-monitor']]);
     const sessionStorage = {
       getItem: (k) => sharedSession.get(k) || '',
@@ -406,7 +406,7 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, '__sidechat__', 'must stay on __sidechat__ and never snap back to context-monitor');
     assert.equal(lastTabBarProps.layout.closedTabIds.includes('__sidechat__'), false);
 
-    // Switch to context-monitor, then click the Side Chat tab directly
+    // Switch to context-monitor, then click the Side Questions tab directly
     await lastTabBarProps.onSelectTopSplitTab('context-monitor');
     await flush();
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
@@ -920,7 +920,7 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
 
     // 1. Native /btw thread arrives on /api/state without stealing focus or spawning background iframes
     assert.equal(lastTabBarProps.layout.pinnedTopSidecarId, 'context-monitor');
-    assert.equal(viewportEl.children.length, 0, 'must not spawn Side Chat DOM/iframe while context-monitor is active');
+    assert.equal(viewportEl.children.length, 0, 'must not spawn Side Question DOM/iframe while context-monitor is active');
     const part1 = window.Hangar.partitionSplitTabs(lastTabBarProps.sidecars, lastTabBarProps.layout, []);
     assert.ok(part1.workspaceTabs.some((t) => t.sidecarId === '__sidechat__'));
     assert.equal(window.Hangar.getSideChatState().threads.length, 1);
@@ -952,7 +952,7 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
     assert.equal(
       window.Hangar.getSideChatState().threads.some((t) => t.cascadeId === 'sq-hangar-2'),
       true,
-      'stale /api/state poll must never prune a newly started Hangar Side Chat before LS registers it',
+      'stale /api/state poll must never prune a newly started Hangar Side Question before LS registers it',
     );
 
     // 3. LS registers sq-hangar-2 and generates an automatic summary title
@@ -1431,5 +1431,28 @@ describe('Hangar Side Chat openTerminal split-pane routing and poll race protect
       });
     });
     assert.equal(injectedClicked, false);
+
+    // Hydrating legacy auto-generated default titles upgrades them to Side Question while keeping user titles intact
+    window.Hangar.hydrateSideChatStateFromLayout(
+      {
+        sideChatStateByWorkspace: {
+          'c:/proj/legacy-titles': {
+            isOpen: true,
+            isDocked: true,
+            threads: [
+              { cascadeId: 'leg-1', title: 'Side Chat' },
+              { cascadeId: 'leg-2', title: 'Side Chat #2 · pwsh' },
+              { cascadeId: 'leg-3', title: 'User Custom Notes' },
+            ],
+          },
+        },
+      },
+      'C:\\Proj\\Legacy-Titles',
+      'conv-legacy-titles',
+    );
+    assert.deepEqual(
+      Array.from(window.Hangar.getSideChatState().threads, (t) => t.title),
+      ['Side Question', 'Side Question #2 · pwsh', 'User Custom Notes'],
+    );
   });
 });

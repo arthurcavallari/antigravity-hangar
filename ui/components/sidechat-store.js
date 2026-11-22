@@ -191,13 +191,21 @@
     };
   }
 
+  function normalizeAutoThreadTitle(rawTitle) {
+    const s = String(rawTitle || '').trim();
+    if (!s) return 'Side Question';
+    return /^Side Chat(?=$|\s*#\d+(?:\s*·\s*.*)?$)/.test(s)
+      ? s.replace(/^Side Chat/, 'Side Question')
+      : s;
+  }
+
   function hydrateThreadRecord(t, normCid) {
     const cid = normCid(t.cascadeId);
     const isExternal = Boolean(t.isExternal);
     if (!isExternal) sc.knownHangarIds.add(cid);
     return {
       cascadeId: cid,
-      title: String(t.title || 'Side Question'),
+      title: normalizeAutoThreadTitle(t.title),
       parentConversationId: String(t.parentConversationId || ''),
       isExternal,
       isRunning: false,
