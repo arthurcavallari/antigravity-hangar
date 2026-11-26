@@ -95,7 +95,7 @@ describe('registry.json validation', () => {
     );
   });
 
-  it('SH-18: keeps package.json, registry.json, and lockfileVersion 3 package-lock.json aligned on sidecar-kit ^1.9.0 and agy-plugin-porter ^0.4.0', () => {
+  it('SH-18: keeps package.json, registry.json, and lockfileVersion 3 package-lock.json aligned on sidecar-kit ^1.10.0 and agy-plugin-porter ^0.5.0', () => {
     const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
     const lockRaw = readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8');
     const pkg = JSON.parse(pkgRaw);
@@ -105,14 +105,14 @@ describe('registry.json validation', () => {
 
     assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
     assert.equal(reg.hangar.latestVersion, pkg.version);
-    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.9.0');
-    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.4.0');
-    assert.match(installedKit.version, /^1\.9\./);
+    assert.equal(pkg.dependencies['antigravity-sidecar-kit'], '^1.10.0');
+    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.5.0');
+    assert.match(installedKit.version, /^1\.10\./);
     assert.equal(lock.lockfileVersion, 3);
     assert.equal(lock.version, pkg.version);
     assert.equal(lock.packages[''].version, pkg.version);
-    assert.match(lock.packages['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.9\./);
-    assert.match(lock.packages['node_modules/agy-plugin-porter']?.version || '', /^0\.4\./);
+    assert.match(lock.packages['node_modules/antigravity-sidecar-kit']?.version || '', /^1\.10\./);
+    assert.match(lock.packages['node_modules/agy-plugin-porter']?.version || '', /^0\.5\./);
     assert.equal(pkgRaw.includes('file:'), false, 'package.json must not contain file: specifiers');
     assert.equal(lockRaw.includes('file:'), false, 'package-lock.json must not contain file: specifiers');
     assert.equal(lockRaw.includes('"link":'), false, 'package-lock.json must not contain link entries');

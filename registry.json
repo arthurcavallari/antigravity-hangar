@@ -25,7 +25,7 @@
         "verified": true
       },
       "funding": "https://github.com/sponsors/arthurcavallari",
-      "latestVersion": "1.7.0",
+      "latestVersion": "1.8.0",
       "pricing": "free",
       "categories": [
         "telemetry",
@@ -90,7 +90,7 @@
         "verified": true
       },
       "funding": "https://github.com/sponsors/arthurcavallari",
-      "latestVersion": "0.4.0",
+      "latestVersion": "0.5.0",
       "pricing": "free",
       "categories": [
         "productivity"
@@ -99,8 +99,8 @@
       "license": "MIT",
       "homepage": "https://github.com/arthurcavallari/agy-plugin-porter",
       "release": {
-        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.4.0/agy-plugin-porter-plugin-0.4.0.tgz",
-        "sha256": "71bf77cc4139a51d37f7059926d7c5d9f0e58c612166e5a301935f1051e2711f"
+        "tarballUrl": "https://github.com/arthurcavallari/agy-plugin-porter/releases/download/v0.5.0/agy-plugin-porter-plugin-0.5.0.tgz",
+        "sha256": "cf5bcbb1f2dad97ed069211b7d79be824d6cc9b0310a18c546415b9e56628250"
       }
     },
     {

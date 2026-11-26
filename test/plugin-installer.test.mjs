@@ -992,11 +992,11 @@ describe('Hangar plugin installer', () => {
     }
   });
 
-  it('SH-17: pins agy-plugin-porter ^0.4.0 and preserves 2.31.0 SKILL.md frontmatter + nested metadata', async () => {
+  it('SH-17: pins agy-plugin-porter ^0.5.0 and preserves 2.31.0 SKILL.md frontmatter + nested metadata', async () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.4.0');
+    assert.equal(pkg.dependencies['agy-plugin-porter'], '^0.5.0');
     const porterPkg = JSON.parse(readFileSync(new URL('../node_modules/agy-plugin-porter/package.json', import.meta.url), 'utf8'));
-    assert.match(porterPkg.version, /^0\.4\./);
+    assert.match(porterPkg.version, /^0\.5\./);
     assert.equal(existsSync(new URL('../node_modules/agy-plugin-porter/lib/mod-compiler.mjs', import.meta.url)), true);
 
     const box = sandbox();
