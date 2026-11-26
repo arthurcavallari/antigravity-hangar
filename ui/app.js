@@ -13,6 +13,7 @@
     plugins: [],
     pluginDiagnostics: [],
     suggestions: [],
+    featuredIds: [],
     registryPackages: [],
     bottomActiveTabId: '',
     isResizingSplit: false,
@@ -148,6 +149,7 @@
     try {
       const reg = await ns.apiCall?.('/api/store/registry', {});
       if (Array.isArray(reg?.packages)) state.registryPackages = reg.packages;
+      if (Array.isArray(reg?.featuredIds)) state.featuredIds = reg.featuredIds;
       if (reg?.hangar) state.hangar = reg.hangar;
       isHydratingState = true;
       try {
@@ -419,6 +421,7 @@
         plugins: state.plugins,
         pluginDiagnostics: state.pluginDiagnostics,
         suggestions: state.suggestions,
+        featuredIds: state.featuredIds,
         registryPackages: state.registryPackages,
         hangar: state.hangar,
         layout: state.layout,

@@ -137,13 +137,34 @@
     return card;
   }
 
+  ns.sortDiscoverPackages = function sortDiscoverPackages(packages = [], featuredIds = []) {
+    if (!Array.isArray(packages) || packages.length <= 1) {
+      return Array.isArray(packages) ? [...packages] : [];
+    }
+    const featuredRank = new Map();
+    if (Array.isArray(featuredIds)) {
+      for (const rawId of featuredIds) {
+        const id = typeof rawId === 'string' ? rawId.trim() : '';
+        if (id && !featuredRank.has(id)) {
+          featuredRank.set(id, featuredRank.size);
+        }
+      }
+    }
+    const rankOf = (pkg) => {
+      if (featuredRank.has(pkg?.id)) return featuredRank.get(pkg.id);
+      return featuredRank.size + (pkg?.author?.verified === true ? 0 : 1);
+    };
+    return [...packages].sort((a, b) => rankOf(a) - rankOf(b));
+  };
+
   function reconcileDiscoverList(paneEl) {
-    const { sidecars = [], plugins = [], registryPackages = [] } = paneEl._ctx || {};
+    const { sidecars = [], plugins = [], registryPackages = [], featuredIds = [] } = paneEl._ctx || {};
     const listEl = paneEl.querySelector('[data-role="discover-list"]');
     if (!listEl) return;
     const installedIds = new Set([...sidecars.map((s) => s.sidecarId), ...plugins.map((p) => p.pluginId).filter(Boolean)]);
     const q = searchQuery.toLowerCase().trim();
-    const filtered = registryPackages.filter((pkg) => {
+    const ordered = ns.sortDiscoverPackages(registryPackages, featuredIds);
+    const filtered = ordered.filter((pkg) => {
       const matchesCat = activeCategory === 'all' || (pkg.categories || []).includes(activeCategory);
       const matchesQuery = !q ||
         pkg.name.toLowerCase().includes(q) ||

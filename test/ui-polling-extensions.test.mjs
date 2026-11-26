@@ -374,4 +374,168 @@ describe('Hangar Extensions tab and Settings pane', () => {
 
     assert.deepEqual(seenSubTabs, ['discover', 'sideload', 'settings', 'installed']);
   });
+
+  it('orders featured and verified first-party extensions at the top of Discover across category filters and live re-renders', async () => {
+    const indexHtml = readFileSync(join(UI_DIR, 'index.html'), 'utf8');
+    const { window, document, CustomEvent, HTMLElement, DocumentFragment, Node } = parseHTML(indexHtml);
+    const CSS = { escape: (s) => String(s) };
+    window.CSS = CSS;
+    const unorderedPackages = [
+      {
+        id: 'anthropic-feature-dev',
+        name: 'Feature Dev',
+        kind: 'plugin',
+        port: { from: 'claude' },
+        author: { name: 'Anthropic', verified: false },
+        categories: ['productivity'],
+        capabilityTier: 'TIER_3_AGENT_CONTROL',
+        latestVersion: '1.0.1',
+      },
+      {
+        id: 'tob-sharp-edges',
+        name: 'Sharp Edges',
+        kind: 'plugin',
+        port: { from: 'claude' },
+        author: { name: 'Trail of Bits', verified: false },
+        categories: ['security'],
+        capabilityTier: 'TIER_3_AGENT_CONTROL',
+        latestVersion: '1.1.3',
+      },
+      {
+        id: 'agy-plugin-porter',
+        name: 'Plugin Porter',
+        kind: 'plugin',
+        author: { name: 'Arthur Cavallari', verified: true },
+        categories: ['productivity'],
+        capabilityTier: 'TIER_3_AGENT_CONTROL',
+        latestVersion: '0.4.0',
+      },
+      {
+        id: 'notes',
+        name: 'Notes',
+        author: { name: 'Arthur Cavallari', verified: true },
+        categories: ['productivity'],
+        capabilityTier: 'TIER_3_AGENT_CONTROL',
+        latestVersion: '1.0.0',
+      },
+      {
+        id: 'context-monitor',
+        name: 'Context & Quota Monitor',
+        author: { name: 'Arthur Cavallari', verified: true },
+        categories: ['telemetry', 'productivity'],
+        capabilityTier: 'TIER_1_TELEMETRY',
+        latestVersion: '1.7.0',
+      },
+    ];
+    let featuredIdsFromApi = ['context-monitor', 'notes'];
+    window.fetch = async (url) => {
+      if (String(url).includes('/api/store/registry')) {
+        return {
+          ok: true,
+          json: async () => ({
+            featuredIds: featuredIdsFromApi,
+            packages: unorderedPackages,
+            hangar: { installedVersion: '1.6.0', latestVersion: '1.6.0', updateAvailable: false },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          bootId: 'boot-1',
+          activeWorkspace: { workspaceName: 'App', workspacePath: 'C:/Proj/App' },
+          layout: {
+            pinnedTopSidecarId: '__extensions__',
+            openTabIds: ['__extensions__'],
+            splitViewEnabled: false,
+          },
+          sidecars: [],
+          plugins: [],
+          terminals: [],
+        }),
+      };
+    };
+
+    const timers = [];
+    const ctx = vm.createContext({
+      window,
+      document,
+      CustomEvent,
+      HTMLElement,
+      DocumentFragment,
+      Node,
+      CSS,
+      URLSearchParams,
+      console,
+      fetch: window.fetch,
+      setTimeout: (fn, ms) => {
+        const id = setTimeout(fn, ms);
+        timers.push(() => clearTimeout(id));
+        return id;
+      },
+      clearTimeout,
+      setInterval: (fn, ms) => {
+        const id = setInterval(fn, ms);
+        timers.push(() => clearInterval(id));
+        return id;
+      },
+      clearInterval,
+    });
+    try {
+      vm.runInContext(buildAgyUiJs('all'), ctx, { filename: 'ui.js' });
+      const { UI_SCRIPTS } = await import('../lib/constants.mjs');
+      for (const rel of UI_SCRIPTS) {
+        vm.runInContext(readFileSync(join(UI_DIR, rel), 'utf8'), ctx, { filename: rel });
+      }
+      await flush();
+
+      const ns = window.Hangar;
+      assert.equal(typeof ns.sortDiscoverPackages, 'function');
+
+      const storeViewEl = document.getElementById('store-view');
+      storeViewEl.querySelector('[data-subtab="discover"]').click();
+      await flush();
+
+      const cardIds = () =>
+        Array.from(storeViewEl.querySelectorAll('[data-role="discover-list"] .agy-card')).map((el) => el.dataset.pkgId);
+
+      assert.deepEqual(cardIds(), [
+        'context-monitor',
+        'notes',
+        'agy-plugin-porter',
+        'anthropic-feature-dev',
+        'tob-sharp-edges',
+      ]);
+
+      // Category filter preserves featured -> verified -> community priority
+      storeViewEl.querySelector('[data-cat="productivity"]').click();
+      assert.deepEqual(cardIds(), [
+        'context-monitor',
+        'notes',
+        'agy-plugin-porter',
+        'anthropic-feature-dev',
+      ]);
+
+      storeViewEl.querySelector('[data-cat="all"]').click();
+      assert.deepEqual(
+        Array.from(ns.sortDiscoverPackages(unorderedPackages, ['notes']), (p) => p.id),
+        ['notes', 'agy-plugin-porter', 'context-monitor', 'anthropic-feature-dev', 'tob-sharp-edges'],
+      );
+      featuredIdsFromApi = ['notes', 'context-monitor'];
+      storeViewEl.querySelector('[data-role="settings-btn"]').click();
+      storeViewEl.querySelector('[data-role="check-updates-btn"]').click();
+      await flush();
+      storeViewEl.querySelector('[data-subtab="discover"]').click();
+
+      assert.deepEqual(cardIds(), [
+        'notes',
+        'context-monitor',
+        'agy-plugin-porter',
+        'anthropic-feature-dev',
+        'tob-sharp-edges',
+      ]);
+    } finally {
+      for (const stop of timers) stop();
+    }
+  });
 });

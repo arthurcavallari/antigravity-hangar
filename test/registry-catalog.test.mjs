@@ -10,6 +10,7 @@ import {
   isNewerSemver,
   probeUpstreamVersion,
   readInstalledSidecarVersion,
+  sortCatalogPackages,
 } from '../lib/registry-catalog.mjs';
 import { enrichSidecarList } from '../lib/state-orchestrator.mjs';
 import { loadHangarConfig, readJsonSafe, writeJsonNoBom } from '../lib/config-store.mjs';
@@ -976,6 +977,97 @@ describe('marketplace registry catalog and workspace trigger advisor', () => {
       });
       assert.equal(suggestions.length, 1);
       assert.equal(suggestions[0].sha256, PINNED_SHA);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('orders featured and verified first-party extensions ahead of community ports even when added remotely after SEED_REGISTRY boot', async () => {
+    assert.deepEqual(
+      sortCatalogPackages(
+        [
+          { id: 'comm-a', author: { name: 'Community', verified: false } },
+          { id: 'arthur-2', author: { name: 'Arthur Cavallari', verified: true } },
+          { id: 'comm-b' },
+          { id: 'arthur-1', author: { name: 'Arthur Cavallari', verified: true } },
+        ],
+        ['arthur-1']
+      ).map((p) => p.id),
+      ['arthur-1', 'arthur-2', 'comm-a', 'comm-b']
+    );
+
+    const dir = mkdtempSync(join(tmpdir(), 'hangar-catalog-order-test-'));
+    try {
+      const cfgPath = join(dir, 'hangar.json');
+      writeJsonNoBom(cfgPath, {
+        schemaVersion: 1,
+        telemetry: false,
+        registryUrl: 'https://registry.example.test',
+      });
+
+      const catalog = await fetchRegistry({
+        configPath: cfgPath,
+        sidecarsDir: join(dir, 'sidecars'),
+        packagesDir: join(dir, 'packages'),
+        pluginsDir: join(dir, 'plugins'),
+        probeUpstream: false,
+        fetchFn: async (url) => {
+          if (!url.endsWith('/registry.json')) return { ok: false, status: 404 };
+          return {
+            ok: true,
+            json: async () => ({
+              featuredIds: ['notes', 'context-monitor', 'nonexistent-id'],
+              packages: [
+                {
+                  id: 'tob-differential-review',
+                  name: 'Differential Review',
+                  kind: 'plugin',
+                  port: { from: 'claude' },
+                  author: { name: 'Trail of Bits', github: 'trailofbits', verified: false },
+                  latestVersion: '1.1.4',
+                  capabilityTier: 'TIER_3_AGENT_CONTROL',
+                  release: { gitRepo: 'https://github.com/trailofbits/skills', ref: 'e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff', path: 'plugins/differential-review' },
+                },
+                {
+                  id: 'brand-new-sidecar',
+                  name: 'Brand New Sidecar',
+                  author: { name: 'Arthur Cavallari', github: 'arthurcavallari', verified: true },
+                  latestVersion: '1.0.0',
+                  capabilityTier: 'TIER_1_TELEMETRY',
+                  release: { gitRepo: 'https://github.com/arthurcavallari/brand-new-sidecar' },
+                },
+                {
+                  id: 'context-monitor',
+                  name: 'Context & Quota Monitor',
+                  author: { name: 'Arthur Cavallari', github: 'arthurcavallari', verified: true },
+                  latestVersion: '1.7.0',
+                  capabilityTier: 'TIER_1_TELEMETRY',
+                  release: { gitRepo: 'https://github.com/arthurcavallari/antigravity-context-monitor' },
+                },
+                {
+                  id: 'notes',
+                  name: 'Notes',
+                  author: { name: 'Arthur Cavallari', github: 'arthurcavallari', verified: true },
+                  latestVersion: '1.0.0',
+                  capabilityTier: 'TIER_3_AGENT_CONTROL',
+                  release: { gitRepo: 'https://github.com/arthurcavallari/antigravity-notes' },
+                },
+              ],
+            }),
+          };
+        },
+      });
+
+      assert.deepEqual(catalog.featuredIds, ['notes', 'context-monitor']);
+      assert.deepEqual(catalog.packages.slice(0, 4).map((p) => p.id), [
+        'notes',
+        'context-monitor',
+        'brand-new-sidecar',
+        'agy-plugin-porter',
+      ]);
+      const firstUnverifiedIdx = catalog.packages.findIndex((p) => p.author?.verified !== true);
+      const lastVerifiedIdx = catalog.packages.map((p) => p.author?.verified === true).lastIndexOf(true);
+      assert.ok(firstUnverifiedIdx > lastVerifiedIdx, 'every verified extension must precede unverified entries');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
