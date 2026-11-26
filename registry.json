@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-21T00:00:00Z",
+  "generatedAt": "2026-11-26T12:28:00Z",
   "hangar": {
     "id": "hangar",
     "name": "Antigravity Hangar",
@@ -44,6 +44,39 @@
       },
       "release": {
         "gitRepo": "https://github.com/arthurcavallari/antigravity-context-monitor"
+      }
+    },
+    {
+      "id": "notes",
+      "name": "Notes",
+      "npmPackage": "antigravity-notes",
+      "tagline": "Workspace-aware Prompt Stash, colored #tags, and Markdown Scratchpad sidecar for Google Antigravity.",
+      "author": {
+        "name": "Arthur Cavallari",
+        "github": "arthurcavallari",
+        "verified": true
+      },
+      "funding": "https://github.com/sponsors/arthurcavallari",
+      "latestVersion": "1.0.0",
+      "pricing": "free",
+      "categories": [
+        "productivity"
+      ],
+      "capabilityTier": "TIER_3_AGENT_CONTROL",
+      "license": "MIT",
+      "homepage": "https://github.com/arthurcavallari/antigravity-notes#readme",
+      "securityScan": {
+        "passed": true,
+        "hasPostInstallScripts": false,
+        "externalDependencies": 0
+      },
+      "workspaceTriggers": {
+        "files": [
+          "*"
+        ]
+      },
+      "release": {
+        "gitRepo": "https://github.com/arthurcavallari/antigravity-notes"
       }
     },
     {
