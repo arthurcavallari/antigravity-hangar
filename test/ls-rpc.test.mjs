@@ -507,4 +507,13 @@ describe('hangarRpc shared state reads', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('drops removed 2.35.2 unary GetPatchAndCodeChange and GetVersionControlState from ALLOWED_JETBOX_RPCS while keeping WatchVersionControlState streaming', async () => {
+    const { ALLOWED_JETBOX_RPCS } = await import('../lib/jetbox-rpc-policy.mjs');
+    const { pollVcsStream } = await import('../lib/jetbox-vcs.mjs');
+    assert.equal(ALLOWED_JETBOX_RPCS.has('GetPatchAndCodeChange'), false);
+    assert.equal(ALLOWED_JETBOX_RPCS.has('GetVersionControlState'), false);
+    assert.equal(ALLOWED_JETBOX_RPCS.has('GetArtifactSnapshots'), true);
+    assert.equal(typeof pollVcsStream, 'function');
+  });
 });
